@@ -58,12 +58,8 @@ bool Engine::run(const QString& target) {
                          loop.quit();
                      });
 
-    // Запускаем асинхронную часть
     runInternal(target);
 
-    // Если сборка уже завершилась синхронно (например, всё up-to-date),
-    // то loop.exec() не будет вызван, так как сигнал уже пришёл,
-    // но мы проверим флаг finished.
     if (!finished) {
         loop.exec();
     }
@@ -173,14 +169,12 @@ void Engine::runInternal(const QString& target) {
         }
     }
 
-    // Запускаем изначально готовые узлы
     for (Node* n : dirtyNodes) {
         if (pending_[n].regular == 0 && pending_[n].orderOnly == 0) {
             tryStartNode(n, false);
         }
     }
 
-    // Устанавливаем таймаут на случай зависания
     QTimer watchdog;
     watchdog.setSingleShot(true);
     QObject::connect(&watchdog, &QTimer::timeout, [this]() {
@@ -188,7 +182,7 @@ void Engine::runInternal(const QString& target) {
         emit buildError("Build timed out");
         emit buildFinished(false, buildTimer_.elapsed() / 1000.0);
     });
-    watchdog.start(300000); // 5 минут
+    watchdog.start(300000);
 }
 
 bool Engine::isRealBuild(const Build* build) const {
@@ -421,7 +415,8 @@ void Engine::onNodeFinished(Node* node, int exitCode, double duration) {
                     releaseDependencies(n);
                 }
             }
-            if (exitCode == 0) {
+            // Исправлено: учитываем exitCode 0 и 2 как успех
+            if (exitCode == 0 || exitCode == 2) {
                 int completed = tasksCompleted_.fetchAndAddOrdered(1) + 1;
                 emit buildProgress(completed, totalTasks_);
                 emit nodeBuilt(node->name(), exitCode, duration);
@@ -455,7 +450,6 @@ void Engine::onNodeFinished(Node* node, int exitCode, double duration) {
         return;
     }
 
-    // Защита от зависания: если нет активных задач и очередь пуста
     bool hasActive = false;
     for (const auto& pc : poolCounters_) {
         if (pc.active > 0) { hasActive = true; break; }

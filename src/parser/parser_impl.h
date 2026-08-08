@@ -158,6 +158,9 @@ private:
     QVariant callBuiltin(const QString& name, const QVector<QVariant>& args);
 
     QString normalizePath(const QString& path);
+
+    // ---- Вспомогательная функция для подстановки переменных на этапе парсинга ----
+    static QString astNodeToStringWithState(AstNode* node, const core::State* state);
 };
 
 } // namespace pmake::parser

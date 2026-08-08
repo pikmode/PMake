@@ -27,6 +27,12 @@ add_library(pmake_core STATIC
     src/parser/parser_parse.cpp
     src/parser/parser_eval.cpp
     src/parser/parser_utils.cpp
+    # Новые файлы разбивки
+    src/parser/parser_dispatch.cpp
+    src/parser/parser_blocks.cpp
+    src/parser/parser_rules.cpp
+    src/parser/parser_control.cpp
+    src/parser/parser_functions.cpp
     src/ui/console_ui.cpp
     src/util/filesystem.cpp
     src/util/logging.cpp

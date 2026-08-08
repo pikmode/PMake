@@ -2,6 +2,7 @@
 #include <cctype>
 #include <QDebug>
 #include <QString>
+#include <stdexcept> // для исключений
 
 namespace pmake::parser {
 
@@ -116,16 +117,10 @@ Token Lexer::readIdentOrKeyword() {
         return {TOK_TRUE, -1, line_, column_, 0, .boolVal = true};
     if (str == QLatin1String("false"))
         return {TOK_FALSE, -1, line_, column_, 0, .boolVal = false};
-    if (str == QLatin1String("&&"))
-        return {TOK_AND, -1, line_, column_, 0};
-    if (str == QLatin1String("||"))
-        return {TOK_OR, -1, line_, column_, 0};
+    // Удалены ошибочные проверки на "&&" и "||"
     return {TOK_IDENT, id, line_, column_, 0};
 }
 
-// ============================================================
-// ИСПРАВЛЕННЫЙ МЕТОД readString()
-// ============================================================
 Token Lexer::readString() {
     QByteArray result;
     bool escaped = false;
@@ -308,8 +303,11 @@ QString Lexer::str(int id) const {
     return QString::fromUtf8(pool_->get(id));
 }
 
+// Исправленный error – теперь бросает исключение
 void Lexer::error(const QString& msg) {
-    qCritical() << "Lexer error in" << filename_ << "line" << line_ << ":" << msg;
+    QString err = QString("Lexer error in %1 line %2: %3").arg(filename_).arg(line_).arg(msg);
+    qCritical() << err;
+    throw std::runtime_error(err.toStdString());
 }
 
 } // namespace pmake::parser

@@ -1,6 +1,7 @@
 #include "core/state.h"
 #include "util/logging.h"
-#include "core/builtins.h"   // для вызова встроенных функций
+#include "core/builtins.h"
+#include "parser/lexer.h"   // добавлено для токенов
 #include <QRegularExpression>
 #include <QDebug>
 
@@ -25,7 +26,6 @@ State::State()
     : varRegex_(R"(\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)|{([^}]+)})") {}
 
 State::~State() {
-    // Удаляем AST тела функций
     for (auto& func : functions_) {
         delete func.body;
     }
@@ -120,28 +120,23 @@ QVariant State::callUserFunction(const QString& name,
         return QVariant();
     }
 
-    // Создаём локальный Scope с родителем callerScope
     Scope localScope(callerScope);
-
-    // Привязываем аргументы к параметрам
     for (int i = 0; i < func->params.size(); ++i) {
         QString paramName = func->params[i];
         QString paramValue = (i < args.size()) ? args[i].toString() : QString();
         localScope.set(paramName, paramValue);
     }
 
-    // Выполняем тело функции (блок)
     if (func->body) {
         for (AstNode* child : func->body->children) {
             QVariant result = executeAstNode(child, &localScope);
-            // Если встретили return – возвращаем значение
             if (child->type == AstNode::RETURN) {
                 return result;
             }
         }
     }
 
-    return QVariant(); // если нет return
+    return QVariant();
 }
 
 QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
@@ -176,26 +171,31 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             int rightNum = right.toInt(&rightOk);
             if (leftOk && rightOk) {
                 switch (node->op) {
-                    case 1: return QVariant(leftNum == rightNum);  // ==
-                    case 2: return QVariant(leftNum != rightNum);  // !=
-                    case 3: return QVariant(leftNum < rightNum);   // <
-                    case 4: return QVariant(leftNum > rightNum);   // >
-                    case 5: return QVariant(leftNum <= rightNum);  // <=
-                    case 6: return QVariant(leftNum >= rightNum);  // >=
+                    case pmake::parser::TOK_PLUS:  return QVariant(leftNum + rightNum);
+                    case pmake::parser::TOK_MINUS: return QVariant(leftNum - rightNum);
+                    case pmake::parser::TOK_STAR:  return QVariant(leftNum * rightNum);
+                    case pmake::parser::TOK_SLASH: return QVariant(rightNum != 0 ? leftNum / rightNum : 0);
+                    case pmake::parser::TOK_EQ:    return QVariant(leftNum == rightNum);
+                    case pmake::parser::TOK_NEQ:   return QVariant(leftNum != rightNum);
+                    case pmake::parser::TOK_LT:    return QVariant(leftNum < rightNum);
+                    case pmake::parser::TOK_GT:    return QVariant(leftNum > rightNum);
+                    case pmake::parser::TOK_LE:    return QVariant(leftNum <= rightNum);
+                    case pmake::parser::TOK_GE:    return QVariant(leftNum >= rightNum);
                     default: break;
                 }
             } else {
                 QString leftStr = left.toString();
                 QString rightStr = right.toString();
                 switch (node->op) {
-                    case 1: return QVariant(leftStr == rightStr);
-                    case 2: return QVariant(leftStr != rightStr);
-                    case 3: return QVariant(leftStr < rightStr);
-                    case 4: return QVariant(leftStr > rightStr);
-                    case 5: return QVariant(leftStr <= rightStr);
-                    case 6: return QVariant(leftStr >= rightStr);
-                    case 7: return QVariant(left.toBool() && right.toBool()); // &&
-                    case 8: return QVariant(left.toBool() || right.toBool()); // ||
+                    case pmake::parser::TOK_PLUS:  return QVariant(leftStr + rightStr);
+                    case pmake::parser::TOK_EQ:    return QVariant(leftStr == rightStr);
+                    case pmake::parser::TOK_NEQ:   return QVariant(leftStr != rightStr);
+                    case pmake::parser::TOK_LT:    return QVariant(leftStr < rightStr);
+                    case pmake::parser::TOK_GT:    return QVariant(leftStr > rightStr);
+                    case pmake::parser::TOK_LE:    return QVariant(leftStr <= rightStr);
+                    case pmake::parser::TOK_GE:    return QVariant(leftStr >= rightStr);
+                    case pmake::parser::TOK_AND:   return QVariant(left.toBool() && right.toBool());
+                    case pmake::parser::TOK_OR:    return QVariant(left.toBool() || right.toBool());
                     default: break;
                 }
             }
@@ -203,18 +203,24 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
         }
         case AstNode::UNARY_OP: {
             QVariant operand = executeAstNode(node->left, localScope);
-            return QVariant(!operand.toBool());
+            if (node->op == pmake::parser::TOK_NOT)
+                return QVariant(!operand.toBool());
+            else if (node->op == pmake::parser::TOK_MINUS) {
+                bool ok;
+                int num = operand.toInt(&ok);
+                if (ok) return QVariant(-num);
+                return QVariant();
+            }
+            return operand;
         }
         case AstNode::FUNCTION_CALL: {
             QVector<QVariant> args;
             for (auto arg : node->children) {
                 args.append(executeAstNode(arg, localScope));
             }
-            // Сначала проверяем пользовательскую функцию
             if (getFunction(node->name)) {
                 return callUserFunction(node->name, args, localScope);
             } else {
-                // Встроенная функция
                 return Builtins::call(node->name, args, this, localScope);
             }
         }
@@ -244,7 +250,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
 }
 
 // ------------------------------------------------------------------
-// Подстановка переменных (без изменений)
+// Подстановка переменных
 // ------------------------------------------------------------------
 QString State::expandVars(const QString& input, const Scope* local_scope) const {
     QHash<QString, QString> empty;
@@ -262,11 +268,11 @@ QString State::expandVarsWithSpecial(const QString& input,
         QRegularExpressionMatch match = it.next();
         QString varName;
         if (!match.captured(1).isEmpty()) {
-            varName = match.captured(1); // ${var}
+            varName = match.captured(1);
         } else if (!match.captured(2).isEmpty()) {
-            varName = match.captured(2); // $var
+            varName = match.captured(2);
         } else if (!match.captured(3).isEmpty()) {
-            varName = match.captured(3); // {var}
+            varName = match.captured(3);
         } else {
             continue;
         }

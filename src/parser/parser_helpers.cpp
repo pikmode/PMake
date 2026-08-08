@@ -2,6 +2,7 @@
 #include "parser/parser_utils.h"
 #include <QDebug>
 #include <QFileInfo>
+#include <stdexcept>
 
 namespace pmake::parser {
 
@@ -44,8 +45,23 @@ ParserImpl::~ParserImpl() {
 
 // ---- Вспомогательные методы ----
 void ParserImpl::advance() {
-    cur_ = lexer_.nextToken();
-    currentColumn_ = cur_.column;
+    try {
+        cur_ = lexer_.nextToken();
+        currentColumn_ = cur_.column;
+    } catch (const std::exception& e) {
+        // При ошибке лексера генерируем EOF и помечаем состояние ошибки
+        cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
+        currentColumn_ = cur_.column;
+        hasError_ = true;
+        errors_.append(QString("Lexer error: %1").arg(e.what()));
+        LOG_ERROR(errors_.last());
+    } catch (...) {
+        cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
+        currentColumn_ = cur_.column;
+        hasError_ = true;
+        errors_.append("Unknown lexer error");
+        LOG_ERROR(errors_.last());
+    }
 }
 
 bool ParserImpl::match(TokenType t) {
@@ -79,7 +95,7 @@ void ParserImpl::error(const QString& msg, bool recover) {
     LOG_ERROR(err);
     hasError_ = true;
     if (!recover) {
-        throw std::runtime_error("Parse error");
+        throw std::runtime_error(err.toStdString());
     }
 }
 
@@ -95,11 +111,6 @@ void ParserImpl::skipNewlinesAndIndents() {
     while (cur_.type == TOK_NEWLINE || cur_.type == TOK_INDENT) advance();
 }
 
-// ============================================================
-// ИСПРАВЛЕННЫЙ МЕТОД skipToBlockStart
-// – больше НЕ съедает TOK_INDENT и TOK_LBRACE,
-//   только проверяет их наличие.
-// ============================================================
 bool ParserImpl::skipToBlockStart(int baseIndent) {
     int loopGuard = 0;
     while (true) {
@@ -108,18 +119,16 @@ bool ParserImpl::skipToBlockStart(int baseIndent) {
             return false;
         }
         if (cur_.type == TOK_NEWLINE) {
-            advance();  // перевод строки можно съедать
+            advance();
             continue;
         }
         if (cur_.type == TOK_INDENT) {
-            // Проверяем отступ, но НЕ съедаем токен
             if (cur_.indent > baseIndent) {
                 return true;
             }
             return false;
         }
         if (cur_.type == TOK_LBRACE) {
-            // Не съедаем {
             return true;
         }
         if (cur_.type == TOK_EOF) {
@@ -315,6 +324,33 @@ QString ParserImpl::normalizePath(const QString& path) {
         return fi.canonicalFilePath();
     }
     return QFileInfo(path).absoluteFilePath();
+}
+
+// ---- Вспомогательная функция для подстановки переменных на этапе парсинга ----
+QString ParserImpl::astNodeToStringWithState(AstNode* node, const core::State* state) {
+    if (!node) return QString();
+    switch (node->type) {
+        case AstNode::STRING_LITERAL:
+            return node->value.toString();
+        case AstNode::VARIABLE_REF: {
+            auto opt = state->getGlobal(node->name);
+            if (opt.has_value()) return *opt;
+            return node->name;
+        }
+        case AstNode::CONCAT: {
+            QString result;
+            for (auto child : node->children) {
+                result += astNodeToStringWithState(child, state);
+            }
+            return result;
+        }
+        case AstNode::NUMBER_LITERAL:
+            return QString::number(node->value.toDouble());
+        case AstNode::BOOL_LITERAL:
+            return node->value.toBool() ? "true" : "false";
+        default:
+            return QString();
+    }
 }
 
 } // namespace pmake::parser
