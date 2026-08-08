@@ -1,0 +1,60 @@
+cmake_minimum_required(VERSION 3.20)
+project(pmake VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Concurrent Test)
+
+add_library(pmake_core STATIC
+    src/core/cache.cpp
+    src/core/engine.cpp
+    src/core/graph.cpp
+    src/core/node.cpp
+    src/core/state.cpp
+    src/core/builtins.cpp
+    src/core/expression.cpp
+    src/deps/dep_parser.cpp
+    src/deps/deps_log.cpp
+    src/executor/runner.cpp
+    src/parser/lexer.cpp
+    src/parser/parser.cpp
+    src/parser/parser_helpers.cpp
+    src/parser/parser_expr.cpp
+    src/parser/parser_parse.cpp
+    src/parser/parser_eval.cpp
+    src/parser/parser_utils.cpp
+    src/ui/console_ui.cpp
+    src/util/filesystem.cpp
+    src/util/logging.cpp
+    src/util/string_utils.cpp
+)
+
+target_link_libraries(pmake_core
+    Qt6::Core
+    Qt6::Concurrent
+)
+
+target_include_directories(pmake_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(${PROJECT_NAME}
+    src/main.cpp
+)
+
+qt_add_resources(${PROJECT_NAME} PMake_RESOURCES
+    PREFIX "/"
+    FILES
+        Licenses/PPL_V1.txt
+        version.txt
+)
+
+target_link_libraries(${PROJECT_NAME}
+    pmake_core
+    Qt6::Core
+    Qt6::Concurrent
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

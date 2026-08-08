@@ -1,0 +1,76 @@
+
+                     PikMode Proprietary License (PPL) 
+                            **Version 1.0**
+
+
+**Article 1. Definitions**  
+1.1. “Software” – executable files, libraries, source code (if provided), documentation, graphical user interface, design, fonts, as well as any updates, patches, bug fixes, add-ons, and new versions provided by PikMode.  
+1.2. “Device” – a physical computer, laptop, server, virtual machine, or mobile device on which the Software is installed.  
+1.3. “User” – a natural person who runs or uses the Software.  
+1.4. “Organization” – a legal entity or individual entrepreneur.
+
+
+**Article 2. Scope of License**  
+2.1. PikMode grants you a non‑exclusive, non‑transferable, and revocable license to install and use the Software on no more than 5 Devices.  
+2.2. Devices and Users – the license is calculated by Devices, not by Users. On each of the 5 Devices, the Software may be used by any number of Users, unless otherwise limited by technical means or documentation. Provisions regarding 10 Users are excluded to remove ambiguity.  
+2.3. Business use is permitted – you may use the Software for commercial purposes under the following conditions:  
+
+- the Software is used by you or your employees for internal needs;  
+- you do not provide external access to the Software’s functions (including SaaS, ASP, rental, sublicensing, corporate portal for persons who are not your employees);  
+- you do not develop products or services that copy the core functionality of the Software with the aim of direct competition. The term “core functionality” is defined as the list of key functions described in the Software documentation and does not include general ideas or methods known from public sources.
+
+
+**Article 3. Intellectual Property**  
+3.1. All rights to the Software, including source and object code, original algorithms, original interface design elements, icons, texts, fonts, updates, belong to PikMode or its licensors to the extent protected by copyright and patent laws of the Kyrgyz Republic.  
+3.2. This license does not convey rights to PikMode’s trademarks, logos, or domain names. It is forbidden to remove or alter any copyright notices.
+
+
+**Article 4. Prohibited Actions**  
+It is prohibited, including but not limited to:  
+
+4.1. Modification and Reverse Engineering – to modify, decompile, disassemble, or reverse engineer the Software.  
+Permitted by law reverse engineering: actions expressly permitted by Article 1176 of the Civil Code of the Kyrgyz Republic (to achieve interoperability), provided that the information obtained is not used to create a commercial product competing with the Software.  
+Prohibited commercial analysis: any extraction of code, algorithms, or data structures to create a clone or circumvent technical restrictions.  
+4.2. Distribution – copying (except for one backup copy), distribution, publication, public demonstration, transfer of the Software to third parties.  
+4.3. Sublicensing and Transfer – sublicensing, rental, leasing, sale of the Software.  
+4.4. Removal of Protection – removal, circumvention, or modification of technical protection measures of the Software.  
+
+4.5. Use in AI/ML Systems – use of the Software for training, fine‑tuning, validation, or operation of artificial intelligence or machine learning systems without the written permission of PikMode.  
+Permitted exceptions (without the possibility of circumventing the prohibition on extracting algorithms):  
+
+- collection of standard logs and telemetry necessary for the operation of the Software or debugging, provided that such data is not used to reconstruct algorithms;  
+- auto‑completion, spell‑checking, basic security log analysis that is not aimed at extracting the Software’s structure;  
+- output of content created by you.  
+It is prohibited: analysis of logs or behavior of the Software to create a clone model or improve a third‑party AI system competing with PikMode.
+
+---
+
+**Article 5. Updates and License Changes**  
+5.1. PikMode may release updates to the Software. Installation of updates is optional, but may be required to continue use (e.g., to fix critical vulnerabilities).  
+5.2. Change of License Terms – PikMode will notify you of changes at least 30 days in advance by email (to the address provided during registration) or through the Software interface. For B2B licensees (Organizations), continued use after notification constitutes acceptance. For natural persons (consumers), changes take effect only for new versions of the Software, or you may refuse and use the previous version for 6 months.
+
+
+**Article 6. Termination and Suspension of License**  
+6.1. The Agreement is effective until terminated. It is automatically terminated without notice upon violation of Articles 4.2, 4.3, 4.4.  
+6.2. Suspension – PikMode has the right to suspend the license for up to 30 days upon suspicion of a minor violation (e.g., use on 6 Devices), with notice and the opportunity to remedy. If the violation is not cured, the license is terminated.  
+6.3. Upon termination or suspension, you must cease use and destroy all copies of the Software.
+
+
+**Article 7. Disclaimer of Warranties**  
+The Software is provided “AS IS”. PikMode makes no express or implied warranties, including merchantability, fitness for a particular purpose, error‑free operation, compatibility, or non‑infringement of third‑party rights.
+
+
+**Article 8. Limitation of Liability**  
+8.1. Under no circumstances shall PikMode be liable for indirect, incidental, punitive damages (loss of profits, data, reputation, business interruption).  
+8.2. PikMode’s aggregate liability is limited to 10 US dollars (equivalent in Kyrgyz som at the exchange rate of the National Bank of the Kyrgyz Republic on the date of the court decision). Provisions regarding exchange rate at the defendant’s option are excluded to avoid contradiction.
+
+
+**Article 9. Governing Law and Jurisdiction**  
+9.1. This Agreement shall be governed by the laws of the Kyrgyz Republic.  
+9.2. Jurisdiction – all disputes shall be subject to the Osh City Court. Exception: if the consumer protection legislation of the Kyrgyz Republic grants you the right to have the dispute heard at your place of residence, you may exercise that right. The choice of any other court by the parties is not permitted, except in cases expressly provided by law.
+
+
+**Article 10. Miscellaneous**  
+10.1. If any provision is invalid, the remaining provisions remain in force.  
+10.2. Sanctions Restrictions – use of the Software is prohibited in territories of countries subject to sanctions imposed by the Kyrgyz Republic or the United Nations that completely prohibit the export of software. In other countries, the license applies to the extent not contrary to local law.  
+10.3. Suspension of the License without violation by the user (termination for convenience) – PikMode has the right to terminate the license by giving you 90 days’ notice, with a refund of a proportional part of the amount paid (if the Software was paid). This right does not apply to a free license.
