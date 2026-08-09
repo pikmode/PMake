@@ -1,0 +1,2 @@
+Зависимости проекта:
+  - Qt (модули: FileInfo, DataStream, CryptographicHash, ByteArray, Process, CoreApplication, DateTime, CommandLineParser, ThreadPool, Queue, Dir, RegularExpression, Stack, File, Vector, Debug, Variant, Set, EventLoop, ProcessEnvironment, Mutex, Timer, FutureWatcher, Hash, Object, String, SharedPointer, StringList, Thread, TextStream, ElapsedTimer, Future, AtomicInt)
