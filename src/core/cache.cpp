@@ -12,10 +12,9 @@ namespace pmake::core {
 
 Cache::Cache() = default;
 
-void Cache::store(const State& state, const QString& mainFile) {
-    data_.version = 4;
-    data_.mainFile = mainFile;
-    data_.mainFileMtime = util::getFileMtime(mainFile);
+void Cache::store(const State& state, const QString& /*mainFile*/) {
+    data_.version = 5;
+    // mainFile и его mtime не сохраняются
 
     data_.globalVars = state.globals();
     data_.rules = state.rules().values();
@@ -33,11 +32,7 @@ void Cache::store(const State& state, const QString& mainFile) {
         data_.buildLocalVars.append(locals);
     }
 
-    data_.includedFiles.clear();
-    for (const QString& path : state.includedFiles()) {
-        data_.includedFiles[path] = util::getFileMtime(path);
-    }
-
+    // Сохраняем только состояния файлов (листовые узлы)
     data_.fileStates = state.fileStates();
 
     // Сохраняем DepsLog
@@ -59,22 +54,14 @@ bool Cache::save(const QString& path) const {
 void Cache::serialize(QDataStream& out) const {
     out << quint32(0x504D4B45); // "PMKE"
     out << quint32(data_.version);
-    out << data_.mainFile;
-    out << data_.mainFileMtime;
 
-    // included files
-    out << quint32(data_.includedFiles.size());
-    for (auto it = data_.includedFiles.begin(); it != data_.includedFiles.end(); ++it) {
-        out << it.key() << it.value();
-    }
-
-    // global vars
+    // --- global vars ---
     out << quint32(data_.globalVars.size());
     for (auto it = data_.globalVars.begin(); it != data_.globalVars.end(); ++it) {
         out << it.key() << it.value();
     }
 
-    // rules
+    // --- rules ---
     out << quint32(data_.rules.size());
     for (const Rule& rule : data_.rules) {
         out << rule.name << rule.command << rule.depfile << rule.deps
@@ -82,7 +69,7 @@ void Cache::serialize(QDataStream& out) const {
             << rule.pool << rule.description;
     }
 
-    // builds
+    // --- builds ---
     out << quint32(data_.builds.size());
     for (int i = 0; i < data_.builds.size(); ++i) {
         const Build& build = data_.builds[i];
@@ -95,25 +82,25 @@ void Cache::serialize(QDataStream& out) const {
         }
     }
 
-    // pools
+    // --- pools ---
     out << quint32(data_.pools.size());
     for (auto it = data_.pools.begin(); it != data_.pools.end(); ++it) {
         out << it.key() << it.value().depth;
     }
 
-    // default targets
+    // --- default targets ---
     out << data_.defaultTargets;
 
-    // included files list
+    // --- included files list ---
     out << data_.includedFilesList;
 
-    // file states
+    // --- file states (только листья) ---
     out << quint32(data_.fileStates.size());
     for (auto it = data_.fileStates.begin(); it != data_.fileStates.end(); ++it) {
         out << it.key() << it.value().mtime << it.value().size << it.value().hash;
     }
 
-    // ---- Сохранение DepsLog ----
+    // --- DepsLog ---
     const auto& entries = data_.depsLog.entries();
     out << quint32(entries.size());
     for (auto it = entries.begin(); it != entries.end(); ++it) {
@@ -142,23 +129,15 @@ bool Cache::load(const QString& path) {
 void Cache::deserialize(QDataStream& in) {
     quint32 version;
     in >> version;
-    if (version != 4) {
+    if (version != 5) {
         LOG_WARN(QString("Unsupported cache version %1, ignoring").arg(version));
         return;
     }
     data_.version = version;
-    in >> data_.mainFile;
-    in >> data_.mainFileMtime;
 
     quint32 count;
-    in >> count;
-    data_.includedFiles.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        QString key; qint64 val;
-        in >> key >> val;
-        data_.includedFiles[key] = val;
-    }
 
+    // global vars
     in >> count;
     data_.globalVars.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -167,6 +146,7 @@ void Cache::deserialize(QDataStream& in) {
         data_.globalVars[key] = val;
     }
 
+    // rules
     in >> count;
     data_.rules.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -177,6 +157,7 @@ void Cache::deserialize(QDataStream& in) {
         data_.rules.append(rule);
     }
 
+    // builds
     in >> count;
     data_.builds.clear();
     data_.buildLocalVars.clear();
@@ -196,6 +177,7 @@ void Cache::deserialize(QDataStream& in) {
         data_.buildLocalVars.append(locals);
     }
 
+    // pools
     in >> count;
     data_.pools.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -205,9 +187,13 @@ void Cache::deserialize(QDataStream& in) {
         data_.pools[name] = pool;
     }
 
+    // default targets
     in >> data_.defaultTargets;
+
+    // included files list
     in >> data_.includedFilesList;
 
+    // file states
     in >> count;
     data_.fileStates.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -219,12 +205,12 @@ void Cache::deserialize(QDataStream& in) {
         data_.fileStates[path] = fs;
     }
 
-    // ---- Загрузка DepsLog ----
+    // DepsLog
     quint32 depsCount;
     in >> depsCount;
     deps::DepsLog& depsLog = deps::DepsLog::instance();
     depsLog.clear();
-    auto& entries = depsLog.entries(); // не-const ссылка
+    auto& entries = depsLog.entries();
     for (quint32 i = 0; i < depsCount; ++i) {
         deps::DepsEntry entry;
         in >> entry.output;
@@ -243,14 +229,9 @@ void Cache::deserialize(QDataStream& in) {
     }
 }
 
-bool Cache::isValid(const QString& mainFile) const {
-    if (!loaded_) return false;
-    if (data_.mainFile != mainFile) return false;
-    if (util::getFileMtime(mainFile) != data_.mainFileMtime) return false;
-    for (auto it = data_.includedFiles.begin(); it != data_.includedFiles.end(); ++it) {
-        if (util::getFileMtime(it.key()) != it.value()) return false;
-    }
-    return true;
+bool Cache::isValid(const QString& /*mainFile*/) const {
+    // Кэш всегда считается валидным, если он загружен (не проверяем mainFile)
+    return loaded_;
 }
 
 std::unique_ptr<State> Cache::restore() const {
