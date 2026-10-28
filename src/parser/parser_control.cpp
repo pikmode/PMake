@@ -199,6 +199,56 @@ void ParserImpl::parseSwitch(AstNode* parent) {
     parent->children.append(node);
 }
 
+// ---- parseCase ----
+void ParserImpl::parseCase(AstNode* parent) {
+    auto node = makeStringLiteral("");
+    node->type = AstNode::CASE;
+    node->line = cur_.line;
+    node->column = cur_.column;
+
+    // Значение case
+    node->children.append(parseExpressionPrecedence(0, 0));
+
+    // Блок { ... } или indent
+    if (cur_.type == TOK_NEWLINE) advance();
+    skipNewlines();
+
+    if (cur_.type == TOK_LBRACE || cur_.type == TOK_INDENT) {
+        auto block = makeStringLiteral("");
+        block->type = AstNode::BLOCK;
+        pushBlock(block);
+        parseBlockDirect(block);
+        popBlock();
+        node->children.append(block);
+    }
+
+    parent->children.append(node);
+    skipNewlinesAndIndents();
+}
+
+// ---- parseDefault ----
+void ParserImpl::parseDefault(AstNode* parent) {
+    auto node = makeStringLiteral("");
+    node->type = AstNode::DEFAULT;
+    node->line = cur_.line;
+    node->column = cur_.column;
+
+    if (cur_.type == TOK_NEWLINE) advance();
+    skipNewlines();
+
+    if (cur_.type == TOK_LBRACE || cur_.type == TOK_INDENT) {
+        auto block = makeStringLiteral("");
+        block->type = AstNode::BLOCK;
+        pushBlock(block);
+        parseBlockDirect(block);
+        popBlock();
+        node->children.append(block);
+    }
+
+    parent->children.append(node);
+    skipNewlinesAndIndents();
+}
+
 // ---- parseBreak ----
 void ParserImpl::parseBreak(AstNode* parent) {
     advance();

@@ -4,24 +4,26 @@
 #include "util/logging.h"
 #include <QDataStream>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
+#include <QMutexLocker>
 
 namespace pmake::deps {
 
 // ----------------------------------------------------------------------------
 // Singleton
 // ----------------------------------------------------------------------------
-
 DepsLog& DepsLog::instance() {
     static DepsLog log;
     return log;
 }
 
 // ----------------------------------------------------------------------------
-// Загрузка/сохранение
+// Загрузка / сохранение
 // ----------------------------------------------------------------------------
-
 bool DepsLog::load(const QString& path) {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
+
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         LOG_DEBUG(QString("DepsLog: cannot open %1 for reading").arg(path));
@@ -49,6 +51,8 @@ bool DepsLog::load(const QString& path) {
 }
 
 bool DepsLog::save(const QString& path) const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
+
     QFile file(path);
     QDir().mkpath(QFileInfo(path).absolutePath());
     if (!file.open(QIODevice::WriteOnly)) {
@@ -58,7 +62,7 @@ bool DepsLog::save(const QString& path) const {
 
     QDataStream out(&file);
     out << quint32(0x44455053); // "DEPS"
-    out << quint32(1); // version
+    out << quint32(1);          // version
     serialize(out);
     LOG_INFO(QString("DepsLog: saved %1 entries to %2").arg(entries_.size()).arg(path));
     return true;
@@ -67,16 +71,13 @@ bool DepsLog::save(const QString& path) const {
 // ----------------------------------------------------------------------------
 // Сериализация
 // ----------------------------------------------------------------------------
-
 void DepsLog::serialize(QDataStream& out) const {
     out << quint32(entries_.size());
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
         const DepsEntry& entry = it.value();
         out << entry.output;
         out << quint32(entry.inputs.size());
-        for (const QString& in : entry.inputs) {
-            out << in;
-        }
+        for (const QString& in : entry.inputs) out << in;
         out << entry.mtime;
     }
 }
@@ -104,10 +105,10 @@ void DepsLog::deserialize(QDataStream& in) {
 }
 
 // ----------------------------------------------------------------------------
-// Работа с записями
+// Работа с записями — всё под mutex_
 // ----------------------------------------------------------------------------
-
 void DepsLog::record(const QString& output, const QVector<QString>& inputs) {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     DepsEntry entry;
     entry.output = output;
     entry.inputs = inputs;
@@ -115,71 +116,69 @@ void DepsLog::record(const QString& output, const QVector<QString>& inputs) {
     entry.isLoaded = true;
     entries_[output] = entry;
     mtimeCache_[output] = entry.mtime;
-    LOG_DEBUG(QString("DepsLog: recorded %1 → %2 inputs").arg(output).arg(inputs.size()));
+    LOG_DEBUG(QString("DepsLog: recorded %1 -> %2 inputs").arg(output).arg(inputs.size()));
 }
 
 QVector<QString> DepsLog::inputsFor(const QString& output) const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     auto it = entries_.find(output);
-    if (it != entries_.end())
-        return it.value().inputs;
+    if (it != entries_.end()) return it.value().inputs;
     return QVector<QString>();
 }
 
 bool DepsLog::isDirty(const QString& output) const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     auto it = entries_.find(output);
-    if (it == entries_.end())
-        return true; // нет записи – считается грязным
+    if (it == entries_.end()) return true;
     qint64 curMtime = getFileMtime(output);
-    if (curMtime != it.value().mtime)
-        return true;
-    // Можно также проверить все входы, но это делается на уровне графа
+    if (curMtime != it.value().mtime) return true;
     return false;
 }
 
-// ----------------------------------------------------------------------------
-// Динамический reverse index
-// ----------------------------------------------------------------------------
+void DepsLog::clear() {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
+    entries_.clear();
+    mtimeCache_.clear();
+}
 
+// ----------------------------------------------------------------------------
+// Reverse index
+// ----------------------------------------------------------------------------
 QHash<QString, QVector<QString>> DepsLog::buildReverseIndex() const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     QHash<QString, QVector<QString>> reverseIdx;
-
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
         const DepsEntry& entry = it.value();
         for (const QString& input : entry.inputs) {
-            // Добавляем output в список для этого input
-            if (!reverseIdx[input].contains(entry.output)) {
-                reverseIdx[input].append(entry.output);
-            }
+            auto& vec = reverseIdx[input];
+            if (!vec.contains(entry.output)) vec.append(entry.output);
         }
     }
-
     LOG_DEBUG(QString("DepsLog: built dynamic reverse index with %1 entries")
               .arg(reverseIdx.size()));
     return reverseIdx;
 }
 
 bool DepsLog::isInputChanged(const QString& input, qint64 currentMtime) const {
-    // Мы не храним mtime для входов напрямую, но можем сравнить с сохранённым mtime
-    // выходов, которые используют этот вход. Если хотя бы один выход имеет mtime
-    // меньше, чем текущее mtime входа, то вход изменился.
-    // Но эта логика сложнее, она реализована в Engine.
+    Q_UNUSED(input);
+    Q_UNUSED(currentMtime);
     return false;
 }
 
 // ----------------------------------------------------------------------------
-// Вспомогательные методы
+// mtime-cache
 // ----------------------------------------------------------------------------
-
 qint64 DepsLog::getFileMtime(const QString& path) const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     auto it = mtimeCache_.find(path);
-    if (it != mtimeCache_.end())
-        return it.value();
+    if (it != mtimeCache_.end()) return it.value();
     qint64 m = util::getFileMtime(path);
     mtimeCache_[path] = m;
     return m;
 }
 
 void DepsLog::addToMtimeCache(const QString& path, qint64 mtime) const {
+    QMutexLocker<QRecursiveMutex> lock(&mutex_);
     mtimeCache_[path] = mtime;
 }
 

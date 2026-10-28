@@ -1,8 +1,8 @@
 #include "core/node.h"
+#include "core/graph.h"
 #include "executor/runner.h"
 #include "deps/dep_parser.h"
 #include "deps/deps_log.h"
-#include "core/graph.h"
 #include "util/filesystem.h"
 #include "util/logging.h"
 #include <QDir>
@@ -13,7 +13,7 @@
 
 namespace pmake::core {
 
-// ----- Вспомогательные статические функции (были в node.cpp) -----
+// ----- Вспомогательные статические функции -----
 
 static QString getWorkingDirectory(const Build* build, const State* state) {
     if (build && build->scope) {
@@ -38,7 +38,7 @@ static bool depsListsEqual(const QVector<QString>& a, const QVector<QString>& b)
     return setA == setB;
 }
 
-// ----- Метод build() -----
+// ----- Node::build() -----
 
 int Node::build() {
     if (!build_ || !rule_) return 0;
@@ -51,8 +51,7 @@ int Node::build() {
         if (state_) {
             text = state_->expandVarsWithSpecial(text, build_->scope.data(), specialVars);
         }
-        // Не выводим ничего, т.к. вывод делает ConsoleUI
-        refreshOutputMtime(); // фиктивное обновление
+        refreshOutputMtime();
         return 0;
     }
 
@@ -66,7 +65,6 @@ int Node::build() {
     struct BuildGuard {
         Node* node;
         bool success = false;
-        bool changed = false;
         BuildGuard(Node* n) : node(n) {}
         ~BuildGuard() {
             QMutexLocker locker(&node->buildMutex_);
@@ -91,7 +89,7 @@ int Node::build() {
             QDir().mkpath(fi.absolutePath());
     }
 
-    // ---------- СОЗДАНИЕ RESPONSE-ФАЙЛА ----------
+    // ---------- RESPONSE-FILE ----------
     QString rspFilePath;
     if (!rule_->rspfile.isEmpty()) {
         rspFilePath = state_->expandVarsWithSpecial(rule_->rspfile, build_->scope.data(), specialVars);
@@ -147,7 +145,7 @@ int Node::build() {
         return 2;
     }
 
-    // ---- Обработка depfile с защитой от дублирования ----
+    // ---- Обработка depfile ----
     if (rule_ && !rule_->depfile.isEmpty()) {
         QString depfilePath = rule_->depfile;
         depfilePath = state_->expandVarsWithSpecial(depfilePath, build_->scope.data(), specialVars);
@@ -157,9 +155,9 @@ int Node::build() {
                 auto existingInputs = deps::DepsLog::instance().inputsFor(out);
                 if (!depsListsEqual(existingInputs, inputs)) {
                     deps::DepsLog::instance().record(out, inputs);
-                    if (graph_) {
-                        graph_->addDepsForOutput(out, inputs);
-                    }
+                    // ВАЖНО: graph_->addDepsForOutput() нельзя вызывать из воркера —
+                    // это race с main-thread на Node::implicit_deps_ и Graph::nodes_.
+                    // Теперь добавление делает Engine::handleNodeDone() в main-thread.
                 } else {
                     LOG_VERBOSE("Dependencies for " + out + " already up-to-date, skipping");
                 }

@@ -153,31 +153,33 @@ int main(int argc, char* argv[]) {
     QFutureWatcher<std::unique_ptr<State>> watcher;
     watcher.setFuture(future);
 
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    timer.start(5000);
+    // Фикс race: если future уже finished до loop.exec(), сигнал finished
+    // потеряется и мы словили бы ложный таймаут.
+    if (!future.isFinished()) {
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);  // 60s — разумный лимит для больших проектов
 
-    bool timeout = false;
+        bool timedOut = false;
+        QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
+            timedOut = true;
+            loop.quit();
+        });
+        QObject::connect(&watcher, &QFutureWatcherBase::finished, &loop, [&]() {
+            timer.stop();
+            loop.quit();
+        });
 
-    QObject::connect(&timer, &QTimer::timeout, [&]() {
-        timeout = true;
-        loop.quit();
-    });
+        loop.exec();
 
-    QObject::connect(&watcher, &QFutureWatcherBase::finished, [&]() {
-        timer.stop();
-        loop.quit();
-    });
-
-    loop.exec();
-
-    if (timeout) {
-        LOG_ERROR("Parsing timed out after 5 seconds! Forcing exit.");
-        std::terminate();
-        return 1;
+        if (timedOut && !future.isFinished()) {
+            LOG_ERROR("Parsing timed out after 30 seconds");
+            _Exit(1);  // немедленный выход без destructor/abort
+        }
     }
 
+    // future точно finished здесь
     auto state = future.takeResult();
     if (!state) {
         LOG_ERROR("Failed to parse build file");
@@ -193,11 +195,8 @@ int main(int argc, char* argv[]) {
                 break;
             }
         }
-        if (hasAll) {
-            target = "all";
-        } else if (!state->defaultTargets().isEmpty()) {
-            target = state->defaultTargets().first();
-        }
+        if (hasAll) target = "all";
+        else if (!state->defaultTargets().isEmpty()) target = state->defaultTargets().first();
     }
 
     // ---------- КЕШ ----------
@@ -256,7 +255,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---------- СОХРАНЕНИЕ КЕША ПОСЛЕ ПАРСИНГА (скелет) ----------
+    // ---------- СОХРАНЕНИЕ КЕША ПОСЛЕ ПАРСИНГА ----------
     if (useCache && !dryRun) {
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
@@ -274,9 +273,7 @@ int main(int argc, char* argv[]) {
             const Rule* rule = state->getRule(build.rule_name);
             if (rule && rule->generator) continue;
             for (const QString& out : build.outputs) {
-                if (QFile::remove(out)) {
-                    ++removed;
-                }
+                if (QFile::remove(out)) ++removed;
             }
         }
         LOG_INFO(QString("Cleaned %1 files").arg(removed));

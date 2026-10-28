@@ -1,5 +1,6 @@
 #include "core/state.h"
 #include "util/logging.h"
+#include <utility>
 
 namespace pmake::core {
 
@@ -29,6 +30,52 @@ State::~State() {
     for (auto& func : functions_) {
         delete func.body;
     }
+    functions_.clear();
+}
+
+// ------------------------------------------------------------------
+// Move-constructor
+// ------------------------------------------------------------------
+// Custom destructor блокирует неявный move → std::move(state_) в parse()
+// скомпилировался бы как COPY. Copy владеет одним AstNode* дважды →
+// double-free. Явный move + очистка other.functions_ решает.
+State::State(State&& other) noexcept
+    : global_scope_(std::move(other.global_scope_))
+    , rules_(std::move(other.rules_))
+    , builds_(std::move(other.builds_))
+    , pools_(std::move(other.pools_))
+    , defaultTargets_(std::move(other.defaultTargets_))
+    , includedFiles_(std::move(other.includedFiles_))
+    , fileStates_(std::move(other.fileStates_))
+    , configs_(std::move(other.configs_))
+    , platforms_(std::move(other.platforms_))
+    , functions_(std::move(other.functions_))
+    , varRegex_(std::move(other.varRegex_)) {
+    // Не даём ~other удалить AstNode*, которые теперь принадлежат нам
+    other.functions_.clear();
+}
+
+State& State::operator=(State&& other) noexcept {
+    if (this == &other) return *this;
+
+    // Освободить своё (иначе утечка AstNode*)
+    for (auto& func : functions_) delete func.body;
+    functions_.clear();
+
+    global_scope_   = std::move(other.global_scope_);
+    rules_          = std::move(other.rules_);
+    builds_         = std::move(other.builds_);
+    pools_          = std::move(other.pools_);
+    defaultTargets_ = std::move(other.defaultTargets_);
+    includedFiles_  = std::move(other.includedFiles_);
+    fileStates_     = std::move(other.fileStates_);
+    configs_        = std::move(other.configs_);
+    platforms_      = std::move(other.platforms_);
+    functions_      = std::move(other.functions_);
+    varRegex_       = std::move(other.varRegex_);
+
+    other.functions_.clear();
+    return *this;
 }
 
 // --- Глобальные переменные ---
@@ -148,8 +195,13 @@ const QHash<QString, PlatformBlock>& State::platforms() const {
     return platforms_;
 }
 
-// --- Пользовательские функции (только управление) ---
+// --- Пользовательские функции ---
 void State::addFunction(const FunctionDef& func) {
+    // Если такое имя уже есть — освобождаем старый body (не течёт)
+    auto it = functions_.find(func.name);
+    if (it != functions_.end() && it->body != func.body) {
+        delete it->body;
+    }
     functions_[func.name] = func;
 }
 

@@ -14,7 +14,6 @@ Cache::Cache() = default;
 
 void Cache::store(const State& state, const QString& /*mainFile*/) {
     data_.version = 5;
-    // mainFile и его mtime не сохраняются
 
     data_.globalVars = state.globals();
     data_.rules = state.rules().values();
@@ -26,17 +25,13 @@ void Cache::store(const State& state, const QString& /*mainFile*/) {
     data_.buildLocalVars.clear();
     for (const Build& build : state.builds()) {
         QHash<QString, QString> locals;
-        if (build.scope) {
-            locals = build.scope->locals();
-        }
+        if (build.scope) locals = build.scope->locals();
         data_.buildLocalVars.append(locals);
     }
 
-    // Сохраняем только состояния файлов (листовые узлы)
     data_.fileStates = state.fileStates();
 
-    // Сохраняем DepsLog
-    data_.depsLog = deps::DepsLog::instance();
+    // DepsLog не копируется — при serialize() берём из singleton
 }
 
 bool Cache::save(const QString& path) const {
@@ -47,6 +42,7 @@ bool Cache::save(const QString& path) const {
         return false;
     }
     QDataStream out(&file);
+    out.setVersion(QDataStream::Qt_6_0);
     serialize(out);
     return true;
 }
@@ -94,14 +90,14 @@ void Cache::serialize(QDataStream& out) const {
     // --- included files list ---
     out << data_.includedFilesList;
 
-    // --- file states (только листья) ---
+    // --- file states ---
     out << quint32(data_.fileStates.size());
     for (auto it = data_.fileStates.begin(); it != data_.fileStates.end(); ++it) {
         out << it.key() << it.value().mtime << it.value().size << it.value().hash;
     }
 
-    // --- DepsLog ---
-    const auto& entries = data_.depsLog.entries();
+    // --- DepsLog --- (из singleton)
+    const auto& entries = deps::DepsLog::instance().entries();
     out << quint32(entries.size());
     for (auto it = entries.begin(); it != entries.end(); ++it) {
         const deps::DepsEntry& entry = it.value();
@@ -118,6 +114,7 @@ bool Cache::load(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return false;
     QDataStream in(&file);
+    in.setVersion(QDataStream::Qt_6_0);
     quint32 magic;
     in >> magic;
     if (magic != 0x504D4B45) return false;
@@ -205,7 +202,7 @@ void Cache::deserialize(QDataStream& in) {
         data_.fileStates[path] = fs;
     }
 
-    // DepsLog
+    // DepsLog — из singleton
     quint32 depsCount;
     in >> depsCount;
     deps::DepsLog& depsLog = deps::DepsLog::instance();
@@ -230,7 +227,6 @@ void Cache::deserialize(QDataStream& in) {
 }
 
 bool Cache::isValid(const QString& /*mainFile*/) const {
-    // Кэш всегда считается валидным, если он загружен (не проверяем mainFile)
     return loaded_;
 }
 
@@ -267,7 +263,6 @@ std::unique_ptr<State> Cache::restore() const {
         state->setFileState(it.key(), it.value());
     }
 
-    // DepsLog уже восстановлен в deserialize
     return state;
 }
 

@@ -51,32 +51,29 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::CONFIG: evaluateConfig(node); break;
                 case AstNode::PLATFORM: evaluatePlatform(node); break;
 
-                // --- Узлы, которые сами обрабатывают своих детей ---
                 case AstNode::IF:
                     evaluateIf(node);
-                    frame.index = node->children.size(); // пропускаем обход детей
+                    frame.index = node->children.size();
                     break;
                 case AstNode::FOREACH:
                     evaluateForeach(node);
-                    frame.index = node->children.size(); // пропускаем обход детей
+                    frame.index = node->children.size();
                     break;
                 case AstNode::SWITCH:
                     evaluateSwitch(node);
-                    frame.index = node->children.size(); // пропускаем обход детей
+                    frame.index = node->children.size();
                     break;
                 case AstNode::WHILE:
                     evaluateWhile(node);
-                    frame.index = node->children.size(); // пропускаем обход детей
+                    frame.index = node->children.size();
                     break;
                 case AstNode::NAMESPACE:
                     evaluateNamespace(node);
-                    frame.index = node->children.size(); // пропускаем обход детей
+                    frame.index = node->children.size();
                     break;
                 case AstNode::FUNCTION_DEF:
-                    // Если у вас есть обработка FUNCTION_DEF, то тоже пропускаем детей
-                    // (тело выполняется только при вызове, а не при определении)
-                    // evaluateFunction(node);
-                    // frame.index = node->children.size();
+                    // тело выполняется при вызове, не при определении
+                    frame.index = node->children.size();
                     break;
 
                 case AstNode::ALIAS: evaluateAlias(node); break;
@@ -88,13 +85,9 @@ void ParserImpl::evaluateAst(AstNode* root) {
             }
         }
 
-        // Если узел имеет дочерние элементы и мы не пропустили их (frame.index < size),
-        // то обрабатываем следующий дочерний узел
         if (frame.index < node->children.size()) {
             AstNode* child = node->children[frame.index++];
-            if (child) {
-                stack.push({child, 0});
-            }
+            if (child) stack.push({child, 0});
         } else {
             stack.pop();
         }
@@ -102,6 +95,7 @@ void ParserImpl::evaluateAst(AstNode* root) {
 }
 
 void ParserImpl::evaluateAssignment(AstNode* assign) {
+    if (assign->children.isEmpty()) return;
     QString newPart = evaluateExpression(assign->children[0]).toString();
     if (assign->isAppend) {
         QString current;
@@ -165,7 +159,6 @@ void ParserImpl::evaluateBuild(AstNode* build) {
     }
     if (build->children.size() >= 2) {
         AstNode* inNode = build->children[1];
-        // Разбираем входы – если это CONCAT, обходим части, иначе разбиваем строку по пробелам
         if (inNode->type == AstNode::CONCAT) {
             for (auto part : inNode->children) {
                 QString partStr = evaluateExpression(part).toString();
@@ -213,20 +206,26 @@ void ParserImpl::evaluatePlatform(AstNode* platform) {
 }
 
 void ParserImpl::evaluateIf(AstNode* ifNode) {
+    if (ifNode->children.isEmpty()) return;
     bool condition = evaluateExpression(ifNode->children[0]).toBool();
     if (condition) {
-        evaluateAst(ifNode->children[1]);
+        if (ifNode->children.size() >= 2) {
+            evaluateAst(ifNode->children[1]);
+        }
     } else {
         for (int i = 2; i < ifNode->children.size(); ++i) {
             auto child = ifNode->children[i];
             if (child->type == AstNode::ELSEIF) {
+                if (child->children.size() < 2) continue;
                 bool elseIfCond = evaluateExpression(child->children[0]).toBool();
                 if (elseIfCond) {
                     evaluateAst(child->children[1]);
                     break;
                 }
             } else if (child->type == AstNode::ELSE) {
-                evaluateAst(child->children[0]);
+                if (!child->children.isEmpty()) {
+                    evaluateAst(child->children[0]);
+                }
                 break;
             }
         }
@@ -234,6 +233,7 @@ void ParserImpl::evaluateIf(AstNode* ifNode) {
 }
 
 void ParserImpl::evaluateForeach(AstNode* foreachNode) {
+    if (foreachNode->children.isEmpty()) return;
     QVariant listVal = evaluateExpression(foreachNode->children[0]);
     QVariantList list;
     if (listVal.metaType().id() == QMetaType::QVariantList) {
@@ -254,7 +254,9 @@ void ParserImpl::evaluateForeach(AstNode* foreachNode) {
         } else {
             state_.setGlobal(foreachNode->name, item.toString());
         }
-        evaluateAst(foreachNode->children[1]);
+        if (foreachNode->children.size() >= 2) {
+            evaluateAst(foreachNode->children[1]);
+        }
     }
 }
 
@@ -279,27 +281,38 @@ void ParserImpl::evaluateAlias(AstNode* alias) {
 }
 
 void ParserImpl::evaluateInclude(AstNode* include) { Q_UNUSED(include); }
+
 void ParserImpl::evaluateSwitch(AstNode* switchNode) {
+    if (switchNode->children.size() < 2) return;
     QVariant value = evaluateExpression(switchNode->children[0]);
-    auto casesBlock = switchNode->children[1];
+    AstNode* casesBlock = switchNode->children[1];
+    if (!casesBlock) return;
+
     bool matched = false;
-    for (auto child : casesBlock->children) {
+    for (AstNode* child : casesBlock->children) {
         if (child->type == AstNode::CASE) {
+            if (child->children.isEmpty()) continue;
             QVariant caseValue = evaluateExpression(child->children[0]);
-            if (caseValue == value) {
-                evaluateAst(child->children[1]);
+            if (caseValue.toString() == value.toString()) {
+                if (child->children.size() >= 2) {
+                    evaluateAst(child->children[1]);
+                }
                 matched = true;
                 break;
             }
         } else if (child->type == AstNode::DEFAULT) {
             if (!matched) {
-                evaluateAst(child->children[0]);
+                if (!child->children.isEmpty()) {
+                    evaluateAst(child->children[0]);
+                }
                 break;
             }
         }
     }
 }
+
 void ParserImpl::evaluateWhile(AstNode* whileNode) {
+    if (whileNode->children.size() < 2) return;
     AstNode* condition = whileNode->children[0];
     AstNode* body = whileNode->children[1];
     int iteration = 0;
@@ -311,17 +324,23 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
         evaluateAst(body);
     }
 }
+
 void ParserImpl::evaluateImport(AstNode* importNode) { Q_UNUSED(importNode); }
+
 void ParserImpl::evaluateNamespace(AstNode* namespaceNode) {
+    if (namespaceNode->children.isEmpty()) return;
     core::Scope scope;
     scopeStack_.push(&scope);
     evaluateAst(namespaceNode->children[0]);
     scopeStack_.pop();
 }
+
 void ParserImpl::evaluateConst(AstNode* constNode) {
+    if (constNode->children.isEmpty()) return;
     QString value = evaluateExpression(constNode->children[0]).toString();
     state_.setGlobal(constNode->name, value);
 }
+
 void ParserImpl::evaluateEnum(AstNode* enumNode) {
     QStringList values;
     for (auto child : enumNode->children) {

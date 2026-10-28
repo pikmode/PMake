@@ -6,13 +6,12 @@
 #include <QSharedPointer>
 #include <optional>
 #include <QRegularExpression>
-#include "core/ast.h"   // определения AstNode
+#include "core/ast.h"
 
 namespace pmake::core {
 
 class Scope;
 
-// Структуры (оставляем как есть)
 struct Rule {
     QString name;
     QString command;
@@ -56,7 +55,7 @@ struct PlatformBlock {
     QHash<QString, QString> vars;
 };
 
-// Определение пользовательской функции (хранит AST тело)
+// Определение пользовательской функции (владеет AST-телом)
 struct FunctionDef {
     QString name;
     QStringList params;
@@ -76,11 +75,23 @@ private:
     QHash<QString, QString> vars_;
 };
 
-// State – основное хранилище сборки
+// State – основное хранилище сборки.
+//
+// ВАЖНО: copy запрещён, move разрешён явно.
+// Причина: custom ~State удаляет functions_[].body (сырые AstNode*).
+// Без явного move-ctor std::move(state_) в ParserImpl::parse() вызовет
+// COPY (неявный move заблокирован user-defined destructor'ом), и два State
+// начнут владеть одним AstNode* -> double-free при разрушении
+// (стек-буфер overrun 0xC0000409 при include файла с function()).
 class State {
 public:
     State();
-    ~State(); // удаляет AST узлы функций
+    ~State();
+
+    State(const State&) = delete;
+    State& operator=(const State&) = delete;
+    State(State&& other) noexcept;
+    State& operator=(State&& other) noexcept;
 
     // --- Глобальные переменные ---
     void setGlobal(const QString& name, const QString& value);
@@ -124,17 +135,17 @@ public:
     const PlatformBlock* getPlatform(const QString& name) const;
     const QHash<QString, PlatformBlock>& platforms() const;
 
-    // --- Пользовательские функции (НОВОЕ) ---
+    // --- Пользовательские функции ---
     void addFunction(const FunctionDef& func);
     const FunctionDef* getFunction(const QString& name) const;
     const QHash<QString, FunctionDef>& functions() const;
 
-    // Вызов пользовательской функции (создаёт Scope, выполняет тело)
+    // Вызов пользовательской функции
     QVariant callUserFunction(const QString& name,
                               const QVector<QVariant>& args,
                               Scope* callerScope = nullptr);
 
-    // Выполнение AST узла в заданном контексте (используется при вызове функции)
+    // Выполнение AST-узла в заданном контексте
     QVariant executeAstNode(AstNode* node, Scope* localScope);
 
     // --- Подстановка переменных ---
@@ -153,7 +164,7 @@ private:
     QHash<QString, FileState> fileStates_;
     QHash<QString, ConfigBlock> configs_;
     QHash<QString, PlatformBlock> platforms_;
-    QHash<QString, FunctionDef> functions_;   // хранение определений функций
+    QHash<QString, FunctionDef> functions_;
     QRegularExpression varRegex_;
 };
 

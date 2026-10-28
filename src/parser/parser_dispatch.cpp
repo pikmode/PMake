@@ -192,6 +192,19 @@ void ParserImpl::parseStatement(int depth) {
         return;
     }
 
+    // ---- case / default (внутри switch) ----
+    if (word == "case") {
+        advance();
+        parseCase(parent);
+        return;
+    }
+
+    if (word == "default") {
+        advance();
+        parseDefault(parent);
+        return;
+    }
+
     parseAssignment(parent);
 }
 

@@ -13,6 +13,9 @@ namespace pmake::core {
  *
  * Хранит только mtime для листовых узлов и не инвалидируется при изменении build.pmake.
  * Версия 5.
+ *
+ * DepsLog НЕ хранится по значению — используется singleton `DepsLog::instance()`
+ * (он thread-safe и живёт всё время работы программы).
  */
 class Cache {
 public:
@@ -21,30 +24,31 @@ public:
     bool save(const QString& path) const;
     bool load(const QString& path);
 
-    // Всегда возвращает true, если кэш загружен (не проверяет mainFile)
     bool isValid(const QString& mainFile = QString()) const;
 
-    // mainFile игнорируется
     void store(const State& state, const QString& mainFile = QString());
     std::unique_ptr<State> restore() const;
 
     const QHash<QString, FileState>& fileStates() const { return data_.fileStates; }
-    const deps::DepsLog& depsLog() const { return data_.depsLog; }
-    void setDepsLog(const deps::DepsLog& log) { data_.depsLog = log; }
+
+    // DepsLog — доступ через singleton
+    const deps::DepsLog& depsLog() const { return deps::DepsLog::instance(); }
+    void setDepsLog(const deps::DepsLog& /*log*/) {
+        // no-op: DepsLog — singleton, копирование не имеет смысла
+    }
 
 private:
     struct Data {
-        quint32 version = 5;          // новая версия
-        // mainFile и includedFiles удалены
+        quint32 version = 5;
         QHash<QString, QString> globalVars;
         QVector<Rule> rules;
         QVector<Build> builds;
         QVector<QHash<QString, QString>> buildLocalVars;
         QHash<QString, Pool> pools;
         QVector<QString> defaultTargets;
-        QVector<QString> includedFilesList;   // сохраняется, но не используется для валидации
-        QHash<QString, FileState> fileStates; // только для листовых узлов
-        deps::DepsLog depsLog;
+        QVector<QString> includedFilesList;
+        QHash<QString, FileState> fileStates;
+        // deps::DepsLog depsLog;  <-- УДАЛЕНО (используем singleton)
     };
 
     Data data_;

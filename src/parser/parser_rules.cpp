@@ -17,8 +17,9 @@ void ParserImpl::parseRule(AstNode* parent) {
         if (cur_.type == TOK_NEWLINE) advance();
         return;
     }
-    if (checkDuplicate(name, definedRules_, "Rule")) return;
-    addDefinition(name, definedRules_);
+    // НЕ проверяем duplicate при парсинге: внутри switch может быть несколько
+    // rule с одинаковым именем (только один из case выполнится на evaluate).
+    // Валидация — на этапе evaluateRule через state_.addRule (перезапись).
 
     auto node = makeStringLiteral("");
     node->type = AstNode::RULE;
@@ -33,9 +34,6 @@ void ParserImpl::parseRule(AstNode* parent) {
     delete block;
 
     skipNewlinesAndIndents();
-
-    // УДАЛЁН ВЫЗОВ state_.addRule() – теперь добавление происходит только в evaluateRule
-    // core::Rule coreRule; ... (этот код был удалён полностью)
 
     parent->children.append(node);
     skipNewlinesAndIndents();

@@ -49,7 +49,6 @@ void ParserImpl::advance() {
         cur_ = lexer_.nextToken();
         currentColumn_ = cur_.column;
     } catch (const std::exception& e) {
-        // При ошибке лексера генерируем EOF и помечаем состояние ошибки
         cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
         currentColumn_ = cur_.column;
         hasError_ = true;
@@ -123,9 +122,7 @@ bool ParserImpl::skipToBlockStart(int baseIndent) {
             continue;
         }
         if (cur_.type == TOK_INDENT) {
-            if (cur_.indent > baseIndent) {
-                return true;
-            }
+            if (cur_.indent > baseIndent) return true;
             return false;
         }
         if (cur_.type == TOK_LBRACE) {
@@ -157,8 +154,6 @@ AstNode* ParserImpl::makeStringLiteral(const QString& value) {
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
         error("Too many AST nodes created", false);
     }
-    LOG_VERBOSE(QString("makeStringLiteral: value='%1', opCounter=%2")
-                .arg(value).arg(ParserImpl::operationCounter));
     auto node = new AstNode();
     node->type = AstNode::STRING_LITERAL;
     node->value = value;
@@ -282,10 +277,13 @@ void ParserImpl::addDefinition(const QString& name, QSet<QString>& set) {
     set.insert(name);
 }
 
+// ВАЖНО: recover=false — прерывает рекурсию include через throw.
+// С recover=true ошибка только логировалась, и парсер продолжал
+// бесконечно вкладывать include (stack overflow 0xC00000FD).
 void ParserImpl::checkIncludeCycle(const QString& path) {
     QString canonical = normalizePath(path);
     if (processingStack_.contains(canonical)) {
-        error(QString("Include/import cycle detected: %1").arg(path), true);
+        error(QString("Include/import cycle detected: %1").arg(path), false);
     }
 }
 
@@ -326,7 +324,7 @@ QString ParserImpl::normalizePath(const QString& path) {
     return QFileInfo(path).absoluteFilePath();
 }
 
-// ---- Вспомогательная функция для подстановки переменных на этапе парсинга ----
+// ---- Вспомогательная функция ----
 QString ParserImpl::astNodeToStringWithState(AstNode* node, const core::State* state) {
     if (!node) return QString();
     switch (node->type) {

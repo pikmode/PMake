@@ -1,8 +1,34 @@
 #include "parser/parser_impl.h"
 #include <QSet>
 #include <QFileInfo>
+#include <QDir>
 
 namespace pmake::parser {
+
+// Глубокое клонирование AST — независимая копия для FunctionDef::body
+static AstNode* cloneAst(AstNode* n) {
+    if (!n) return nullptr;
+    auto c = new AstNode();
+    c->type = n->type;
+    c->name = n->name;
+    c->value = n->value;
+    c->vars = n->vars;
+    c->loopVar = n->loopVar;
+    c->loopList = n->loopList;
+    c->isExecuted = n->isExecuted;
+    c->line = n->line;
+    c->column = n->column;
+    c->isAppend = n->isAppend;
+    c->op = n->op;
+    c->params = n->params;
+    c->outputCount = n->outputCount;
+    for (AstNode* ch : n->children) c->children.append(cloneAst(ch));
+    for (AstNode* a : n->attributes) c->attributes.append(cloneAst(a));
+    c->left = cloneAst(n->left);
+    c->right = cloneAst(n->right);
+    c->body = cloneAst(n->body);
+    return c;
+}
 
 // ---- parseFunction ----
 void ParserImpl::parseFunction(AstNode* parent) {
@@ -47,7 +73,7 @@ void ParserImpl::parseFunction(AstNode* parent) {
     core::FunctionDef func;
     func.name = node->name;
     func.params = params;
-    func.body = bodyBlock;
+    func.body = cloneAst(bodyBlock);   // State получает клон — без double-free
     state_.addFunction(func);
 
     node->params = params;
@@ -69,41 +95,53 @@ void ParserImpl::parseInclude(AstNode* parent) {
     node->children.append(pathNode);
     if (cur_.type == TOK_NEWLINE) advance();
 
-    QString path = astNodeToStringWithState(pathNode, &state_);
-    if (path.isEmpty()) {
+    QString rawPath = astNodeToStringWithState(pathNode, &state_);
+    if (rawPath.isEmpty()) {
         error("Include path is empty", true);
         --ParserImpl::includeDepth;
         return;
     }
 
-    QString canonical = normalizePath(path);
-    checkIncludeCycle(canonical);
+    QFileInfo curInfo(filename_);
+    QString absPath = QDir::cleanPath(curInfo.absolutePath() + '/' + rawPath);
+
+    QString canonical = normalizePath(absPath);
+    checkIncludeCycle(canonical);   // ← теперь throw при цикле
     processingStack_.insert(canonical);
 
     QByteArray data;
-    if (!util::readFile(path, data)) {
-        error(QString("Cannot read include file: %1").arg(path), true);
+    if (!util::readFile(canonical, data)) {
+        error(QString("Cannot read include file: %1 (resolved: %2)")
+              .arg(rawPath).arg(canonical), true);
         processingStack_.remove(canonical);
         --ParserImpl::includeDepth;
         return;
     }
 
-    ParserImpl subParser(data, path, config_, platform_);
+    ParserImpl subParser(data, canonical, config_, platform_);
+    subParser.processingStack_ = processingStack_;
     auto subState = subParser.parse();
     if (subState) {
         for (const auto& rule : subState->rules()) state_.addRule(rule);
         for (const auto& build : subState->builds()) state_.addBuild(build);
         for (const auto& cfg : subState->configs()) state_.addConfig(cfg);
         for (const auto& plat : subState->platforms()) state_.addPlatform(plat);
-        for (const auto& func : subState->functions()) state_.addFunction(func);
+
+        for (const auto& func : subState->functions()) {
+            core::FunctionDef copy = func;
+            copy.body = cloneAst(func.body);
+            state_.addFunction(copy);
+        }
+
         for (const auto& key : subState->globals().keys()) {
             auto val = subState->getGlobal(key);
             if (val.has_value()) state_.setGlobal(key, *val);
         }
         state_.defaultTargets().append(subState->defaultTargets());
-        state_.includedFiles().append(path);
+        state_.includedFiles().append(canonical);
     } else {
-        error(QString("Failed to parse include: %1").arg(path), true);
+        // recover=false — прерываем цепочку, чтобы ошибка не игнорировалась
+        error(QString("Failed to parse include: %1").arg(rawPath), false);
     }
 
     processingStack_.remove(canonical);
@@ -128,41 +166,52 @@ void ParserImpl::parseImport(AstNode* parent) {
     node->children.append(pathNode);
     if (cur_.type == TOK_NEWLINE) advance();
 
-    QString path = astNodeToStringWithState(pathNode, &state_);
-    if (path.isEmpty()) {
+    QString rawPath = astNodeToStringWithState(pathNode, &state_);
+    if (rawPath.isEmpty()) {
         error("Import path is empty", true);
         --ParserImpl::includeDepth;
         return;
     }
 
-    QString canonical = normalizePath(path);
+    QFileInfo curInfo(filename_);
+    QString absPath = QDir::cleanPath(curInfo.absolutePath() + '/' + rawPath);
+
+    QString canonical = normalizePath(absPath);
     checkIncludeCycle(canonical);
     processingStack_.insert(canonical);
 
     QByteArray data;
-    if (!util::readFile(path, data)) {
-        error(QString("Cannot read import file: %1").arg(path), true);
+    if (!util::readFile(canonical, data)) {
+        error(QString("Cannot read import file: %1 (resolved: %2)")
+              .arg(rawPath).arg(canonical), true);
         processingStack_.remove(canonical);
         --ParserImpl::includeDepth;
         return;
     }
 
-    ParserImpl subParser(data, path, config_, platform_);
+    ParserImpl subParser(data, canonical, config_, platform_);
+    subParser.processingStack_ = processingStack_;
     auto subState = subParser.parse();
     if (subState) {
         for (const auto& rule : subState->rules()) state_.addRule(rule);
         for (const auto& build : subState->builds()) state_.addBuild(build);
         for (const auto& cfg : subState->configs()) state_.addConfig(cfg);
         for (const auto& plat : subState->platforms()) state_.addPlatform(plat);
-        for (const auto& func : subState->functions()) state_.addFunction(func);
+
+        for (const auto& func : subState->functions()) {
+            core::FunctionDef copy = func;
+            copy.body = cloneAst(func.body);
+            state_.addFunction(copy);
+        }
+
         for (const auto& key : subState->globals().keys()) {
             auto val = subState->getGlobal(key);
             if (val.has_value()) state_.setGlobal(key, *val);
         }
         state_.defaultTargets().append(subState->defaultTargets());
-        state_.includedFiles().append(path);
+        state_.includedFiles().append(canonical);
     } else {
-        error(QString("Failed to parse import: %1").arg(path), true);
+        error(QString("Failed to parse import: %1").arg(rawPath), false);
     }
 
     processingStack_.remove(canonical);

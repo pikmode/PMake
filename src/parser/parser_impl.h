@@ -27,12 +27,10 @@ public:
 
     std::unique_ptr<core::State> parse();
 
-    // Глобальные счётчики
     static int operationCounter;
     static int includeDepth;
     static int functionCallDepth;
 
-    // Константы ограничений (увеличены для стабильности)
     static constexpr int MAX_RULES = 10000;
     static constexpr int MAX_BUILDS = 10000;
     static constexpr int MAX_AST_NODES = 50000;
@@ -40,7 +38,7 @@ public:
     static constexpr int MAX_INCLUDE_DEPTH = 50;
     static constexpr int MAX_EXPR_DEPTH = 100;
     static constexpr int MAX_STATEMENT_DEPTH = 100;
-    static constexpr int MAX_OPERATIONS = 1000000; // увеличено до 1 млн
+    static constexpr int MAX_OPERATIONS = 1000000;
 
 private:
     // ---- Данные ----
@@ -113,6 +111,8 @@ private:
     void parseNamespace(AstNode* parent);
     void parseConst(AstNode* parent);
     void parseEnum(AstNode* parent);
+    void parseCase(AstNode* parent);       // НОВОЕ
+    void parseDefault(AstNode* parent);    // НОВОЕ
     AstNode* parseAttributeBlock();
     void parseBlockDirect(AstNode* block);
 
@@ -135,7 +135,7 @@ private:
     void checkFunctionArgs(const QString& name, const QVector<QVariant>& args,
                            int minCount, int maxCount = -1);
 
-    // ---- Выполнение AST (итеративное) ----
+    // ---- Выполнение AST ----
     void evaluateAst(AstNode* root);
     void evaluateAssignment(AstNode* assign);
     void evaluateRule(AstNode* rule);
@@ -159,7 +159,6 @@ private:
 
     QString normalizePath(const QString& path);
 
-    // ---- Вспомогательная функция для подстановки переменных на этапе парсинга ----
     static QString astNodeToStringWithState(AstNode* node, const core::State* state);
 };
 
