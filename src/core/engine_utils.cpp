@@ -30,14 +30,21 @@ QVector<Node*> Engine::collectDirtyNodes(const QVector<Node*>& order) {
         }
     }
 
-    QSet<Node*> expanded;
+    // BFS: распространяем dirty на ВСЕХ downstream-потребителей,
+    // а не только на 1 уровень. Иначе touch a.in -> a.out -> b.out,
+    // а c.out (2-й уровень) не пересобирается.
+    QSet<Node*> expanded = dirtySet;
+    QVector<Node*> queue;
     for (Node* n : dirtySet) {
-        if (reachable.contains(n)) {
-            expanded.insert(n);
-            for (Node* consumer : n->reverseDeps()) {
-                if (reachable.contains(consumer) && !dirtySet.contains(consumer)) {
-                    expanded.insert(consumer);
-                }
+        if (reachable.contains(n)) queue.append(n);
+    }
+
+    while (!queue.isEmpty()) {
+        Node* n = queue.takeLast();
+        for (Node* consumer : n->reverseDeps()) {
+            if (reachable.contains(consumer) && !expanded.contains(consumer)) {
+                expanded.insert(consumer);
+                queue.append(consumer);
             }
         }
     }

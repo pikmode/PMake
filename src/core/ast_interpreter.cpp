@@ -14,23 +14,43 @@ QVariant State::callUserFunction(const QString& name,
         return QVariant();
     }
 
-    Scope localScope(callerScope);
+    // Выполняем тело в scope вызывающего (или в global, если top-level).
+    // Параметры — временные: сохраняем их старые значения, ставим новые,
+    // после вызова восстанавливаем (или удаляем, если их не было).
+    // Так присваивания внутри функции (payload = ...) видны снаружи.
+    Scope* execScope = callerScope ? callerScope : &global_scope_;
+
+    QVector<QPair<QString, std::optional<QString>>> savedParams;
+    savedParams.reserve(func->params.size());
+
     for (int i = 0; i < func->params.size(); ++i) {
-        QString paramName = func->params[i];
+        const QString& paramName = func->params[i];
         QString paramValue = (i < args.size()) ? args[i].toString() : QString();
-        localScope.set(paramName, paramValue);
+
+        savedParams.append(qMakePair(paramName, execScope->get(paramName)));
+        execScope->set(paramName, paramValue);
     }
 
+    QVariant result;
     if (func->body) {
         for (AstNode* child : func->body->children) {
-            QVariant result = executeAstNode(child, &localScope);
+            result = executeAstNode(child, execScope);
             if (child->type == AstNode::RETURN) {
-                return result;
+                break;
             }
         }
     }
 
-    return QVariant();
+    // Восстанавливаем параметры (payload остаётся — это обычная переменная)
+    for (const auto& p : savedParams) {
+        if (p.second.has_value()) {
+            execScope->set(p.first, *p.second);
+        } else {
+            execScope->remove(p.first);
+        }
+    }
+
+    return result;
 }
 
 QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
@@ -38,11 +58,15 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
 
     switch (node->type) {
         case AstNode::STRING_LITERAL:
-            return node->value;
+            // FIX: раскрываем ${var} / $var / {var} — иначе "${msg}"
+            //       вернётся как литерал (см. function_call: payload = "${msg}")
+            return expandVars(node->value.toString(), localScope);
+
         case AstNode::NUMBER_LITERAL:
             return node->value;
         case AstNode::BOOL_LITERAL:
             return node->value;
+
         case AstNode::VARIABLE_REF: {
             auto opt = localScope->get(node->name);
             if (opt.has_value()) return QVariant(*opt);
@@ -50,6 +74,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             if (optGlobal.has_value()) return QVariant(*optGlobal);
             return QVariant();
         }
+
         case AstNode::CONCAT: {
             QString result;
             for (auto child : node->children) {
@@ -57,6 +82,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             }
             return QVariant(result);
         }
+
         case AstNode::BINARY_OP: {
             QVariant left = executeAstNode(node->left, localScope);
             QVariant right = executeAstNode(node->right, localScope);
@@ -95,6 +121,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             }
             return QVariant();
         }
+
         case AstNode::UNARY_OP: {
             QVariant operand = executeAstNode(node->left, localScope);
             if (node->op == pmake::parser::TOK_NOT)
@@ -107,6 +134,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             }
             return operand;
         }
+
         case AstNode::FUNCTION_CALL: {
             QVector<QVariant> args;
             for (auto arg : node->children) {
@@ -118,17 +146,20 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
                 return Builtins::call(node->name, args, this, localScope);
             }
         }
+
         case AstNode::ASSIGNMENT: {
             QString value = executeAstNode(node->children[0], localScope).toString();
             localScope->set(node->name, value);
             return QVariant();
         }
+
         case AstNode::RETURN: {
             if (!node->children.isEmpty()) {
                 return executeAstNode(node->children[0], localScope);
             }
             return QVariant();
         }
+
         case AstNode::BLOCK: {
             for (auto child : node->children) {
                 QVariant result = executeAstNode(child, localScope);
@@ -138,6 +169,7 @@ QVariant State::executeAstNode(AstNode* node, Scope* localScope) {
             }
             return QVariant();
         }
+
         default:
             return QVariant();
     }

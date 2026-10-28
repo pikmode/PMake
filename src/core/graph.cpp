@@ -8,22 +8,30 @@ namespace pmake::core {
 Graph::Graph(const State& state, bool dryRun)
     : state_(state), dryRun_(dryRun) {}
 
-void Graph::build() {
+bool Graph::build() {
     nodes_.clear();
     QSet<QString> definedOutputs;
+    bool ok = true;
+
     for (const auto& build : state_.builds()) {
         const Rule* rule = state_.getRule(build.rule_name);
         if (!rule) {
-            LOG_WARN(QString("Rule '%1' not found for build").arg(build.rule_name));
+            LOG_ERROR(QString("Unknown rule '%1' for output '%2'")
+                      .arg(build.rule_name)
+                      .arg(build.outputs.isEmpty() ? QString("<none>")
+                                                   : build.outputs.first()));
+            ok = false;
             continue;
         }
         for (const QString& out : build.outputs) {
             if (out.isEmpty()) {
-                LOG_WARN("Build output name is empty, skipping");
+                LOG_ERROR("Build output name is empty");
+                ok = false;
                 continue;
             }
             if (definedOutputs.contains(out)) {
-                LOG_WARN(QString("Duplicate output '%1' ignored").arg(out));
+                LOG_ERROR(QString("Duplicate output '%1'").arg(out));
+                ok = false;
                 continue;
             }
             definedOutputs.insert(out);
@@ -31,8 +39,15 @@ void Graph::build() {
             nodes_[out] = node;
         }
     }
+
     buildEdges();
-    if (hasCycle()) throw std::runtime_error("Cycle detected in graph");
+
+    if (hasCycle()) {
+        LOG_ERROR("Cycle detected in dependency graph");
+        ok = false;
+    }
+
+    return ok;
 }
 
 void Graph::buildEdges() {
@@ -144,7 +159,8 @@ QVector<Node*> Graph::topologicalSort(const QString& target) {
         return {};
     }
     if (dfs(target, visited, recursion, order)) {
-        throw std::runtime_error("Cycle detected");
+        LOG_ERROR("Cycle detected during topological sort");
+        return {};
     }
     return order;
 }
@@ -181,7 +197,6 @@ void Graph::addDepsForOutput(const QString& output, const QVector<QString>& inpu
     Node* outNode = getOrCreateNode(output);
     if (!outNode) return;
 
-    // Проверяем уже существующие неявные зависимости
     const auto& existingImplicit = outNode->implicitDeps();
     QSet<QString> existingNames;
     for (Node* n : existingImplicit) {

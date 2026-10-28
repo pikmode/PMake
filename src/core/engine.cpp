@@ -1,5 +1,4 @@
 
-
 #include "core/engine.h"
 #include "core/node.h"
 #include "util/logging.h"
@@ -35,7 +34,9 @@ Engine::Engine(State& state, int maxJobs, bool dryRun, QObject* parent)
         poolCounters_[pool.name] = pc;
     }
 
-    graph_.build();
+    // NEW: build() возвращает bool — false при unknown rule / cycle / duplicate output.
+    // Ошибки уже залогированы внутри. Флаг проверяется в run() — не начинаем сборку.
+    graphBuildFailed_ = !graph_.build();
     graph_.addDepsFromLog(deps::DepsLog::instance());
 
     // Регистрация metatype для queued-сигнала Node*
@@ -61,6 +62,14 @@ Engine::~Engine() {
 // Публичный run() — синхронный, блокирует до buildFinished
 // ===========================================================================
 bool Engine::run(const QString& target) {
+    // NEW: если граф не построился (unknown rule / cycle) — не начинаем сборку,
+    // возвращаем false. main.cpp уже возвращает 1 при false.
+    if (graphBuildFailed_) {
+        emit buildError("Graph build failed — see errors above");
+        emit buildFinished(false, 0.0);
+        return false;
+    }
+
     QEventLoop loop;
     bool success = false;
     bool gotSignal = false;

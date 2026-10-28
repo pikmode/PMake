@@ -16,7 +16,7 @@ public:
     static constexpr int MAX_NODES = 100000;
 
     explicit Graph(const State& state, bool dryRun = false);
-    void build();
+    bool build();                                   // ← было void
     Node* getOrCreateNode(const QString& name);
     Node* node(const QString& name) const;
     const QHash<QString, QSharedPointer<Node>>& nodes() const { return nodes_; }

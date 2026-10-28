@@ -68,6 +68,8 @@ public:
     explicit Scope(Scope* parent = nullptr);
     void set(const QString& name, const QString& value);
     std::optional<QString> get(const QString& name) const;
+    void remove(const QString& name);            // NEW: удалить переменную
+    bool has(const QString& name) const;         // NEW: есть ли переменная
     const QHash<QString, QString>& locals() const { return vars_; }
 
 private:

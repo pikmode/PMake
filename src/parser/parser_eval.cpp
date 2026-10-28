@@ -51,6 +51,14 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::CONFIG: evaluateConfig(node); break;
                 case AstNode::PLATFORM: evaluatePlatform(node); break;
 
+                // NEW: top-level function call — say(...), add_flags(...)
+                // evaluateExpression уже обходит children (аргументы),
+                // поэтому выставляем frame.index = size, чтобы не обойти их повторно.
+                case AstNode::FUNCTION_CALL:
+                    evaluateExpression(node);
+                    frame.index = node->children.size();
+                    break;
+
                 case AstNode::IF:
                     evaluateIf(node);
                     frame.index = node->children.size();

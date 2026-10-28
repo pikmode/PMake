@@ -1,5 +1,3 @@
-
-
 #pragma once
 
 #include <QObject>
@@ -95,6 +93,7 @@ private:
     int completedTasks_ = 0;  // Done
     bool aborted_ = false;
     bool finished_ = false;
+    bool graphBuildFailed_ = false;   // ← NEW: граф не построился (unknown rule, cycle)
 
     void runInternal(const QString& target);
     void buildPlan(const QVector<Node*>& dirtyNodes);

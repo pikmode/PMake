@@ -209,6 +209,11 @@ void ParserImpl::parseStatement(int depth) {
 }
 
 // ---- parseAssignment ----
+// Обрабатывает ДВА случая:
+//   1. assignment:   x = 5      |  x += "flags"
+//   2. top-level call: say(...) |  add_flags("-Wall")
+// Различие: после идентификатора идёт '=' / '+=' (assignment)
+//           или '(' (вызов функции).
 void ParserImpl::parseAssignment(AstNode* parent) {
     if (cur_.type != TOK_IDENT) {
         error("Expected identifier in assignment", true);
@@ -216,7 +221,34 @@ void ParserImpl::parseAssignment(AstNode* parent) {
         return;
     }
 
-    QString name = parseIdent();
+    // parseAtom для IDENT:
+    //   - если после ident идёт '(' → вернёт FUNCTION_CALL (уже с аргументами)
+    //   - иначе → вернёт VARIABLE_REF(ident)
+    AstNode* left = parseAtom();
+    if (!left) {
+        // parseAtom уже залогировал ошибку
+        skipNewlinesAndIndents();
+        return;
+    }
+
+    // Top-level function call: say("hello") — это самостоятельный statement
+    if (left->type == AstNode::FUNCTION_CALL) {
+        parent->children.append(left);
+        skipNewlinesAndIndents();
+        return;
+    }
+
+    // Иначе должен быть VARIABLE_REF слева от '=' / '+='
+    if (left->type != AstNode::VARIABLE_REF) {
+        error("Expected identifier in assignment", true);
+        delete left;
+        while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
+        if (cur_.type == TOK_NEWLINE) advance();
+        return;
+    }
+
+    QString name = left->name;
+    delete left;
 
     bool isAppend = false;
     if (cur_.type == TOK_EQUALS) {

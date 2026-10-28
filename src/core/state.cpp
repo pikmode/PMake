@@ -20,6 +20,14 @@ std::optional<QString> Scope::get(const QString& name) const {
     return std::nullopt;
 }
 
+void Scope::remove(const QString& name) {
+    vars_.remove(name);
+}
+
+bool Scope::has(const QString& name) const {
+    return get(name).has_value();
+}
+
 // ==================================================================
 // State
 // ==================================================================
