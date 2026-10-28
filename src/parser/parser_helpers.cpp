@@ -35,12 +35,10 @@ ParserImpl::ParserImpl(const QByteArray& data, const QString& filename,
     operationCounter = 0;
     includeDepth = 0;
     functionCallDepth = 0;
-    LOG_VERBOSE("Parser initialized");
 }
 
 ParserImpl::~ParserImpl() {
     delete root_;
-    LOG_VERBOSE("Parser destroyed");
 }
 
 // ---- Вспомогательные методы ----

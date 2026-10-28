@@ -117,17 +117,11 @@ QHash<QString, QString> Node::getSpecialVars() const {
     QStringList quotedOutputs;
     for (const QString& out : build_->outputs) quotedOutputs.append(quote(out));
     specialVars["out"] = quotedOutputs.join(' ');
-    if (build_->outputs.isEmpty()) {
-        LOG_WARN(QString("Node '%1' has empty outputs!").arg(name_));
-    }
 
     QStringList quotedInputs;
     for (const QString& in : build_->inputs) quotedInputs.append(quote(in));
     specialVars["in"] = quotedInputs.join(' ');
     specialVars["in_newline"] = build_->inputs.join('\n');
-    if (build_->inputs.isEmpty()) {
-        LOG_WARN(QString("Node '%1' has empty inputs!").arg(name_));
-    }
 
     if (build_->scope) {
         for (const auto& key : build_->scope->locals().keys()) {

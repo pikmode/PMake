@@ -13,8 +13,6 @@
 
 namespace pmake::core {
 
-// ----- Вспомогательные статические функции -----
-
 static QString getWorkingDirectory(const Build* build, const State* state) {
     if (build && build->scope) {
         auto wd = build->scope->get("workdir");
@@ -38,24 +36,17 @@ static bool depsListsEqual(const QVector<QString>& a, const QVector<QString>& b)
     return setA == setB;
 }
 
-// ----- Node::build() -----
-
 int Node::build() {
     if (!build_ || !rule_) return 0;
     if (isPhony()) return 0;
 
-    // ---- Режим dry-run ----
+    // Dry-run: прогресс уже показан через Engine::taskStarted.
+    // Здесь только обновляем mtime, чтобы downstream корректно считал dirty.
     if (dryRun_) {
-        QHash<QString, QString> specialVars = getSpecialVars();
-        QString text = rule_->description.isEmpty() ? rule_->command : rule_->description;
-        if (state_) {
-            text = state_->expandVarsWithSpecial(text, build_->scope.data(), specialVars);
-        }
         refreshOutputMtime();
         return 0;
     }
 
-    // ---- Реальный режим ----
     {
         QMutexLocker locker(&buildMutex_);
         if (isBuilding_ || buildSuccess_) return 0;
@@ -112,6 +103,12 @@ int Node::build() {
     QString program = args.takeFirst();
     QString workDir = getWorkingDirectory(build_, state_);
 
+    // -v: показать реальную команду под [N/M]. Идёт в stderr, чтобы не
+    // засорять stdout (который может перенаправляться в CI-лог).
+    if (pmake::logging::isVerbose()) {
+        LOG_VERBOSE(QString("  %1").arg(command));
+    }
+
     executor::Command cmd;
     cmd.program = program;
     cmd.arguments = args;
@@ -155,9 +152,6 @@ int Node::build() {
                 auto existingInputs = deps::DepsLog::instance().inputsFor(out);
                 if (!depsListsEqual(existingInputs, inputs)) {
                     deps::DepsLog::instance().record(out, inputs);
-                    // ВАЖНО: graph_->addDepsForOutput() нельзя вызывать из воркера —
-                    // это race с main-thread на Node::implicit_deps_ и Graph::nodes_.
-                    // Теперь добавление делает Engine::handleNodeDone() в main-thread.
                 } else {
                     LOG_VERBOSE("Dependencies for " + out + " already up-to-date, skipping");
                 }
