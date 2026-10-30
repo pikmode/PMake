@@ -51,7 +51,12 @@ int main(int argc, char* argv[]) {
     QCommandLineParser parser;
     parser.setApplicationDescription("PMake modern build system");
     parser.addHelpOption();
-    parser.addVersionOption();
+
+    // НЕ используем parser.addVersionOption() — он резервирует -v под версию.
+    // Для build-системы -v = verbose (как у ninja, make, cmake), а версия = -V (как у gcc).
+    QCommandLineOption versionOption({"V", "version"},
+                                     "Display version information");
+    parser.addOption(versionOption);
 
     QCommandLineOption fileOption({"f", "file"}, "Use <file> as build file", "file");
     parser.addOption(fileOption);
@@ -68,10 +73,10 @@ int main(int argc, char* argv[]) {
     QCommandLineOption platformOption("platform", "Target platform (windows/linux/darwin)", "platform");
     parser.addOption(platformOption);
 
-    QCommandLineOption verboseOption("verbose", "Show detailed command output");
+    QCommandLineOption verboseOption({"v", "verbose"}, "Show detailed command output");
     parser.addOption(verboseOption);
 
-    QCommandLineOption quietOption("quiet", "Minimal output (errors + final status only)");
+    QCommandLineOption quietOption({"q", "quiet"}, "Minimal output (errors + final status only)");
     parser.addOption(quietOption);
 
     QCommandLineOption dryRunOption({"n", "dry-run"}, "Show what would be built without executing commands");
@@ -88,7 +93,16 @@ int main(int argc, char* argv[]) {
 
     parser.process(app);
 
-    // --license: вывод лицензии + LGPL (Qt) + сборщиков. До всего остального.
+    // --version / -V
+    if (parser.isSet(versionOption)) {
+        QTextStream out(stdout);
+        out << QCoreApplication::applicationName()
+            << " " << QCoreApplication::applicationVersion() << "\n";
+        out.flush();
+        return 0;
+    }
+
+    // --license
     if (parser.isSet(licenseOption)) {
         QTextStream out(stdout);
         out << QCoreApplication::applicationName()
