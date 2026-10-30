@@ -5,6 +5,8 @@
 
 namespace pmake::parser {
 
+// Возвращает "сырое" значение из AST. BOOL_LITERAL / NUMBER_LITERAL
+// раньше попадали в default и возвращали "" → restat/generator ломались.
 static QString getRawString(AstNode* node) {
     if (!node) return QString();
     switch (node->type) {
@@ -18,6 +20,12 @@ static QString getRawString(AstNode* node) {
                 result += getRawString(child);
             return result;
         }
+        case AstNode::BOOL_LITERAL:
+            return node->value.toBool() ? "true" : "false";
+        case AstNode::NUMBER_LITERAL:
+            return QString::number(node->value.toDouble());
+        case AstNode::NULL_LITERAL:
+            return QString();
         default:
             return QString();
     }
@@ -51,9 +59,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::CONFIG: evaluateConfig(node); break;
                 case AstNode::PLATFORM: evaluatePlatform(node); break;
 
-                // NEW: top-level function call — say(...), add_flags(...)
-                // evaluateExpression уже обходит children (аргументы),
-                // поэтому выставляем frame.index = size, чтобы не обойти их повторно.
                 case AstNode::FUNCTION_CALL:
                     evaluateExpression(node);
                     frame.index = node->children.size();
@@ -80,7 +85,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
                     frame.index = node->children.size();
                     break;
                 case AstNode::FUNCTION_DEF:
-                    // тело выполняется при вызове, не при определении
                     frame.index = node->children.size();
                     break;
 
@@ -133,19 +137,34 @@ void ParserImpl::evaluateAssignment(AstNode* assign) {
 void ParserImpl::evaluateRule(AstNode* rule) {
     core::Rule coreRule;
     coreRule.name = rule->name;
+
+    auto evalBool = [this](AstNode* child) -> bool {
+        if (!child) return false;
+        QVariant v = evaluateExpression(child);
+        if (v.metaType().id() == QMetaType::Bool) return v.toBool();
+        QString s = getRawString(child);
+        return (s == "true" || s == "1" || s == "yes" || s == "on");
+    };
+
     for (auto child : rule->children) {
-        if (child->type == AstNode::ASSIGNMENT) {
-            QString key = child->name;
-            QString value = getRawString(child->children[0]);
-            if (key == "command") coreRule.command = value;
-            else if (key == "description") coreRule.description = value;
-            else if (key == "generator") coreRule.generator = (value == "true" || value == "1");
-            else if (key == "restat") coreRule.restat = (value == "true" || value == "1");
-            else if (key == "depfile") coreRule.depfile = value;
-            else if (key == "deps") coreRule.deps = value;
-            else if (key == "rspfile") coreRule.rspfile = value;
-            else if (key == "rspfile_content") coreRule.rspfile_content = value;
-            else if (key == "pool") coreRule.pool = (value == "console" || value == "1");
+        if (child->type != AstNode::ASSIGNMENT) continue;
+        const QString& key = child->name;
+        if (child->children.isEmpty()) continue;
+        AstNode* valNode = child->children[0];
+
+        if (key == "command")               coreRule.command = getRawString(valNode);
+        else if (key == "description")      coreRule.description = getRawString(valNode);
+        else if (key == "depfile")          coreRule.depfile = getRawString(valNode);
+        else if (key == "deps")             coreRule.deps = getRawString(valNode);
+        else if (key == "rspfile")          coreRule.rspfile = getRawString(valNode);
+        else if (key == "rspfile_content")  coreRule.rspfile_content = getRawString(valNode);
+        else if (key == "generator")        coreRule.generator = evalBool(valNode);
+        else if (key == "restat")           coreRule.restat = evalBool(valNode);
+        else if (key == "pool") {
+            QString raw = getRawString(valNode);
+            if (raw.startsWith("${") && raw.endsWith("}"))
+                raw = raw.mid(2, raw.length() - 3);
+            coreRule.pool = (raw == "console" || raw == "1" || raw == "true");
         }
     }
     state_.addRule(coreRule);
@@ -153,6 +172,8 @@ void ParserImpl::evaluateRule(AstNode* rule) {
 
 void ParserImpl::evaluateBuild(AstNode* build) {
     core::Build coreBuild;
+
+    // ---- outputs ----
     if (build->children.size() >= 1) {
         AstNode* outNode = build->children[0];
         if (outNode->type == AstNode::CONCAT) {
@@ -165,24 +186,56 @@ void ParserImpl::evaluateBuild(AstNode* build) {
             if (!out.isEmpty()) coreBuild.outputs.append(out);
         }
     }
+
+    // ---- inputs ----
+    // FIX: split по пробелу нужен ТОЛЬКО для переменных (${files} → "a b c").
+    // STRING_LITERAL без ${} — атом, может содержать пробелы ("a b.c").
+    // Раньше любой input сплитился → "in file.txt" превращался в 2 input'а.
     if (build->children.size() >= 2) {
         AstNode* inNode = build->children[1];
-        if (inNode->type == AstNode::CONCAT) {
-            for (auto part : inNode->children) {
-                QString partStr = evaluateExpression(part).toString();
-                QStringList parts = partStr.split(' ', Qt::SkipEmptyParts);
-                for (const QString& p : parts) {
-                    if (!p.isEmpty()) coreBuild.inputs.append(p);
+
+        auto addInput = [this, &coreBuild](AstNode* part) {
+            if (!part) return;
+            switch (part->type) {
+                case AstNode::STRING_LITERAL: {
+                    const QString& raw = part->value.toString();
+                    // Если в литерале есть ${...} — это шаблон, раскрываем + split.
+                    // Иначе — атом (пробелы внутри — часть имени).
+                    if (raw.contains("${")) {
+                        QString expanded = evaluateExpression(part).toString();
+                        for (const QString& p : expanded.split(' ', Qt::SkipEmptyParts))
+                            if (!p.isEmpty()) coreBuild.inputs.append(p);
+                    } else if (!raw.isEmpty()) {
+                        coreBuild.inputs.append(raw);
+                    }
+                    return;
+                }
+                case AstNode::VARIABLE_REF: {
+                    // Значение переменной может быть списком через пробел.
+                    QString val = evaluateExpression(part).toString();
+                    for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
+                        if (!p.isEmpty()) coreBuild.inputs.append(p);
+                    return;
+                }
+                default: {
+                    // CONCAT / FUNCTION_CALL (glob и т.п.) — split.
+                    // Для glob() QVariantList.toString() даёт "" — пока
+                    // не поддерживается в inputs; отдельная задача.
+                    QString val = evaluateExpression(part).toString();
+                    for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
+                        if (!p.isEmpty()) coreBuild.inputs.append(p);
+                    return;
                 }
             }
+        };
+
+        if (inNode->type == AstNode::CONCAT) {
+            for (auto part : inNode->children) addInput(part);
         } else {
-            QString in = evaluateExpression(inNode).toString();
-            QStringList parts = in.split(' ', Qt::SkipEmptyParts);
-            for (const QString& p : parts) {
-                if (!p.isEmpty()) coreBuild.inputs.append(p);
-            }
+            addInput(inNode);
         }
     }
+
     coreBuild.rule_name = build->name;
     coreBuild.scope = QSharedPointer<core::Scope>::create();
     for (auto it = build->vars.begin(); it != build->vars.end(); ++it) {

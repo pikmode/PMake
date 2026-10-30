@@ -186,8 +186,13 @@ QHash<QString, qint64> Node::getOutputMtimesBefore() const {
     return before;
 }
 
+// FIX restat: FileCache хранит pre-command mtime. Внешняя команда
+// (copy_preserve.py, gcc, ...) пишет файл напрямую — C++ об этом не знает,
+// кэш остаётся stale. Без invalidate hasOutputChanged всегда возвращает
+// false (сравнивает pre-command с pre-command), и restat не работает.
 bool Node::hasOutputChanged(const QHash<QString, qint64>& before) const {
     for (const QString& out : build_->outputs) {
+        util::FileCache::instance().invalidate(out);
         qint64 now = util::getFileMtime(out);
         if (before.value(out) != now) return true;
     }
@@ -197,6 +202,7 @@ bool Node::hasOutputChanged(const QHash<QString, qint64>& before) const {
 void Node::refreshOutputMtime() {
     qint64 maxOut = -1;
     for (const QString& out : build_->outputs) {
+        util::FileCache::instance().invalidate(out);
         qint64 m = util::getFileMtime(out);
         if (m > maxOut) maxOut = m;
     }

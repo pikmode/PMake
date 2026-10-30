@@ -55,8 +55,6 @@ void Engine::buildPlan(const QVector<Node*>& dirtyNodes) {
         for (SchedTask* dt : taskDeps) dt->dependents.append(t);
     }
 
-    // totalTasks_ = только real builds (без phony) — для прогресса [N/M].
-    // pendingTasks_ = все (включая phony) — для определения завершения.
     totalTasks_ = 0;
     for (SchedTask* t : tasks_) {
         pendingTasks_++;
@@ -111,16 +109,12 @@ void Engine::pumpReady() {
 void Engine::startTask(SchedTask* t) {
     if (!t || !t->runnerNode) return;
 
-    // Phony — не считаем в прогрессе, не эмитим taskStarted
     if (!t->isReal) {
         emit nodeDoneInternal(t->runnerNode, 0, 0.0);
         return;
     }
 
     // P2: runtime re-check для restat.
-    // collectDirtyNodes (BFS) может излишне пометить downstream dirty, когда
-    // меняется leaf. Но если upstream вернул exit 2 (restat, output не изменился),
-    // downstream должен skip-нуться.
     // Все deps уже Done (pendingDeps == 0) → их wasBuilt/mtime актуальны.
     if (!dryRun_ && !t->runnerNode->isDirty()) {
         LOG_VERBOSE(QString("Skipping '%1' (clean at runtime)").arg(t->runnerNode->name()));
@@ -128,9 +122,12 @@ void Engine::startTask(SchedTask* t) {
         return;
     }
 
-    // Раскрываем rule->description, чтобы ConsoleUI показал
-    // "Building CXX object E:/.../node_builder.o" вместо просто пути к .o
-    QString display = t->runnerNode->name();
+    // FIX: stable display name. Для multi-output t->nodes.first() — из QSet,
+    // порядок недетерминирован. build->outputs.first() — стабильно.
+    QString display = (t->build && !t->build->outputs.isEmpty())
+                      ? t->build->outputs.first()
+                      : t->runnerNode->name();
+
     const Rule* rule = t->runnerNode->rule();
     if (rule && !rule->description.isEmpty()) {
         QHash<QString, QString> specialVars = t->runnerNode->getSpecialVars();
@@ -183,6 +180,11 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
         SchedTask* t = tit.value();
         if (!t || t->state != TaskState::Running) return;
 
+        // FIX: stable display name для сообщения об ошибке multi-output.
+        if (t->build && !t->build->outputs.isEmpty()) {
+            nodeName = t->build->outputs.first();
+        }
+
         auto pit = poolCounters_.find(t->poolName);
         if (pit != poolCounters_.end() && pit->active > 0) pit->active--;
 
@@ -202,7 +204,7 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
             if (t->isReal) completedTasks_++;
             affectedNodes = t->nodes;
 
-            // NEW: exit 0 = пересобран → wasBuilt=true → downstream force dirty.
+            // exit 0 = пересобран → wasBuilt=true → downstream force dirty.
             // exit 2 = restat skip → wasBuilt остаётся false → mtime проверка.
             for (Node* n : t->nodes) {
                 n->setFinished(true);
