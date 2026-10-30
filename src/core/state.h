@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QSharedPointer>
 #include <optional>
+#include <QMutex>
 #include <QRegularExpression>
 #include "core/ast.h"
 
@@ -68,8 +69,8 @@ public:
     explicit Scope(Scope* parent = nullptr);
     void set(const QString& name, const QString& value);
     std::optional<QString> get(const QString& name) const;
-    void remove(const QString& name);            // NEW: удалить переменную
-    bool has(const QString& name) const;         // NEW: есть ли переменная
+    void remove(const QString& name);
+    bool has(const QString& name) const;
     const QHash<QString, QString>& locals() const { return vars_; }
 
 private:
@@ -142,6 +143,15 @@ public:
     const FunctionDef* getFunction(const QString& name) const;
     const QHash<QString, FunctionDef>& functions() const;
 
+    // --- Command hashes (thread-safe) ---
+    // setCommandHash вызывается из воркеров (Node::build), поэтому нужен mutex.
+    // commandHashes() возвращает ссылку — использовать только из main-thread
+    // после engine.run() (когда все воркеры завершены).
+    void setCommandHash(const QString& output, const QString& hash) const;
+    std::optional<QString> getCommandHash(const QString& output) const;
+    void setCommandHashes(const QHash<QString, QString>& hashes);
+    const QHash<QString, QString>& commandHashes() const;
+
     // Вызов пользовательской функции
     QVariant callUserFunction(const QString& name,
                               const QVector<QVariant>& args,
@@ -167,6 +177,8 @@ private:
     QHash<QString, ConfigBlock> configs_;
     QHash<QString, PlatformBlock> platforms_;
     QHash<QString, FunctionDef> functions_;
+    mutable QHash<QString, QString> commandHashes_;
+    mutable QMutex commandHashesMutex_;   // thread-safety для setCommandHash
     QRegularExpression varRegex_;
 };
 

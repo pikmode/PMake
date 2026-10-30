@@ -259,9 +259,11 @@ int main(int argc, char* argv[]) {
                 for (auto it = cache.fileStates().begin(); it != cache.fileStates().end(); ++it) {
                     state->setFileState(it.key(), it.value());
                 }
-                LOG_VERBOSE(QString("Cache: valid, %1 file states, %2 deps")
+                state->setCommandHashes(cache.commandHashes());
+                LOG_VERBOSE(QString("Cache: valid, %1 file states, %2 deps, %3 command hashes")
                             .arg(cache.fileStates().size())
-                            .arg(pmake::deps::DepsLog::instance().entries().size()));
+                            .arg(pmake::deps::DepsLog::instance().entries().size())
+                            .arg(cache.commandHashes().size()));
             } else {
                 LOG_VERBOSE("Cache: invalid (build file changed)");
                 pmake::deps::DepsLog::instance().clear();
@@ -339,7 +341,11 @@ int main(int argc, char* argv[]) {
     bool result = engine.run(target);
 
     // ---------- ОБНОВЛЕНИЕ КЭША ПОСЛЕ СБОРКИ ----------
-    if (result && !dryRun && useCache) {
+    // FIX P1-regression: сохраняем кэш ДАЖЕ после fail.
+    // Причина: успешные задачи успели записать DepsLog и commandHashes в state.
+    // Если не сохранить — при следующем запуске DepsLog для a.o пуст →
+    // P1 (depfile lost detection) заставит пересобрать a.o зря.
+    if (!dryRun && useCache) {
         engine.updateFileStates();
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");

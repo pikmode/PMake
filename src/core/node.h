@@ -12,7 +12,6 @@ class Graph;
 
 class Node {
 public:
-    // Новый параметр dryRun
     Node(const QString& name, const Build* build, const Rule* rule, const State* state, Graph* graph = nullptr, bool dryRun = false);
 
     const QString& name() const { return name_; }
@@ -35,16 +34,24 @@ public:
     bool isPhony() const { return rule_ && rule_->name == "phony"; }
 
     bool isDirty();
-    int build(); // возвращает 0 - успех (изменён), 1 - ошибка, 2 - успех без изменений (restat)
+    int build();
     void refreshOutputMtime();
     qint64 outputMtime() const { return cachedOutputMtime_; }
 
     void setFinished(bool f) { finished_ = f; }
     bool isFinished() const { return finished_; }
 
+    // NEW: wasBuilt = true если Node успешно собран (exit 0) в этой сессии.
+    // Устанавливается в handleNodeDone. Используется в isDirty: если dep
+    // был пересобран — downstream всегда dirty (независимо от mtime).
+    void setWasBuilt(bool b) { wasBuilt_ = b; }
+    bool wasBuilt() const { return wasBuilt_; }
+
     QHash<QString, QString> getSpecialVars() const;
 
     QHash<QString, qint64> getOutputMtimesBefore() const;
+
+    QString computeCommandHash() const;
 
 private:
     QString name_;
@@ -52,7 +59,7 @@ private:
     const Rule* rule_;
     const State* state_;
     Graph* graph_;
-    bool dryRun_;   // <-- новый флаг
+    bool dryRun_;
 
     QVector<Node*> deps_;
     QVector<Node*> implicit_deps_;
@@ -62,6 +69,7 @@ private:
     qint64 cachedOutputMtime_ = -1;
     bool mtimeValid_ = false;
     bool finished_ = false;
+    bool wasBuilt_ = false;   // NEW
     mutable QMutex buildMutex_;
     bool isBuilding_ = false;
     bool buildSuccess_ = false;

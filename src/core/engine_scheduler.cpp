@@ -106,6 +106,7 @@ void Engine::pumpReady() {
 
 // ===========================================================================
 // startTask: phony — сразу Done, real — emit taskStarted с description
+// + P2 runtime re-check для restat (skip если clean)
 // ===========================================================================
 void Engine::startTask(SchedTask* t) {
     if (!t || !t->runnerNode) return;
@@ -116,7 +117,18 @@ void Engine::startTask(SchedTask* t) {
         return;
     }
 
-    // ФИКС: раскрываем rule->description, чтобы ConsoleUI показал
+    // P2: runtime re-check для restat.
+    // collectDirtyNodes (BFS) может излишне пометить downstream dirty, когда
+    // меняется leaf. Но если upstream вернул exit 2 (restat, output не изменился),
+    // downstream должен skip-нуться.
+    // Все deps уже Done (pendingDeps == 0) → их wasBuilt/mtime актуальны.
+    if (!dryRun_ && !t->runnerNode->isDirty()) {
+        LOG_VERBOSE(QString("Skipping '%1' (clean at runtime)").arg(t->runnerNode->name()));
+        emit nodeDoneInternal(t->runnerNode, 2, 0.0);
+        return;
+    }
+
+    // Раскрываем rule->description, чтобы ConsoleUI показал
     // "Building CXX object E:/.../node_builder.o" вместо просто пути к .o
     QString display = t->runnerNode->name();
     const Rule* rule = t->runnerNode->rule();
@@ -190,7 +202,12 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
             if (t->isReal) completedTasks_++;
             affectedNodes = t->nodes;
 
-            for (Node* n : t->nodes) n->setFinished(true);
+            // NEW: exit 0 = пересобран → wasBuilt=true → downstream force dirty.
+            // exit 2 = restat skip → wasBuilt остаётся false → mtime проверка.
+            for (Node* n : t->nodes) {
+                n->setFinished(true);
+                if (exitCode == 0) n->setWasBuilt(true);
+            }
 
             for (SchedTask* dt : t->dependents) {
                 if (!dt || dt->state != TaskState::Want) continue;

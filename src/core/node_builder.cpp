@@ -40,8 +40,6 @@ int Node::build() {
     if (!build_ || !rule_) return 0;
     if (isPhony()) return 0;
 
-    // Dry-run: прогресс уже показан через Engine::taskStarted.
-    // Здесь только обновляем mtime, чтобы downstream корректно считал dirty.
     if (dryRun_) {
         refreshOutputMtime();
         return 0;
@@ -80,7 +78,6 @@ int Node::build() {
             QDir().mkpath(fi.absolutePath());
     }
 
-    // ---------- RESPONSE-FILE ----------
     QString rspFilePath;
     if (!rule_->rspfile.isEmpty()) {
         rspFilePath = state_->expandVarsWithSpecial(rule_->rspfile, build_->scope.data(), specialVars);
@@ -103,8 +100,6 @@ int Node::build() {
     QString program = args.takeFirst();
     QString workDir = getWorkingDirectory(build_, state_);
 
-    // -v: показать реальную команду под [N/M]. Идёт в stderr, чтобы не
-    // засорять stdout (который может перенаправляться в CI-лог).
     if (pmake::logging::isVerbose()) {
         LOG_VERBOSE(QString("  %1").arg(command));
     }
@@ -134,6 +129,16 @@ int Node::build() {
     }
 
     refreshOutputMtime();
+
+    // NEW: записать hash команды для детекта изменений при следующем запуске.
+    // Делаем ДО guard.success=true и ДО depfile — output уже создан.
+    if (state_) {
+        const QString hash = computeCommandHash();
+        if (!hash.isEmpty()) {
+            state_->setCommandHash(name_, hash);
+        }
+    }
+
     guard.success = true;
 
     bool outputChanged = hasOutputChanged(beforeMtimes);
@@ -142,7 +147,6 @@ int Node::build() {
         return 2;
     }
 
-    // ---- Обработка depfile ----
     if (rule_ && !rule_->depfile.isEmpty()) {
         QString depfilePath = rule_->depfile;
         depfilePath = state_->expandVarsWithSpecial(depfilePath, build_->scope.data(), specialVars);

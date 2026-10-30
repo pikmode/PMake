@@ -1,4 +1,3 @@
-// core/cache.h
 #pragma once
 
 #include <QString>
@@ -10,12 +9,7 @@ namespace pmake::core {
 
 /**
  * @brief Бинарный кэш состояния сборки.
- *
- * Хранит только mtime для листовых узлов и не инвалидируется при изменении build.pmake.
- * Версия 5.
- *
- * DepsLog НЕ хранится по значению — используется singleton `DepsLog::instance()`
- * (он thread-safe и живёт всё время работы программы).
+ * Версия 6: добавлен commandHashes (детект изменения command / flags).
  */
 class Cache {
 public:
@@ -30,16 +24,14 @@ public:
     std::unique_ptr<State> restore() const;
 
     const QHash<QString, FileState>& fileStates() const { return data_.fileStates; }
+    const QHash<QString, QString>& commandHashes() const { return data_.commandHashes; }
 
-    // DepsLog — доступ через singleton
     const deps::DepsLog& depsLog() const { return deps::DepsLog::instance(); }
-    void setDepsLog(const deps::DepsLog& /*log*/) {
-        // no-op: DepsLog — singleton, копирование не имеет смысла
-    }
+    void setDepsLog(const deps::DepsLog& /*log*/) {}
 
 private:
     struct Data {
-        quint32 version = 5;
+        quint32 version = 6;
         QHash<QString, QString> globalVars;
         QVector<Rule> rules;
         QVector<Build> builds;
@@ -48,7 +40,7 @@ private:
         QVector<QString> defaultTargets;
         QVector<QString> includedFilesList;
         QHash<QString, FileState> fileStates;
-        // deps::DepsLog depsLog;  <-- УДАЛЕНО (используем singleton)
+        QHash<QString, QString> commandHashes;   // NEW
     };
 
     Data data_;

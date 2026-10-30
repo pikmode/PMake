@@ -5,14 +5,13 @@
 #include "deps/deps_log.h"
 #include <QDir>
 #include <QFileInfo>
+#include <QCryptographicHash>
 
 namespace pmake::core {
 
-// Конструктор
 Node::Node(const QString& name, const Build* build, const Rule* rule, const State* state, Graph* graph, bool dryRun)
     : name_(name), build_(build), rule_(rule), state_(state), graph_(graph), dryRun_(dryRun), finished_(false) {}
 
-// Управление зависимостями
 void Node::addDependency(Node* dep) {
     if (!dep) return;
     if (!deps_.contains(dep)) {
@@ -44,9 +43,22 @@ void Node::addReverseDependency(Node* dep) {
     }
 }
 
-// Вспомогательные методы
 qint64 Node::getFileMtime(const QString& path) {
     return util::getFileMtime(path);
+}
+
+QString Node::computeCommandHash() const {
+    if (!rule_ || !build_) return QString();
+
+    QHash<QString, QString> specialVars = getSpecialVars();
+    QString cmd = rule_->command;
+    if (state_) {
+        cmd = state_->expandVarsWithSpecial(cmd, build_->scope.data(), specialVars);
+    }
+
+    QByteArray data = cmd.toUtf8();
+    return QString::fromLatin1(
+        QCryptographicHash::hash(data, QCryptographicHash::Sha1).toHex());
 }
 
 bool Node::isDirty() {
@@ -73,12 +85,24 @@ bool Node::isDirty() {
     }
     if (!anyExists) return true;
 
+    // P2-fix: mtime с диска (stateless), плюс wasBuilt флаг.
     auto checkNode = [&](Node* dep) -> bool {
         if (dep->isLeaf()) {
             qint64 m = util::getFileMtime(dep->name());
             if (m > maxOut) return true;
         } else {
-            qint64 m = dep->outputMtime();
+            // Если dep был ПЕРЕСОБРАН в этой сессии (exit 0) — его output
+            // изменился по определению. mtime может совпадать (copy2,
+            // NTFS resolution, fast write) — поэтому force dirty.
+            if (dep->wasBuilt()) return true;
+
+            const Build* db = dep->getBuild();
+            if (!db) return false;
+            qint64 m = -1;
+            for (const QString& out : db->outputs) {
+                qint64 mm = util::getFileMtime(out);
+                if (mm > m) m = mm;
+            }
             if (m > maxOut) return true;
         }
         return false;
@@ -91,14 +115,30 @@ bool Node::isDirty() {
         if (checkNode(dep)) return true;
     }
 
-    auto depInputs = deps::DepsLog::instance().inputsFor(name_);
-    if (!depInputs.isEmpty()) {
+    // P1: детект потери .d.
+    if (rule_ && !rule_->depfile.isEmpty()) {
+        auto depInputs = deps::DepsLog::instance().inputsFor(name_);
+        if (depInputs.isEmpty()) {
+            LOG_VERBOSE(QString("Depfile lost for '%1' → force rebuild").arg(name_));
+            return true;
+        }
         qint64 maxDepMtime = -1;
         for (const QString& in : depInputs) {
             qint64 m = util::getFileMtime(in);
             if (m > maxDepMtime) maxDepMtime = m;
         }
         if (maxDepMtime > maxOut) return true;
+    }
+
+    // P0: детект изменения команды.
+    if (state_) {
+        QString currentHash = computeCommandHash();
+        if (!currentHash.isEmpty()) {
+            auto cached = state_->getCommandHash(name_);
+            if (cached.has_value() && *cached != currentHash) {
+                return true;
+            }
+        }
     }
 
     cachedOutputMtime_ = maxOut;

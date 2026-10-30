@@ -1,4 +1,3 @@
-// core/cache.cpp
 #include "core/cache.h"
 #include "util/filesystem.h"
 #include "util/logging.h"
@@ -13,7 +12,7 @@ namespace pmake::core {
 Cache::Cache() = default;
 
 void Cache::store(const State& state, const QString& /*mainFile*/) {
-    data_.version = 5;
+    data_.version = 6;
 
     data_.globalVars = state.globals();
     data_.rules = state.rules().values();
@@ -30,8 +29,7 @@ void Cache::store(const State& state, const QString& /*mainFile*/) {
     }
 
     data_.fileStates = state.fileStates();
-
-    // DepsLog не копируется — при serialize() берём из singleton
+    data_.commandHashes = state.commandHashes();   // NEW
 }
 
 bool Cache::save(const QString& path) const {
@@ -44,6 +42,10 @@ bool Cache::save(const QString& path) const {
     QDataStream out(&file);
     out.setVersion(QDataStream::Qt_6_0);
     serialize(out);
+    if (out.status() != QDataStream::Ok) {
+        LOG_ERROR("Cache write failed");
+        return false;
+    }
     return true;
 }
 
@@ -96,7 +98,13 @@ void Cache::serialize(QDataStream& out) const {
         out << it.key() << it.value().mtime << it.value().size << it.value().hash;
     }
 
-    // --- DepsLog --- (из singleton)
+    // --- command hashes (NEW) ---
+    out << quint32(data_.commandHashes.size());
+    for (auto it = data_.commandHashes.begin(); it != data_.commandHashes.end(); ++it) {
+        out << it.key() << it.value();
+    }
+
+    // --- DepsLog (из singleton) ---
     const auto& entries = deps::DepsLog::instance().entries();
     out << quint32(entries.size());
     for (auto it = entries.begin(); it != entries.end(); ++it) {
@@ -118,7 +126,20 @@ bool Cache::load(const QString& path) {
     quint32 magic;
     in >> magic;
     if (magic != 0x504D4B45) return false;
+
     deserialize(in);
+
+    if (data_.version != 6) {
+        LOG_WARN("Cache version mismatch, ignoring");
+        loaded_ = false;
+        return false;
+    }
+    if (in.status() != QDataStream::Ok) {
+        LOG_WARN("Cache read error, ignoring");
+        loaded_ = false;
+        return false;
+    }
+
     loaded_ = true;
     return true;
 }
@@ -126,15 +147,14 @@ bool Cache::load(const QString& path) {
 void Cache::deserialize(QDataStream& in) {
     quint32 version;
     in >> version;
-    if (version != 5) {
+    data_.version = version;
+    if (version != 6) {
         LOG_WARN(QString("Unsupported cache version %1, ignoring").arg(version));
         return;
     }
-    data_.version = version;
 
     quint32 count;
 
-    // global vars
     in >> count;
     data_.globalVars.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -143,7 +163,6 @@ void Cache::deserialize(QDataStream& in) {
         data_.globalVars[key] = val;
     }
 
-    // rules
     in >> count;
     data_.rules.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -154,7 +173,6 @@ void Cache::deserialize(QDataStream& in) {
         data_.rules.append(rule);
     }
 
-    // builds
     in >> count;
     data_.builds.clear();
     data_.buildLocalVars.clear();
@@ -174,7 +192,6 @@ void Cache::deserialize(QDataStream& in) {
         data_.buildLocalVars.append(locals);
     }
 
-    // pools
     in >> count;
     data_.pools.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -184,13 +201,9 @@ void Cache::deserialize(QDataStream& in) {
         data_.pools[name] = pool;
     }
 
-    // default targets
     in >> data_.defaultTargets;
-
-    // included files list
     in >> data_.includedFilesList;
 
-    // file states
     in >> count;
     data_.fileStates.clear();
     for (quint32 i = 0; i < count; ++i) {
@@ -202,7 +215,16 @@ void Cache::deserialize(QDataStream& in) {
         data_.fileStates[path] = fs;
     }
 
-    // DepsLog — из singleton
+    // --- command hashes (NEW) ---
+    in >> count;
+    data_.commandHashes.clear();
+    for (quint32 i = 0; i < count; ++i) {
+        QString output, hash;
+        in >> output >> hash;
+        data_.commandHashes[output] = hash;
+    }
+
+    // --- DepsLog (singleton) ---
     quint32 depsCount;
     in >> depsCount;
     deps::DepsLog& depsLog = deps::DepsLog::instance();
@@ -262,6 +284,8 @@ std::unique_ptr<State> Cache::restore() const {
     for (auto it = data_.fileStates.begin(); it != data_.fileStates.end(); ++it) {
         state->setFileState(it.key(), it.value());
     }
+
+    state->setCommandHashes(data_.commandHashes);   // NEW
 
     return state;
 }

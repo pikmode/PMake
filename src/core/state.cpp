@@ -58,6 +58,7 @@ State::State(State&& other) noexcept
     , configs_(std::move(other.configs_))
     , platforms_(std::move(other.platforms_))
     , functions_(std::move(other.functions_))
+    , commandHashes_(std::move(other.commandHashes_))
     , varRegex_(std::move(other.varRegex_)) {
     // Не даём ~other удалить AstNode*, которые теперь принадлежат нам
     other.functions_.clear();
@@ -80,6 +81,7 @@ State& State::operator=(State&& other) noexcept {
     configs_        = std::move(other.configs_);
     platforms_      = std::move(other.platforms_);
     functions_      = std::move(other.functions_);
+    commandHashes_  = std::move(other.commandHashes_);
     varRegex_       = std::move(other.varRegex_);
 
     other.functions_.clear();
@@ -220,6 +222,30 @@ const FunctionDef* State::getFunction(const QString& name) const {
 
 const QHash<QString, FunctionDef>& State::functions() const {
     return functions_;
+}
+
+// --- Command hashes (thread-safe: mutex защищает QHash) ---
+void State::setCommandHash(const QString& output, const QString& hash) const {
+    QMutexLocker locker(&commandHashesMutex_);
+    commandHashes_[output] = hash;
+}
+
+std::optional<QString> State::getCommandHash(const QString& output) const {
+    QMutexLocker locker(&commandHashesMutex_);
+    auto it = commandHashes_.find(output);
+    if (it != commandHashes_.end()) return it.value();
+    return std::nullopt;
+}
+
+void State::setCommandHashes(const QHash<QString, QString>& hashes) {
+    QMutexLocker locker(&commandHashesMutex_);
+    commandHashes_ = hashes;
+}
+
+const QHash<QString, QString>& State::commandHashes() const {
+    // Возвращаем ссылку без lock — вызывается из main-thread после engine.run()
+    // (все воркеры уже остановлены, race невозможен).
+    return commandHashes_;
 }
 
 } // namespace pmake::core
