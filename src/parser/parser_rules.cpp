@@ -17,9 +17,6 @@ void ParserImpl::parseRule(AstNode* parent) {
         if (cur_.type == TOK_NEWLINE) advance();
         return;
     }
-    // НЕ проверяем duplicate при парсинге: внутри switch может быть несколько
-    // rule с одинаковым именем (только один из case выполнится на evaluate).
-    // Валидация — на этапе evaluateRule через state_.addRule (перезапись).
 
     auto node = makeStringLiteral("");
     node->type = AstNode::RULE;
@@ -59,7 +56,10 @@ void ParserImpl::parseBuild(AstNode* parent) {
             break;
         }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
-            outputs.append(parseValue());
+            // FIX: parseAtom, не parseValue. parseValue = parseExpressionPrecedence
+            // съел бы `||`/`&&`/`+` как операторы. В outputs это не нужно —
+            // каждый output атомарен.
+            outputs.append(parseAtom());
         } else if (cur_.type == TOK_IDENT) {
             error(QString("Expected string literal in quotes, got identifier '%1'. Use \"%1\".").arg(str(cur_.strId)), true);
             advance();
@@ -106,15 +106,47 @@ void ParserImpl::parseBuild(AstNode* parent) {
     node->name = ruleName;
     advance();
 
+    // Секции inputs:
+    //   build "out" : rule "in1" "in2" | "impl1" || "order1"
+    //   section 0 — обычные (mtime-dirty)
+    //   section 1 — implicit (mtime-dirty, но не в ${in})
+    //   section 2 — order-only (только порядок, не инвалидируют)
     QVector<AstNode*> inputs;
+    QVector<AstNode*> implicitInputs;
+    QVector<AstNode*> orderOnlyInputs;
+    int section = 0;
     guard = 0;
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF && cur_.type != TOK_LBRACE) {
         if (++guard > 1000) {
             error("Infinite loop in build inputs", true);
             break;
         }
+        if (cur_.type == TOK_PIPE) {
+            if (section >= 1) {
+                error("Duplicate '|' in build inputs", true);
+            }
+            section = 1;
+            advance();
+            continue;
+        }
+        if (cur_.type == TOK_OR) {
+            if (section >= 2) {
+                error("Duplicate '||' in build inputs", true);
+            }
+            section = 2;
+            advance();
+            continue;
+        }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
-            inputs.append(parseValue());
+            // FIX: parseAtom, не parseValue.
+            // parseValue("out.in") → BINARY_OP(OR, "out.in", "stamp.txt") —
+            // потому что parseExpressionPrecedence видит TOK_OR после "out.in"
+            // и съедает его как ЛОГИЧЕСКИЙ оператор. В итоге inputs = ["true"],
+            // а stamp.txt теряется. parseAtom возвращает атом — то, что нужно.
+            AstNode* val = parseAtom();
+            if (section == 0)      inputs.append(val);
+            else if (section == 1) implicitInputs.append(val);
+            else                   orderOnlyInputs.append(val);
         } else if (cur_.type == TOK_IDENT) {
             error(QString("Expected string literal in quotes, got identifier '%1'. Use \"%1\".").arg(str(cur_.strId)), true);
             advance();
@@ -177,6 +209,13 @@ void ParserImpl::parseBuild(AstNode* parent) {
     auto inConcat  = makeConcat(inputs);
     node->children.append(outConcat);
     node->children.append(inConcat);
+
+    if (!implicitInputs.isEmpty()) {
+        node->implicitInputs = makeConcat(implicitInputs);
+    }
+    if (!orderOnlyInputs.isEmpty()) {
+        node->orderOnlyInputs = makeConcat(orderOnlyInputs);
+    }
 
     parent->children.append(node);
     skipNewlinesAndIndents();

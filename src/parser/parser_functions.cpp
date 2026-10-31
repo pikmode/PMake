@@ -1,3 +1,4 @@
+
 #include "parser/parser_impl.h"
 #include <QSet>
 #include <QFileInfo>
@@ -27,6 +28,8 @@ static AstNode* cloneAst(AstNode* n) {
     c->left = cloneAst(n->left);
     c->right = cloneAst(n->right);
     c->body = cloneAst(n->body);
+    c->implicitInputs = cloneAst(n->implicitInputs);    // NEW
+    c->orderOnlyInputs = cloneAst(n->orderOnlyInputs);  // NEW
     return c;
 }
 

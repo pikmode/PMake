@@ -58,7 +58,7 @@ struct AstNode {
     bool isExecuted = false;
     int line = 0;
     int column = 0;
-    bool isAppend = false;   // для оператора +=
+    bool isAppend = false;
 
     AstNode* left = nullptr;
     AstNode* right = nullptr;
@@ -67,9 +67,13 @@ struct AstNode {
     QStringList params;
     AstNode* body = nullptr;
 
-    // ---- новые поля для build ----
-    int outputCount = 0;                     // количество выходных файлов
-    QVector<AstNode*> attributes;            // атрибуты (ASSIGNMENT)
+    // ---- поля для build ----
+    int outputCount = 0;
+    QVector<AstNode*> attributes;
+    // NEW: implicit inputs (`| "hdr.h"`) и order-only (`|| "stamp"`).
+    // nullptr если секции не было. CONCAT если несколько, одиночный узел иначе.
+    AstNode* implicitInputs = nullptr;
+    AstNode* orderOnlyInputs = nullptr;
 
     ~AstNode() {
         qDeleteAll(children);
@@ -77,6 +81,8 @@ struct AstNode {
         delete left;
         delete right;
         delete body;
+        delete implicitInputs;    // NEW
+        delete orderOnlyInputs;   // NEW
     }
 };
 

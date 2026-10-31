@@ -12,7 +12,7 @@ enum TokenType {
     TOK_NEWLINE,
     TOK_INDENT,
     TOK_EQUALS,
-    TOK_PLUS_EQUALS,      // <-- НОВЫЙ ТОКЕН
+    TOK_PLUS_EQUALS,
     TOK_COLON,
     TOK_LBRACE,
     TOK_RBRACE,
@@ -25,15 +25,16 @@ enum TokenType {
     TOK_MINUS,
     TOK_STAR,
     TOK_SLASH,
-    TOK_EQ,      // ==
-    TOK_NEQ,     // !=
-    TOK_LE,      // <=
-    TOK_GE,      // >=
-    TOK_LT,      // <
-    TOK_GT,      // >
-    TOK_AND,     // &&
-    TOK_OR,      // ||
-    TOK_NOT,     // !
+    TOK_EQ,
+    TOK_NEQ,
+    TOK_LE,
+    TOK_GE,
+    TOK_LT,
+    TOK_GT,
+    TOK_AND,
+    TOK_OR,        // || (логическое OR или order-only в build)
+    TOK_PIPE,      // NEW: | (implicit в build)
+    TOK_NOT,
     TOK_IDENT,
     TOK_STRING,
     TOK_VAR_REF,

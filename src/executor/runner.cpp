@@ -14,9 +14,6 @@
 
 namespace pmake::executor {
 
-// ================================================================
-// ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ: функция findExecutable теперь добавляет .exe на Windows
-// ================================================================
 static QString findExecutable(const QString& program) {
     if (program.isEmpty()) return QString();
 
@@ -28,12 +25,12 @@ static QString findExecutable(const QString& program) {
         return QString();
     };
 
-    // 1. Проверяем, не является ли program полным путём
+    // 1. Полный путь
     QString result = checkFile(program);
     if (!result.isEmpty()) return result;
 
 #ifdef _WIN32
-    // 2. На Windows пробуем добавить .exe, если нет расширения
+    // 2. На Windows пробуем добавить .exe
     if (!program.endsWith(".exe", Qt::CaseInsensitive)) {
         QString withExe = program + ".exe";
         result = checkFile(withExe);
@@ -61,10 +58,6 @@ static QString findExecutable(const QString& program) {
 
     return QString();
 }
-
-// ================================================================
-// ВСЁ ОСТАЛЬНОЕ – БЕЗ ИЗМЕНЕНИЙ (твой оригинальный код)
-// ================================================================
 
 Result Runner::runSync(const Command& cmd) {
     QElapsedTimer timer;
@@ -104,11 +97,10 @@ Result Runner::runSync(const Command& cmd) {
     process.setArguments(cmd.arguments);
     process.setProcessChannelMode(QProcess::SeparateChannels);
 
-    bool verbose = logging::isVerbose();
-    if (verbose) {
-        LOG_VERBOSE(QString("Starting: %1 %2 (workdir: %3)")
-                  .arg(programPath).arg(cmd.arguments.join(' ')).arg(workDir));
-    }
+    // FIX: команда и workdir уже напечатаны в Node::build (точная строка
+    // с кавычками, ДО splitCommand). Раньше здесь печаталось "Starting: ..."
+    // через cmd.arguments.join(' ') — splitCommand теряет кавычки, выглядело
+    // как визуальная мешанина. Убрали дубль. Здесь — только результат в конце.
 
     process.start();
     if (!process.waitForStarted()) {
@@ -126,6 +118,7 @@ Result Runner::runSync(const Command& cmd) {
     const int TIMEOUT_SECONDS = 3600;
     timeoutTimer.setSingleShot(true);
 
+    bool verbose = logging::isVerbose();
     if (verbose) {
         QObject::connect(&process, &QProcess::readyReadStandardOutput, [&]() {
             QByteArray data = process.readAllStandardOutput();
@@ -179,18 +172,20 @@ Result Runner::runSync(const Command& cmd) {
     }
 
     if (res.exitCode != 0) {
-        LOG_ERROR(QString("Command failed with exit code %1").arg(res.exitCode));
+        LOG_ERROR(QString("    failed with exit code %1").arg(res.exitCode));
         if (!res.stderrOutput.isEmpty()) {
-            LOG_ERROR("STDERR:\n" + res.stderrOutput);
+            LOG_ERROR("    STDERR:\n" + res.stderrOutput);
         }
         if (!res.stdoutOutput.isEmpty()) {
-            LOG_ERROR("STDOUT:\n" + res.stdoutOutput);
+            LOG_ERROR("    STDOUT:\n" + res.stdoutOutput);
         }
         if (process.error() != QProcess::UnknownError) {
-            LOG_ERROR(QString("Process error: %1").arg(process.errorString()));
+            LOG_ERROR(QString("    process error: %1").arg(process.errorString()));
         }
     } else {
-        LOG_VERBOSE(QString("Command succeeded in %1 s").arg(res.durationSeconds, 0, 'f', 2));
+        // FIX: с отступом 4 пробела — выровнено с "command:"/"workdir:" из
+        // node_builder.cpp. Читается как продолжение блока [N/M].
+        LOG_VERBOSE(QString("    succeeded in %1 s").arg(res.durationSeconds, 0, 'f', 2));
     }
 
     return res;

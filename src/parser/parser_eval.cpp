@@ -5,8 +5,6 @@
 
 namespace pmake::parser {
 
-// Возвращает "сырое" значение из AST. BOOL_LITERAL / NUMBER_LITERAL
-// раньше попадали в default и возвращали "" → restat/generator ломались.
 static QString getRawString(AstNode* node) {
     if (!node) return QString();
     switch (node->type) {
@@ -170,6 +168,9 @@ void ParserImpl::evaluateRule(AstNode* rule) {
     state_.addRule(coreRule);
 }
 
+// Хелпер: добавить inputs из AST-узла в target-вектор с учётом
+// STRING_LITERAL / VARIABLE_REF / CONCAT. Используется трижды —
+// для inputs, implicit, order_only.
 void ParserImpl::evaluateBuild(AstNode* build) {
     core::Build coreBuild;
 
@@ -187,53 +188,62 @@ void ParserImpl::evaluateBuild(AstNode* build) {
         }
     }
 
-    // ---- inputs ----
-    // FIX: split по пробелу нужен ТОЛЬКО для переменных (${files} → "a b c").
-    // STRING_LITERAL без ${} — атом, может содержать пробелы ("a b.c").
-    // Раньше любой input сплитился → "in file.txt" превращался в 2 input'а.
-    if (build->children.size() >= 2) {
-        AstNode* inNode = build->children[1];
-
-        auto addInput = [this, &coreBuild](AstNode* part) {
-            if (!part) return;
-            switch (part->type) {
-                case AstNode::STRING_LITERAL: {
-                    const QString& raw = part->value.toString();
-                    // Если в литерале есть ${...} — это шаблон, раскрываем + split.
-                    // Иначе — атом (пробелы внутри — часть имени).
-                    if (raw.contains("${")) {
-                        QString expanded = evaluateExpression(part).toString();
-                        for (const QString& p : expanded.split(' ', Qt::SkipEmptyParts))
-                            if (!p.isEmpty()) coreBuild.inputs.append(p);
-                    } else if (!raw.isEmpty()) {
-                        coreBuild.inputs.append(raw);
-                    }
-                    return;
+    // Хелпер: добавить один AST-узел как input(ы) в target.
+    // STRING_LITERAL без ${} — атом (пробелы — часть имени).
+    // STRING_LITERAL с ${} — раскрыть + split.
+    // VARIABLE_REF / CONCAT / FUNCTION_CALL — раскрыть + split.
+    auto addInput = [this](AstNode* part, QVector<QString>& target) {
+        if (!part) return;
+        switch (part->type) {
+            case AstNode::STRING_LITERAL: {
+                const QString& raw = part->value.toString();
+                if (raw.contains("${")) {
+                    QString expanded = evaluateExpression(part).toString();
+                    for (const QString& p : expanded.split(' ', Qt::SkipEmptyParts))
+                        if (!p.isEmpty()) target.append(p);
+                } else if (!raw.isEmpty()) {
+                    target.append(raw);
                 }
-                case AstNode::VARIABLE_REF: {
-                    // Значение переменной может быть списком через пробел.
-                    QString val = evaluateExpression(part).toString();
-                    for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
-                        if (!p.isEmpty()) coreBuild.inputs.append(p);
-                    return;
-                }
-                default: {
-                    // CONCAT / FUNCTION_CALL (glob и т.п.) — split.
-                    // Для glob() QVariantList.toString() даёт "" — пока
-                    // не поддерживается в inputs; отдельная задача.
-                    QString val = evaluateExpression(part).toString();
-                    for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
-                        if (!p.isEmpty()) coreBuild.inputs.append(p);
-                    return;
-                }
+                return;
             }
-        };
-
-        if (inNode->type == AstNode::CONCAT) {
-            for (auto part : inNode->children) addInput(part);
-        } else {
-            addInput(inNode);
+            case AstNode::VARIABLE_REF: {
+                QString val = evaluateExpression(part).toString();
+                for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
+                    if (!p.isEmpty()) target.append(p);
+                return;
+            }
+            default: {
+                QString val = evaluateExpression(part).toString();
+                for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
+                    if (!p.isEmpty()) target.append(p);
+                return;
+            }
         }
+    };
+
+    // Хелпер: обработать CONCAT или одиночный узел — добавить в target.
+    auto addInputsFromNode = [&addInput](AstNode* inNode, QVector<QString>& target) {
+        if (!inNode) return;
+        if (inNode->type == AstNode::CONCAT) {
+            for (auto part : inNode->children) addInput(part, target);
+        } else {
+            addInput(inNode, target);
+        }
+    };
+
+    // ---- inputs (обычные) ----
+    if (build->children.size() >= 2) {
+        addInputsFromNode(build->children[1], coreBuild.inputs);
+    }
+
+    // ---- implicit inputs (| "hdr.h") ----
+    if (build->implicitInputs) {
+        addInputsFromNode(build->implicitInputs, coreBuild.implicit);
+    }
+
+    // ---- order-only inputs (|| "stamp") ----
+    if (build->orderOnlyInputs) {
+        addInputsFromNode(build->orderOnlyInputs, coreBuild.order_only);
     }
 
     coreBuild.rule_name = build->name;

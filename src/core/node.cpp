@@ -24,15 +24,21 @@ void Node::addImplicitDependency(Node* dep) {
     if (!dep) return;
     if (!implicit_deps_.contains(dep)) {
         implicit_deps_.append(dep);
-        dep->addReverseDependency(this);
+        dep->addReverseDependency(this);   // implicit — участвует в dirty (как обычный input)
     }
 }
 
+// FIX: order-only deps НЕ должны добавляться в общий reverse_deps_.
+// Раньше: dep->addReverseDependency(this) — order-only распространял dirty
+// через collectDirtyNodes BFS (touch stamp → out тоже rebuild). Это ломало
+// семантику order-only: "жди, но не инвалидируй".
+// Теперь: отдельный reverse_order_only_deps_, BFS по нему не ходит.
+// Планировщик по-прежнему ждёт order-only через buildPlan → orderOnlyDeps().
 void Node::addOrderOnlyDependency(Node* dep) {
     if (!dep) return;
     if (!order_only_deps_.contains(dep)) {
         order_only_deps_.append(dep);
-        dep->addReverseDependency(this);
+        dep->addReverseOrderOnlyDependency(this);   // ← отдельный список
     }
 }
 
@@ -40,6 +46,13 @@ void Node::addReverseDependency(Node* dep) {
     if (!dep) return;
     if (!reverse_deps_.contains(dep)) {
         reverse_deps_.append(dep);
+    }
+}
+
+void Node::addReverseOrderOnlyDependency(Node* dep) {
+    if (!dep) return;
+    if (!reverse_order_only_deps_.contains(dep)) {
+        reverse_order_only_deps_.append(dep);
     }
 }
 
@@ -85,15 +98,11 @@ bool Node::isDirty() {
     }
     if (!anyExists) return true;
 
-    // P2-fix: mtime с диска (stateless), плюс wasBuilt флаг.
     auto checkNode = [&](Node* dep) -> bool {
         if (dep->isLeaf()) {
             qint64 m = util::getFileMtime(dep->name());
             if (m > maxOut) return true;
         } else {
-            // Если dep был ПЕРЕСОБРАН в этой сессии (exit 0) — его output
-            // изменился по определению. mtime может совпадать (copy2,
-            // NTFS resolution, fast write) — поэтому force dirty.
             if (dep->wasBuilt()) return true;
 
             const Build* db = dep->getBuild();
@@ -114,8 +123,9 @@ bool Node::isDirty() {
     for (Node* dep : implicit_deps_) {
         if (checkNode(dep)) return true;
     }
+    // ВАЖНО: order_only_deps_ НЕ проверяются для dirty.
+    // Они только для порядка (ждать завершения), не для инвалидации.
 
-    // P1: детект потери .d.
     if (rule_ && !rule_->depfile.isEmpty()) {
         auto depInputs = deps::DepsLog::instance().inputsFor(name_);
         if (depInputs.isEmpty()) {
@@ -130,7 +140,6 @@ bool Node::isDirty() {
         if (maxDepMtime > maxOut) return true;
     }
 
-    // P0: детект изменения команды.
     if (state_) {
         QString currentHash = computeCommandHash();
         if (!currentHash.isEmpty()) {
@@ -186,10 +195,6 @@ QHash<QString, qint64> Node::getOutputMtimesBefore() const {
     return before;
 }
 
-// FIX restat: FileCache хранит pre-command mtime. Внешняя команда
-// (copy_preserve.py, gcc, ...) пишет файл напрямую — C++ об этом не знает,
-// кэш остаётся stale. Без invalidate hasOutputChanged всегда возвращает
-// false (сравнивает pre-command с pre-command), и restat не работает.
 bool Node::hasOutputChanged(const QHash<QString, qint64>& before) const {
     for (const QString& out : build_->outputs) {
         util::FileCache::instance().invalidate(out);

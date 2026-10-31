@@ -24,11 +24,17 @@ public:
     void addImplicitDependency(Node* dep);
     void addOrderOnlyDependency(Node* dep);
     void addReverseDependency(Node* dep);
+    // NEW: для order-only deps — отдельный reverse-список, чтобы BFS
+    // в collectDirtyNodes НЕ распространял dirty через order-only.
+    void addReverseOrderOnlyDependency(Node* dep);
 
     const QVector<Node*>& dependencies() const { return deps_; }
     const QVector<Node*>& implicitDeps() const { return implicit_deps_; }
     const QVector<Node*>& orderOnlyDeps() const { return order_only_deps_; }
     const QVector<Node*>& reverseDeps() const { return reverse_deps_; }
+    // NEW: потребители, для которых текущий узел — order-only.
+    // Не участвуют в dirty-propagation (только в планировании).
+    const QVector<Node*>& reverseOrderOnlyDeps() const { return reverse_order_only_deps_; }
 
     bool isLeaf() const { return build_ == nullptr; }
     bool isPhony() const { return rule_ && rule_->name == "phony"; }
@@ -41,9 +47,7 @@ public:
     void setFinished(bool f) { finished_ = f; }
     bool isFinished() const { return finished_; }
 
-    // NEW: wasBuilt = true если Node успешно собран (exit 0) в этой сессии.
-    // Устанавливается в handleNodeDone. Используется в isDirty: если dep
-    // был пересобран — downstream всегда dirty (независимо от mtime).
+    // wasBuilt = true если Node успешно собран (exit 0) в этой сессии.
     void setWasBuilt(bool b) { wasBuilt_ = b; }
     bool wasBuilt() const { return wasBuilt_; }
 
@@ -65,11 +69,12 @@ private:
     QVector<Node*> implicit_deps_;
     QVector<Node*> order_only_deps_;
     QVector<Node*> reverse_deps_;
+    QVector<Node*> reverse_order_only_deps_;   // NEW
 
     qint64 cachedOutputMtime_ = -1;
     bool mtimeValid_ = false;
     bool finished_ = false;
-    bool wasBuilt_ = false;   // NEW
+    bool wasBuilt_ = false;
     mutable QMutex buildMutex_;
     bool isBuilding_ = false;
     bool buildSuccess_ = false;

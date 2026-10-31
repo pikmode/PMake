@@ -100,8 +100,16 @@ int Node::build() {
     QString program = args.takeFirst();
     QString workDir = getWorkingDirectory(build_, state_);
 
+    // FIX: печатаем многострочно с отступами и явными метками.
+    //   [N/M] <description>          ← уже напечатано engine_scheduler + console_ui
+    //       command: cmd /c "..."    ← здесь
+    //       workdir: E:\...          ← здесь
+    //       succeeded in X s         ← из runner.cpp (с отступом)
+    // Раньше была дублирующая печать "Starting: ..." в runner.cpp, но
+    // QProcess::splitCommand теряет кавычки — выглядело как мешанина.
     if (pmake::logging::isVerbose()) {
-        LOG_VERBOSE(QString("  %1").arg(command));
+        LOG_VERBOSE(QString("    command: %1").arg(command));
+        LOG_VERBOSE(QString("    workdir: %1").arg(workDir));
     }
 
     executor::Command cmd;
@@ -130,7 +138,7 @@ int Node::build() {
 
     refreshOutputMtime();
 
-    // NEW: записать hash команды для детекта изменений при следующем запуске.
+    // Записать hash команды для детекта изменений при следующем запуске.
     // Делаем ДО guard.success=true и ДО depfile — output уже создан.
     if (state_) {
         const QString hash = computeCommandHash();
@@ -143,7 +151,7 @@ int Node::build() {
 
     bool outputChanged = hasOutputChanged(beforeMtimes);
     if (rule_->restat && !outputChanged) {
-        LOG_VERBOSE(QString("Restat: output '%1' unchanged, skipping dependents").arg(name_));
+        LOG_VERBOSE(QString("    restat: output unchanged, skipping dependents"));
         return 2;
     }
 
@@ -157,7 +165,7 @@ int Node::build() {
                 if (!depsListsEqual(existingInputs, inputs)) {
                     deps::DepsLog::instance().record(out, inputs);
                 } else {
-                    LOG_VERBOSE("Dependencies for " + out + " already up-to-date, skipping");
+                    LOG_VERBOSE("    deps: already up-to-date, skipping");
                 }
             }
         }

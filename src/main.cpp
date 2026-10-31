@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
     parser.addHelpOption();
 
     // НЕ используем parser.addVersionOption() — он резервирует -v под версию.
-    // Для build-системы -v = verbose (как у ninja, make, cmake), а версия = -V (как у gcc).
+    // Для build-системы -v = verbose (как у ninja, make, cmake), а версия = -V.
     QCommandLineOption versionOption({"V", "version"},
                                      "Display version information");
     parser.addOption(versionOption);
@@ -251,7 +251,11 @@ int main(int argc, char* argv[]) {
 
     pmake::core::Cache cache;
     bool cacheValid = false;
-    if (useCache && !dryRun) {
+    // FIX: загружать кэш и в -n (dry-run). Иначе dry-run не видит актуальное
+    // состояние (fileStates, commandHashes) → показывает "всё dirty" → 37 задач
+    // вместо 1. Save после сборки по-прежнему только в !dryRun (ниже) — dry-run
+    // не мутирует кэш.
+    if (useCache) {
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (cache.load(cachePath)) {
             if (cache.isValid(buildFile)) {
@@ -274,7 +278,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------- DEPFILES (если кэш невалиден) ----------
-    if (!cacheValid || dryRun) {
+    if (!cacheValid) {
         LOG_VERBOSE("Re-scanning depfiles");
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
@@ -298,6 +302,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------- СОХРАНЕНИЕ КЭША ПОСЛЕ ПАРСИНГА ----------
+    // Только если реально собираем (dry-run не мутирует кэш).
     if (useCache && !dryRun) {
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
