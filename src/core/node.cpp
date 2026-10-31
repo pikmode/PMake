@@ -24,11 +24,11 @@ void Node::addImplicitDependency(Node* dep) {
     if (!dep) return;
     if (!implicit_deps_.contains(dep)) {
         implicit_deps_.append(dep);
-        dep->addReverseDependency(this);   // implicit — участвует в dirty (как обычный input)
+        dep->addReverseDependency(this);   // implicit — участвует в dirty
     }
 }
 
-// FIX: order-only deps НЕ должны добавляться в общий reverse_deps_.
+// FIX (order-only): order-only deps НЕ должны добавляться в общий reverse_deps_.
 // Раньше: dep->addReverseDependency(this) — order-only распространял dirty
 // через collectDirtyNodes BFS (touch stamp → out тоже rebuild). Это ломало
 // семантику order-only: "жди, но не инвалидируй".
@@ -78,13 +78,46 @@ bool Node::isDirty() {
     if (isPhony()) return false;
     if (!build_ || !rule_) return false;
 
+    // FIX (generator mtime): раньше return false после exists-check —
+    // mtime inputs не проверялся. RERUN_CMAKE (generator=1) не запускался
+    // при touch CMakeLists.txt → stale build.ninja.
+    // Теперь generator продолжает mtime-проверку inputs как обычный таск.
+    // НО: command hash и depfile-lost не проверяются (generator специфичен).
     if (rule_->generator) {
+        bool anyMissing = false;
         for (const QString& out : build_->outputs) {
-            if (!util::fileExists(out)) return true;
+            if (!util::fileExists(out)) { anyMissing = true; break; }
         }
+        if (anyMissing) return true;
+
+        qint64 maxOut = -1;
+        for (const QString& out : build_->outputs) {
+            qint64 m = util::getFileMtime(out);
+            if (m > maxOut) maxOut = m;
+        }
+        auto checkGenDep = [&](Node* dep) -> bool {
+            if (dep->isLeaf()) {
+                return util::getFileMtime(dep->name()) > maxOut;
+            }
+            if (dep->wasBuilt()) return true;
+            const Build* db = dep->getBuild();
+            if (!db) return false;
+            qint64 dm = -1;
+            for (const QString& out : db->outputs) {
+                qint64 mm = util::getFileMtime(out);
+                if (mm > dm) dm = mm;
+            }
+            return dm > maxOut;
+        };
+        for (Node* dep : deps_) if (checkGenDep(dep)) return true;
+        for (Node* dep : implicit_deps_) if (checkGenDep(dep)) return true;
+        // order_only не проверяем — не propagates dirty.
+        cachedOutputMtime_ = maxOut;
+        mtimeValid_ = true;
         return false;
     }
 
+    // ---- обычный таск ----
     bool anyExists = false;
     qint64 maxOut = -1;
     for (const QString& out : build_->outputs) {
@@ -103,6 +136,9 @@ bool Node::isDirty() {
             qint64 m = util::getFileMtime(dep->name());
             if (m > maxOut) return true;
         } else {
+            // Если dep был ПЕРЕСОБРАН в этой сессии (exit 0) — его output
+            // изменился по определению. mtime может совпадать (copy2,
+            // NTFS resolution, fast write) — поэтому force dirty.
             if (dep->wasBuilt()) return true;
 
             const Build* db = dep->getBuild();
@@ -126,6 +162,7 @@ bool Node::isDirty() {
     // ВАЖНО: order_only_deps_ НЕ проверяются для dirty.
     // Они только для порядка (ждать завершения), не для инвалидации.
 
+    // P1: детект потери .d.
     if (rule_ && !rule_->depfile.isEmpty()) {
         auto depInputs = deps::DepsLog::instance().inputsFor(name_);
         if (depInputs.isEmpty()) {
@@ -140,6 +177,7 @@ bool Node::isDirty() {
         if (maxDepMtime > maxOut) return true;
     }
 
+    // P0: детект изменения команды.
     if (state_) {
         QString currentHash = computeCommandHash();
         if (!currentHash.isEmpty()) {
@@ -195,6 +233,10 @@ QHash<QString, qint64> Node::getOutputMtimesBefore() const {
     return before;
 }
 
+// FIX (restat): FileCache хранит pre-command mtime. Внешняя команда
+// (copy_preserve.py, gcc, ...) пишет файл напрямую — C++ об этом не знает,
+// кэш остаётся stale. Без invalidate hasOutputChanged всегда возвращает
+// false (сравнивает pre-command с pre-command), и restat не работает.
 bool Node::hasOutputChanged(const QHash<QString, qint64>& before) const {
     for (const QString& out : build_->outputs) {
         util::FileCache::instance().invalidate(out);
