@@ -5,6 +5,7 @@
 #include "deps/deps_log.h"
 #include <QElapsedTimer>
 #include <QMutexLocker>
+#include <functional>
 
 namespace pmake::core {
 
@@ -35,16 +36,42 @@ void Engine::buildPlan(const QVector<Node*>& dirtyNodes) {
         for (Node* n : t->nodes) nodeToTask_.insert(n, t);
     }
 
+    // FIX (phony order-only): order-only phony может быть НЕ в dirtyNodes
+    // (isDirty(phony)=false), поэтому его нет в nodeToTask_. Если не развернуть
+    // его рекурсивно, downstream стартует до того, как вся order-only цепочка
+    // завершится.
+    //
+    // Реальный CMake-паттерн:
+    //   build "cmake_obj_deps" : phony || "autogen"
+    //   build "main.o" : cc "main.c" || "cmake_obj_deps"
+    //
+    // Без разворота: main.o.pendingDeps=0 (phony не в nodeToTask_) →
+    // main.o стартует параллельно с autogen → ORDER VIOLATION.
+    //
+    // С разворотом: main.o.pendingDeps=1 (autogen) → main.o ждёт autogen.
     for (SchedTask* t : tasks_) {
         QSet<SchedTask*> taskDeps;
         auto scan = [&](Node* node) {
-            auto visit = [&](Node* dep) {
+            QSet<Node*> visiting;
+            std::function<void(Node*)> visit = [&](Node* dep) {
                 if (!dep) return;
                 auto tit = nodeToTask_.constFind(dep);
-                if (tit == nodeToTask_.constEnd()) return;
-                SchedTask* dt = tit.value();
-                if (!dt || dt == t) return;
-                taskDeps.insert(dt);
+                if (tit != nodeToTask_.constEnd()) {
+                    SchedTask* dt = tit.value();
+                    if (dt && dt != t) taskDeps.insert(dt);
+                    return;
+                }
+                // dep не в nodeToTask_ — либо up-to-date real, либо phony.
+                // Если phony — развернуть рекурсивно, чтобы его deps
+                // стали зависимостями t. Иначе t стартует до phony-цепочки.
+                // visiting защищает от циклов (в графе их быть не должно,
+                // но лишняя защита не повредит).
+                if (dep->isPhony() && !visiting.contains(dep)) {
+                    visiting.insert(dep);
+                    for (Node* d : dep->dependencies())   visit(d);
+                    for (Node* d : dep->implicitDeps())   visit(d);
+                    for (Node* d : dep->orderOnlyDeps())  visit(d);
+                }
             };
             for (Node* d : node->dependencies())   visit(d);
             for (Node* d : node->implicitDeps())   visit(d);
@@ -115,15 +142,13 @@ void Engine::startTask(SchedTask* t) {
     }
 
     // P2: runtime re-check для restat.
-    // Все deps уже Done (pendingDeps == 0) → их wasBuilt/mtime актуальны.
     if (!dryRun_ && !t->runnerNode->isDirty()) {
         LOG_VERBOSE(QString("Skipping '%1' (clean at runtime)").arg(t->runnerNode->name()));
         emit nodeDoneInternal(t->runnerNode, 2, 0.0);
         return;
     }
 
-    // FIX: stable display name. Для multi-output t->nodes.first() — из QSet,
-    // порядок недетерминирован. build->outputs.first() — стабильно.
+    // stable display name (multi-output).
     QString display = (t->build && !t->build->outputs.isEmpty())
                       ? t->build->outputs.first()
                       : t->runnerNode->name();
@@ -180,7 +205,6 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
         SchedTask* t = tit.value();
         if (!t || t->state != TaskState::Running) return;
 
-        // FIX: stable display name для сообщения об ошибке multi-output.
         if (t->build && !t->build->outputs.isEmpty()) {
             nodeName = t->build->outputs.first();
         }
