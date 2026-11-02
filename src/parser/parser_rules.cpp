@@ -51,14 +51,11 @@ void ParserImpl::parseBuild(AstNode* parent) {
     QVector<AstNode*> outputs;
     int guard = 0;
     while (true) {
-        if (++guard > 1000) {
+        if (++guard > 100000) { // FIX: было 1000
             error("Infinite loop in build outputs", true);
             break;
         }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
-            // FIX: parseAtom, не parseValue. parseValue = parseExpressionPrecedence
-            // съел бы `||`/`&&`/`+` как операторы. В outputs это не нужно —
-            // каждый output атомарен.
             outputs.append(parseAtom());
         } else if (cur_.type == TOK_IDENT) {
             error(QString("Expected string literal in quotes, got identifier '%1'. Use \"%1\".").arg(str(cur_.strId)), true);
@@ -74,8 +71,8 @@ void ParserImpl::parseBuild(AstNode* parent) {
         error("Expected at least one output for build", true);
         return;
     }
-    if (outputs.size() > 1000) {
-        error("Too many outputs in build (max 1000)", true);
+    if (outputs.size() > 100000) { // FIX: было 1000
+        error("Too many outputs in build (max 100000)", true);
         return;
     }
 
@@ -106,18 +103,13 @@ void ParserImpl::parseBuild(AstNode* parent) {
     node->name = ruleName;
     advance();
 
-    // Секции inputs:
-    //   build "out" : rule "in1" "in2" | "impl1" || "order1"
-    //   section 0 — обычные (mtime-dirty)
-    //   section 1 — implicit (mtime-dirty, но не в ${in})
-    //   section 2 — order-only (только порядок, не инвалидируют)
     QVector<AstNode*> inputs;
     QVector<AstNode*> implicitInputs;
     QVector<AstNode*> orderOnlyInputs;
     int section = 0;
     guard = 0;
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF && cur_.type != TOK_LBRACE) {
-        if (++guard > 1000) {
+        if (++guard > 100000) { // FIX: было 1000
             error("Infinite loop in build inputs", true);
             break;
         }
@@ -138,11 +130,6 @@ void ParserImpl::parseBuild(AstNode* parent) {
             continue;
         }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
-            // FIX: parseAtom, не parseValue.
-            // parseValue("out.in") → BINARY_OP(OR, "out.in", "stamp.txt") —
-            // потому что parseExpressionPrecedence видит TOK_OR после "out.in"
-            // и съедает его как ЛОГИЧЕСКИЙ оператор. В итоге inputs = ["true"],
-            // а stamp.txt теряется. parseAtom возвращает атом — то, что нужно.
             AstNode* val = parseAtom();
             if (section == 0)      inputs.append(val);
             else if (section == 1) implicitInputs.append(val);

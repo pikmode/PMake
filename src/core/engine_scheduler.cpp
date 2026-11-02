@@ -6,49 +6,84 @@
 #include <QElapsedTimer>
 #include <QMutexLocker>
 #include <functional>
+#include <algorithm>
 
 namespace pmake::core {
 
 // ===========================================================================
 // buildPlan: сгруппировать dirty nodes -> SchedTask по Build
+//
+// FIX (детерминизм): раньше итерировали QHash<const Build*, ...> —
+// порядок случайный. На первом билде (все таски ready) `[1/N]` мог быть
+// `Building CXX object` вместо `Automatic MOC`. В ninja порядок детерминирован
+// (FIFO из build.ninja). Теперь сортируем по rule_name:
+//
+//   CUSTOM_COMMAND__autogen_core   (autogen core)     ← [1]
+//   CUSTOM_COMMAND__autogen_exe    (autogen exe)      ← [2]
+//   CUSTOM_COMMAND__rcc            (rcc)              ← [3]
+//   CXX_COMPILER__pmake_core       (33 core .obj)     ← [4..36]
+//   CXX_COMPILER__pmake            (3 exe .obj)       ← [37..39]
+//   CXX_STATIC_LIBRARY_LINKER__... (libpmake_core.a)  ← [40]
+//   CXX_EXECUTABLE_LINKER__...     (pmake.exe)        ← [41]
+//
+// "CUSTOM" < "CXX_C" < "CXX_E" < "CXX_S" — лексикографически autogen/rcc
+// всегда раньше компиляции. Совпадает с порядком ninja.
 // ===========================================================================
-void Engine::buildPlan(const QVector<Node*>& dirtyNodes) {
+void Engine::buildPlan(const QVector<Node*>& dirtyNodesIn) {
     QMutexLocker lock(&planMutex_);
 
+    // 1. Сортируем dirtyNodes стабильно по rule_name.
+    QVector<Node*> dirtyNodes = dirtyNodesIn;
+    std::stable_sort(dirtyNodes.begin(), dirtyNodes.end(),
+        [](Node* a, Node* b) {
+            const Build* ba = a ? a->getBuild() : nullptr;
+            const Build* bb = b ? b->getBuild() : nullptr;
+            if (!ba && !bb) return false;
+            if (!ba) return false;   // leaf после build
+            if (!bb) return true;
+            // Primary: rule_name (autogen < compile < link)
+            if (ba->rule_name != bb->rule_name)
+                return ba->rule_name < bb->rule_name;
+            // Secondary: имя ноды (стабильный runnerNode → стабильный
+            // display name в `[N/M] Building CXX object ...`)
+            return a->name() < b->name();
+        });
+
+    // 2. Группируем по Build, сохраняя порядок первого появления.
     QHash<const Build*, QVector<Node*>> buildToNodes;
+    QVector<const Build*> buildOrder;
+
     for (Node* n : dirtyNodes) {
         if (!n) continue;
         const Build* b = n->getBuild();
         if (!b) continue;
-        buildToNodes[b].append(n);
+        auto it = buildToNodes.find(b);
+        if (it == buildToNodes.end()) {
+            buildToNodes.insert(b, QVector<Node*>());
+            buildOrder.append(b);
+            it = buildToNodes.find(b);
+        }
+        it.value().append(n);
     }
 
-    for (auto it = buildToNodes.begin(); it != buildToNodes.end(); ++it) {
+    // 3. Создаём SchedTask в детерминированном порядке buildOrder.
+    for (const Build* b : buildOrder) {
+        const QVector<Node*>& nodes = buildToNodes[b];
+
         SchedTask* t = new SchedTask();
-        t->build = it.key();
-        t->nodes = it.value();
-        t->runnerNode = t->nodes.isEmpty() ? nullptr : t->nodes.first();
-        t->isReal = isRealBuild(it.key());
-        t->poolName = poolNameFor(it.key());
+        t->build = b;
+        t->nodes = nodes;
+        t->runnerNode = nodes.isEmpty() ? nullptr : nodes.first();
+        t->isReal = isRealBuild(b);
+        t->poolName = poolNameFor(b);
         if (!poolCounters_.contains(t->poolName)) t->poolName = "default";
 
-        tasks_.insert(it.key(), t);
-        for (Node* n : t->nodes) nodeToTask_.insert(n, t);
+        tasks_.insert(b, t);
+        for (Node* n : nodes) nodeToTask_.insert(n, t);
     }
 
-    // FIX (phony order-only): order-only phony может быть НЕ в dirtyNodes
-    // (isDirty(phony)=false), поэтому его нет в nodeToTask_. Если не развернуть
-    // его рекурсивно, downstream стартует до того, как вся order-only цепочка
-    // завершится.
-    //
-    // Реальный CMake-паттерн:
-    //   build "cmake_obj_deps" : phony || "autogen"
-    //   build "main.o" : cc "main.c" || "cmake_obj_deps"
-    //
-    // Без разворота: main.o.pendingDeps=0 (phony не в nodeToTask_) →
-    // main.o стартует параллельно с autogen → ORDER VIOLATION.
-    //
-    // С разворотом: main.o.pendingDeps=1 (autogen) → main.o ждёт autogen.
+    // 4. Зависимости между тасками. Разворачиваем order-only phony
+    //    рекурсивно (CMake-паттерн: cmake_object_order_depends_target_X).
     for (SchedTask* t : tasks_) {
         QSet<SchedTask*> taskDeps;
         auto scan = [&](Node* node) {
@@ -62,10 +97,7 @@ void Engine::buildPlan(const QVector<Node*>& dirtyNodes) {
                     return;
                 }
                 // dep не в nodeToTask_ — либо up-to-date real, либо phony.
-                // Если phony — развернуть рекурсивно, чтобы его deps
-                // стали зависимостями t. Иначе t стартует до phony-цепочки.
-                // visiting защищает от циклов (в графе их быть не должно,
-                // но лишняя защита не повредит).
+                // Если phony — развернуть рекурсивно.
                 if (dep->isPhony() && !visiting.contains(dep)) {
                     visiting.insert(dep);
                     for (Node* d : dep->dependencies())   visit(d);
@@ -82,10 +114,19 @@ void Engine::buildPlan(const QVector<Node*>& dirtyNodes) {
         for (SchedTask* dt : taskDeps) dt->dependents.append(t);
     }
 
+    // 5. Считаем totalTasks_ (только real) и pendingTasks_ (включая phony).
     totalTasks_ = 0;
     for (SchedTask* t : tasks_) {
         pendingTasks_++;
         if (t->isReal) totalTasks_++;
+    }
+
+    // 6. Заполняем ready queue в порядке buildOrder (детерминированно).
+    //    Раньше итерировали QHash<const Build*, SchedTask*> — случайный
+    //    порядок. Теперь — по buildOrder (после stable_sort по rule_name).
+    for (const Build* b : buildOrder) {
+        SchedTask* t = tasks_.value(b, nullptr);
+        if (!t) continue;
         if (t->pendingDeps == 0) {
             t->state = TaskState::Ready;
             readyQueue_.enqueue(t);
