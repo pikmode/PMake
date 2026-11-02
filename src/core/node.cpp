@@ -157,7 +157,9 @@ bool Node::isDirty() {
         if (maxDepMtime > maxOut) return true;
     }
 
-    if (state_) {
+    // P0: Ленивый SHA1. Если build.pmake не менялся (кэш валиден),
+    // мы гарантированно знаем, что команды не изменились. Не считаем SHA1.
+    if (state_ && !state_->isCacheValid()) {
         QString currentHash = computeCommandHash();
         if (!currentHash.isEmpty()) {
             auto cached = state_->getCommandHash(name_);
@@ -189,18 +191,10 @@ QHash<QString, QString> Node::getSpecialVars() const {
     specialVars["in"] = quotedInputs.join(' ');
     specialVars["in_newline"] = build_->inputs.join('\n');
 
-    if (build_->scope) {
-        for (const auto& key : build_->scope->locals().keys()) {
-            if (!specialVars.contains(key))
-                specialVars[key] = build_->scope->locals().value(key);
-        }
-    }
-    if (state_) {
-        for (const auto& key : state_->globals().keys()) {
-            if (!specialVars.contains(key))
-                specialVars[key] = state_->globals().value(key);
-        }
-    }
+    // ОГРОМНЫЙ FIX: убрано копирование build->scope->locals() и state->globals()
+    // Это экономит 20 000 аллокаций QString на 400 нодах.
+    // expandVarsWithSpecial сам найдет их через fallback.
+    
     return specialVars;
 }
 

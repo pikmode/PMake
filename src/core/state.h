@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <QString>
@@ -7,7 +6,6 @@
 #include <QSharedPointer>
 #include <optional>
 #include <QMutex>
-#include <QRegularExpression>
 #include "core/ast.h"
 
 namespace pmake::core {
@@ -57,14 +55,12 @@ struct PlatformBlock {
     QHash<QString, QString> vars;
 };
 
-// Определение пользовательской функции (владеет AST-телом)
 struct FunctionDef {
     QString name;
     QStringList params;
-    AstNode* body = nullptr;   // блок с телом (тип BLOCK)
+    AstNode* body = nullptr;
 };
 
-// Scope – контекст переменных
 class Scope {
 public:
     explicit Scope(Scope* parent = nullptr);
@@ -79,14 +75,6 @@ private:
     QHash<QString, QString> vars_;
 };
 
-// State – основное хранилище сборки.
-//
-// ВАЖНО: copy запрещён, move разрешён явно.
-// Причина: custom ~State удаляет functions_[].body (сырые AstNode*).
-// Без явного move-ctor std::move(state_) в ParserImpl::parse() вызовет
-// COPY (неявный move заблокирован user-defined destructor'ом), и два State
-// начнут владеть одним AstNode* -> double-free при разрушении
-// (стек-буфер overrun 0xC0000409 при include файла с function()).
 class State {
 public:
     State();
@@ -145,23 +133,20 @@ public:
     const QHash<QString, FunctionDef>& functions() const;
 
     // --- Command hashes (thread-safe) ---
-    // setCommandHash вызывается из воркеров (Node::build), поэтому нужен mutex.
-    // commandHashes() возвращает ссылку — использовать только из main-thread
-    // после engine.run() (когда все воркеры завершены).
     void setCommandHash(const QString& output, const QString& hash) const;
     std::optional<QString> getCommandHash(const QString& output) const;
     void setCommandHashes(const QHash<QString, QString>& hashes);
     const QHash<QString, QString>& commandHashes() const;
 
-    // Вызов пользовательской функции
+    // NEW: Флаг валидности кэша (для ленивого SHA1)
+    void setCacheValid(bool valid) { cacheValid_ = valid; }
+    bool isCacheValid() const { return cacheValid_; }
+
     QVariant callUserFunction(const QString& name,
                               const QVector<QVariant>& args,
                               Scope* callerScope = nullptr);
-
-    // Выполнение AST-узла в заданном контексте
     QVariant executeAstNode(AstNode* node, Scope* localScope);
 
-    // --- Подстановка переменных ---
     QString expandVars(const QString& input, const Scope* local_scope = nullptr) const;
     QString expandVarsWithSpecial(const QString& input,
                                   const Scope* local_scope,
@@ -179,8 +164,8 @@ private:
     QHash<QString, PlatformBlock> platforms_;
     QHash<QString, FunctionDef> functions_;
     mutable QHash<QString, QString> commandHashes_;
-    mutable QMutex commandHashesMutex_;   // thread-safety для setCommandHash
-    QRegularExpression varRegex_;
+    mutable QMutex commandHashesMutex_;
+    bool cacheValid_ = false; // NEW
 };
 
 } // namespace pmake::core

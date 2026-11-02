@@ -1,5 +1,3 @@
-
-
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QEventLoop>
@@ -22,6 +20,7 @@
 #include "core/state.h"
 #include "parser/parser.h"
 #include "util/logging.h"
+#include "util/filesystem.h" // NEW
 #include "ui/console_ui.h"
 #include "core/cache.h"
 #include "deps/deps_log.h"
@@ -54,8 +53,6 @@ int main(int argc, char* argv[]) {
     parser.setApplicationDescription("PMake modern build system");
     parser.addHelpOption();
 
-    // НЕ используем parser.addVersionOption() — он резервирует -v под версию.
-    // Для build-системы -v = verbose (как у ninja, make, cmake), а версия = -V.
     QCommandLineOption versionOption({"V", "version"},
                                      "Display version information");
     parser.addOption(versionOption);
@@ -152,7 +149,6 @@ int main(int argc, char* argv[]) {
     bool isQuiet   = parser.isSet(quietOption);
     bool dryRun    = parser.isSet(dryRunOption);
 
-    // color: включён по умолчанию, отключается --no-color или NO_COLOR (env, standard)
     bool noColorEnv = qEnvironmentVariableIsSet("NO_COLOR");
     bool useColor = !parser.isSet(noColorOption) && !noColorEnv;
 
@@ -253,31 +249,39 @@ int main(int argc, char* argv[]) {
 
     pmake::core::Cache cache;
     bool cacheValid = false;
-    // FIX: загружать кэш и в -n (dry-run). Иначе dry-run не видит актуальное
-    // состояние (fileStates, commandHashes) → показывает "всё dirty" → 37 задач
-    // вместо 1. Save после сборки по-прежнему только в !dryRun (ниже) — dry-run
-    // не мутирует кэш.
     if (useCache) {
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (cache.load(cachePath)) {
-            if (cache.isValid(buildFile)) {
+            // Загружаем ВСЕГДА, чтобы isDirty мог сравнить старые хэши с новыми
+            for (auto it = cache.fileStates().begin(); it != cache.fileStates().end(); ++it) {
+                state->setFileState(it.key(), it.value());
+            }
+            state->setCommandHashes(cache.commandHashes());
+
+            // Проверяем, не изменился ли build.pmake после сохранения кэша.
+            qint64 buildMtime = pmake::util::getFileMtime(buildFile);
+            qint64 cacheMtime = pmake::util::getFileMtime(cachePath);
+            bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
+
+            if (cache.isValid(buildFile) && !buildFileNewer) {
                 cacheValid = true;
-                for (auto it = cache.fileStates().begin(); it != cache.fileStates().end(); ++it) {
-                    state->setFileState(it.key(), it.value());
-                }
-                state->setCommandHashes(cache.commandHashes());
                 LOG_VERBOSE(QString("Cache: valid, %1 file states, %2 deps, %3 command hashes")
                             .arg(cache.fileStates().size())
                             .arg(pmake::deps::DepsLog::instance().entries().size())
                             .arg(cache.commandHashes().size()));
             } else {
                 LOG_VERBOSE("Cache: invalid (build file changed)");
+                // Очищаем только DepsLog (зависимости пересканируем), 
+                // но fileStates и commandHashes остаются в памяти для сравнения!
                 pmake::deps::DepsLog::instance().clear();
             }
         } else {
             LOG_VERBOSE("Cache: not found");
         }
     }
+
+    // Передаем статус кэша в движок. 
+    state->setCacheValid(cacheValid);
 
     // ---------- DEPFILES (если кэш невалиден) ----------
     if (!cacheValid) {
@@ -304,7 +308,6 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------- СОХРАНЕНИЕ КЭША ПОСЛЕ ПАРСИНГА ----------
-    // Только если реально собираем (dry-run не мутирует кэш).
     if (useCache && !dryRun) {
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
@@ -348,10 +351,6 @@ int main(int argc, char* argv[]) {
     bool result = engine.run(target);
 
     // ---------- ОБНОВЛЕНИЕ КЭША ПОСЛЕ СБОРКИ ----------
-    // FIX P1-regression: сохраняем кэш ДАЖЕ после fail.
-    // Причина: успешные задачи успели записать DepsLog и commandHashes в state.
-    // Если не сохранить — при следующем запуске DepsLog для a.o пуст →
-    // P1 (depfile lost detection) заставит пересобрать a.o зря.
     if (!dryRun && useCache) {
         engine.updateFileStates();
         cache.store(*state, buildFile);

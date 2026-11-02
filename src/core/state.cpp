@@ -31,8 +31,7 @@ bool Scope::has(const QString& name) const {
 // ==================================================================
 // State
 // ==================================================================
-State::State()
-    : varRegex_(R"(\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)|{([^}]+)})") {}
+State::State() {}
 
 State::~State() {
     for (auto& func : functions_) {
@@ -41,12 +40,6 @@ State::~State() {
     functions_.clear();
 }
 
-// ------------------------------------------------------------------
-// Move-constructor
-// ------------------------------------------------------------------
-// Custom destructor блокирует неявный move → std::move(state_) в parse()
-// скомпилировался бы как COPY. Copy владеет одним AstNode* дважды →
-// double-free. Явный move + очистка other.functions_ решает.
 State::State(State&& other) noexcept
     : global_scope_(std::move(other.global_scope_))
     , rules_(std::move(other.rules_))
@@ -59,15 +52,13 @@ State::State(State&& other) noexcept
     , platforms_(std::move(other.platforms_))
     , functions_(std::move(other.functions_))
     , commandHashes_(std::move(other.commandHashes_))
-    , varRegex_(std::move(other.varRegex_)) {
-    // Не даём ~other удалить AstNode*, которые теперь принадлежат нам
+    , cacheValid_(other.cacheValid_) {
     other.functions_.clear();
 }
 
 State& State::operator=(State&& other) noexcept {
     if (this == &other) return *this;
 
-    // Освободить своё (иначе утечка AstNode*)
     for (auto& func : functions_) delete func.body;
     functions_.clear();
 
@@ -82,13 +73,12 @@ State& State::operator=(State&& other) noexcept {
     platforms_      = std::move(other.platforms_);
     functions_      = std::move(other.functions_);
     commandHashes_  = std::move(other.commandHashes_);
-    varRegex_       = std::move(other.varRegex_);
+    cacheValid_     = other.cacheValid_;
 
     other.functions_.clear();
     return *this;
 }
 
-// --- Глобальные переменные ---
 void State::setGlobal(const QString& name, const QString& value) {
     global_scope_.set(name, value);
 }
@@ -101,7 +91,6 @@ const QHash<QString, QString>& State::globals() const {
     return global_scope_.locals();
 }
 
-// --- Правила ---
 void State::addRule(const Rule& rule) {
     rules_[rule.name] = rule;
 }
@@ -115,7 +104,6 @@ const QHash<QString, Rule>& State::rules() const {
     return rules_;
 }
 
-// --- Сборки ---
 void State::addBuild(const Build& build) {
     builds_.append(build);
 }
@@ -124,7 +112,6 @@ const QVector<Build>& State::builds() const {
     return builds_;
 }
 
-// --- Пулы ---
 void State::addPool(const Pool& pool) {
     pools_[pool.name] = pool;
 }
@@ -138,7 +125,6 @@ const QHash<QString, Pool>& State::pools() const {
     return pools_;
 }
 
-// --- Состояния файлов ---
 void State::setFileState(const QString& path, const FileState& state) {
     fileStates_[path] = state;
 }
@@ -169,7 +155,6 @@ const QVector<QString>& State::includedFiles() const {
     return includedFiles_;
 }
 
-// --- Конфигурации ---
 void State::addConfig(const ConfigBlock& block) {
     configs_[block.name] = block;
 }
@@ -187,7 +172,6 @@ const QHash<QString, ConfigBlock>& State::configs() const {
     return configs_;
 }
 
-// --- Платформы ---
 void State::addPlatform(const PlatformBlock& block) {
     platforms_[block.name] = block;
 }
@@ -205,9 +189,7 @@ const QHash<QString, PlatformBlock>& State::platforms() const {
     return platforms_;
 }
 
-// --- Пользовательские функции ---
 void State::addFunction(const FunctionDef& func) {
-    // Если такое имя уже есть — освобождаем старый body (не течёт)
     auto it = functions_.find(func.name);
     if (it != functions_.end() && it->body != func.body) {
         delete it->body;
@@ -224,7 +206,6 @@ const QHash<QString, FunctionDef>& State::functions() const {
     return functions_;
 }
 
-// --- Command hashes (thread-safe: mutex защищает QHash) ---
 void State::setCommandHash(const QString& output, const QString& hash) const {
     QMutexLocker locker(&commandHashesMutex_);
     commandHashes_[output] = hash;
@@ -243,8 +224,6 @@ void State::setCommandHashes(const QHash<QString, QString>& hashes) {
 }
 
 const QHash<QString, QString>& State::commandHashes() const {
-    // Возвращаем ссылку без lock — вызывается из main-thread после engine.run()
-    // (все воркеры уже остановлены, race невозможен).
     return commandHashes_;
 }
 
