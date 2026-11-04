@@ -1,19 +1,17 @@
-// parser/parser.h
+// parser/ninja-parser/parser.h
 #pragma once
 
 #include <memory>
 #include "core/state.h"
 #include "util/string_pool.h"
 
-namespace pmake::parser {
+namespace pmake::ninja {   // ← было pmake::parser
 
 class Parser {
 public:
-    // Парсит файл .ninja или .pmake, возвращает готовое состояние
+    // Парсит .ninja файл, возвращает State.
+    // Единственное отличие от pmake DSL — нет config/platform.
     std::unique_ptr<core::State> parse(const QString& filename);
-
-private:
-    // внутренняя реализация скрыта
 };
 
-} // namespace pmake::parser
+} // namespace pmake::ninja

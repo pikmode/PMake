@@ -1,12 +1,13 @@
-// parser/lexer.cpp
-#include "parser/lexer.h"
+// parser/ninja-parser/lexer.cpp
+#include "parser/ninja-parser/lexer.h"
 #include <cctype>
 #include <QDebug>
 
-namespace pmake::parser {
+namespace pmake::ninja {
 
 Lexer::Lexer(const QByteArray& data, const QString& filename)
-    : data_(data.constData()), pos_(data_), end_(data_ + data.size()), line_(1), filename_(filename), atLineStart_(true), hadWhitespace_(false) {
+    : data_(data.constData()), pos_(data_), end_(data_ + data.size()),
+      line_(1), filename_(filename), atLineStart_(true), hadWhitespace_(false) {
     pool_ = &util::StringPool::instance();
 }
 
@@ -30,9 +31,7 @@ char Lexer::get() {
             atLineStart_ = true;
         }
     } else {
-        if (c != ' ' && c != '\t') {
-            atLineStart_ = false;
-        }
+        if (c != ' ' && c != '\t') atLineStart_ = false;
     }
     return c;
 }
@@ -42,26 +41,15 @@ void Lexer::skipWhitespaceAndComments() {
     while (true) {
         char c = peek();
         if (c == '\0') break;
-        if (c == ' ' || c == '\t') {
-            get();
-            whitespaceSeen = true;
-            continue;
-        }
-        if (c == '\n' || c == '\r') {
-            break;
-        }
+        if (c == ' ' || c == '\t') { get(); whitespaceSeen = true; continue; }
+        if (c == '\n' || c == '\r') break;
         if (c == '#') {
-            // Комментарий до конца строки
-            while (peek() != '\0' && peek() != '\n' && peek() != '\r') {
-                get();
-            }
+            while (peek() != '\0' && peek() != '\n' && peek() != '\r') get();
             continue;
         }
         break;
     }
-    if (whitespaceSeen) {
-        hadWhitespace_ = true;
-    }
+    if (whitespaceSeen) hadWhitespace_ = true;
 }
 
 Token Lexer::readIdentOrKeyword() {
@@ -81,33 +69,18 @@ Token Lexer::readIdentOrKeyword() {
 }
 
 Token Lexer::readString() {
-    const char* start = pos_;
     QByteArray result;
     char c;
     while ((c = get()) != '\0') {
         if (c == '"') break;
-        if (c == '\\') {
-            char n = peek();
-            if (n == '\0') break;
-            get();
-            switch (n) {
-                case 'n':  result.append('\n'); break;
-                case 'r':  result.append('\r'); break;
-                case 't':  result.append('\t'); break;
-                case '\\': result.append('\\'); break;
-                case '"':  result.append('"'); break;
-                default:   result.append(n); break;
-            }
-        } else {
-            result.append(c);
-        }
+        result.append(c);
     }
     int id = pool_->intern(result);
     return {TOK_STRING, id, line_, 0};
 }
 
 Token Lexer::readVariable() {
-    char c = get(); // символ после $
+    char c = get();
     QByteArray var;
     if (c == '{') {
         while (true) {
@@ -128,7 +101,7 @@ Token Lexer::readVariable() {
         int id = pool_->intern(var);
         return {TOK_VAR_REF, id, line_, 0};
     } else {
-        // Экранирование: $: -> :, $  -> пробел, $$ -> $ и т.д.
+        // $:  $$  $  — экранирование одиночного символа
         QByteArray lit(1, c);
         int id = pool_->intern(lit);
         return {TOK_STRING, id, line_, 0};
@@ -138,7 +111,7 @@ Token Lexer::readVariable() {
 Token Lexer::nextToken() {
     hadWhitespace_ = false;
 
-    // Пропускаем BOM
+    // BOM
     if (pos_ == data_ && end_ - pos_ >= 3) {
         if (static_cast<unsigned char>(pos_[0]) == 0xEF &&
             static_cast<unsigned char>(pos_[1]) == 0xBB &&
@@ -147,25 +120,15 @@ Token Lexer::nextToken() {
         }
     }
 
-    // Отступы в начале строки
     if (atLineStart_) {
         int indent = 0;
         while (true) {
             char c = peek();
-            if (c == ' ') {
-                get();
-                indent++;
-            } else if (c == '\t') {
-                get();
-                indent += 4;
-            } else {
-                break;
-            }
+            if (c == ' ') { get(); indent++; }
+            else if (c == '\t') { get(); indent += 4; }
+            else break;
         }
-        if (indent > 0) {
-            atLineStart_ = false;
-            return {TOK_INDENT, -1, line_, indent};
-        }
+        if (indent > 0) { atLineStart_ = false; return {TOK_INDENT, -1, line_, indent}; }
         atLineStart_ = false;
     }
 
@@ -173,12 +136,7 @@ Token Lexer::nextToken() {
 
     char c = get();
     if (c == '\0') return {TOK_EOF, -1, line_, 0};
-
-    if (c == '\n' || c == '\r') {
-        atLineStart_ = true;
-        return {TOK_NEWLINE, -1, line_, 0};
-    }
-
+    if (c == '\n' || c == '\r') { atLineStart_ = true; return {TOK_NEWLINE, -1, line_, 0}; }
     if (c == '=') return {TOK_EQUALS, -1, line_, 0};
     if (c == ':') return {TOK_COLON, -1, line_, 0};
     if (c == '{') return {TOK_LBRACE, -1, line_, 0};
@@ -190,141 +148,67 @@ Token Lexer::nextToken() {
     if (c == '"') return readString();
     if (c == '$') return readVariable();
 
-    // Любой другой символ – начало идентификатора
     --pos_;
     return readIdentOrKeyword();
 }
 
 // ============================================================
-// ИСПРАВЛЕННЫЙ readValue – корректно обрабатывает кавычки и #
+// FIX: readValue теперь корректно обрабатывает ninja-эскейпы:
+//   $<newline>  → ничего (continuation)
+//   $<space>    → пробел
+//   $:          → :
+//   $$          → $
+//   $var, ${var} → оставить как есть (раскроется позже в expandVars)
+//   \X          → \X (literal, в ninja \ не escape)
 // ============================================================
-QString Lexer::readValue(bool allowContinuation) {
-    // Пропускаем начальные пробелы
-    while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) {
-        pos_++;
-    }
+QString Lexer::readValue(bool /*allowContinuation*/) {
+    while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) pos_++;
 
     QByteArray result;
     bool inQuotes = false;
-    bool escape = false;
 
     while (pos_ < end_) {
         char c = *pos_;
-        if (c == '\0') break;
 
-        // Если не в кавычках и не экранируем, обрабатываем специальные символы
-        if (!inQuotes && !escape) {
-            if (c == '#' || c == '\n' || c == '\r') {
-                // # – комментарий (только если не экранирован и не в кавычках)
-                if (c == '#') {
-                    // До конца строки – пропускаем
-                    while (pos_ < end_ && *pos_ != '\n' && *pos_ != '\r') {
-                        pos_++;
-                    }
-                    break;
-                }
-                // Конец строки – прерываем чтение значения
-                if (c == '\n' || c == '\r') {
-                    break;
-                }
-            }
-            if (c == '\\') {
-                // Экранирование: проверяем следующий символ
-                if (pos_ + 1 < end_) {
-                    char next = *(pos_ + 1);
-                    if (next == ' ' || next == '#' || next == '\\' || next == '"') {
-                        // Экранируем пробел, #, \, "
-                        escape = true;
-                        pos_++; // пропускаем обратный слеш
-                        continue;
-                    }
-                    // Иначе просто добавляем обратный слеш как обычный символ
-                }
-            }
-            if (c == '"') {
-                // Начало кавычек
-                inQuotes = true;
-                pos_++;
+        if (!inQuotes) {
+            if (c == '#' || c == '\n' || c == '\r') break;
+        }
+
+        if (c == '"') { inQuotes = !inQuotes; pos_++; continue; }
+
+        if (c == '$' && pos_ + 1 < end_) {
+            char n = *(pos_ + 1);
+
+            // Line continuation: $ + newline
+            if (n == '\n' || n == '\r') {
+                get();                  // consume $
+                get();                  // consume \n (или \r\n — get() обрабатывает)
+                while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) pos_++;
                 continue;
             }
-        }
 
-        // Обработка внутри кавычек или с экранированием
-        if (inQuotes) {
-            if (c == '"' && !escape) {
-                inQuotes = false;
-                pos_++;
-                continue;
-            }
-            if (c == '\\' && !escape) {
-                // Экранирование внутри кавычек
-                if (pos_ + 1 < end_) {
-                    char next = *(pos_ + 1);
-                    if (next == 'n') { result.append('\n'); pos_ += 2; continue; }
-                    if (next == 'r') { result.append('\r'); pos_ += 2; continue; }
-                    if (next == 't') { result.append('\t'); pos_ += 2; continue; }
-                    if (next == '\\') { result.append('\\'); pos_ += 2; continue; }
-                    if (next == '"') { result.append('"'); pos_ += 2; continue; }
-                    // Если неизвестное экранирование – просто добавляем символ
-                }
-            }
-            result.append(c);
+            if (n == ' ') { result.append(' '); pos_ += 2; continue; }
+            if (n == ':') { result.append(':'); pos_ += 2; continue; }
+            if (n == '$') { result.append('$'); pos_ += 2; continue; }
+
+            // $var или ${var} — оставить как есть (раскроется позже)
+            result.append('$');
             pos_++;
             continue;
         }
 
-        // Вне кавычек
-        if (escape) {
-            // Экранированный символ (пробел, #, \, ")
-            result.append(c);
-            escape = false;
-            pos_++;
-            continue;
-        }
-
-        // Обычный символ
-        if (c == ' ' || c == '\t') {
-            // Пробелы вне кавычек – если не экранированы, они разделители.
-            // Но мы читаем одно значение, поэтому пробел добавляем (позже обрежем)
-            result.append(c);
-            pos_++;
-            continue;
-        }
-
-        // Все остальное
         result.append(c);
         pos_++;
     }
 
-    // Удаляем пробелы в конце (если есть)
-    while (!result.isEmpty() && (result.back() == ' ' || result.back() == '\t')) {
+    while (!result.isEmpty() && (result.back() == ' ' || result.back() == '\t'))
         result.chop(1);
-    }
 
-    QString value = QString::fromUtf8(result);
-
-    // Обработка продолжения строк (если разрешено)
-    if (allowContinuation && !value.isEmpty() && value.endsWith('\\')) {
-        value.chop(1);
-        // Пропускаем перевод строки
-        if (pos_ < end_ && (*pos_ == '\n' || *pos_ == '\r')) {
-            if (*pos_ == '\r' && pos_ + 1 < end_ && *(pos_ + 1) == '\n')
-                pos_ += 2;
-            else
-                pos_++;
-            line_++;
-            atLineStart_ = true;
-        }
-        // Рекурсивно читаем следующую строку
-        QString next = readValue(allowContinuation);
-        value += next;
-    }
-
-    return value;
+    return QString::fromUtf8(result);
 }
 
 void Lexer::error(const QString& msg) {
-    qCritical() << "Lexer error in" << filename_ << "line" << line_ << ":" << msg;
+    qCritical() << "Ninja lexer error in" << filename_ << "line" << line_ << ":" << msg;
 }
 
-} // namespace pmake::parser
+} // namespace pmake::ninja

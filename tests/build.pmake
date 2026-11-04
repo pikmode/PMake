@@ -1,0 +1,15 @@
+// D:\bin\python3.exe bench_vs_ninja.py --files 100 --jobs 1 --runs 5 --python "E:/python/python.exe"
+pmake_required_version = 1.0
+
+python     = "D:/bin/python3.exe"
+gen_script = "create_test_project.py"
+gen_flags  = "--force"
+
+rule gen_tests {
+    command     = "${python} ${gen_script} ${gen_flags}"
+    description = "generating test suite"
+    restat      = true
+}
+
+build "run.py" : gen_tests "${gen_script}"
+alias all : "run.py"

@@ -14,6 +14,7 @@
 namespace pmake::core {
 
 static QString getWorkingDirectory(const Build* build, const State* state) {
+    // 1. Явно заданный workdir в правилах или переменных
     if (build && build->scope) {
         auto wd = build->scope->get("workdir");
         if (wd.has_value() && !wd->isEmpty()) return QDir::cleanPath(*wd);
@@ -22,10 +23,9 @@ static QString getWorkingDirectory(const Build* build, const State* state) {
         auto wd = state->getGlobal("workdir");
         if (wd.has_value() && !wd->isEmpty()) return QDir::cleanPath(*wd);
     }
-    if (build && !build->outputs.isEmpty()) {
-        QFileInfo fi(build->outputs.first());
-        if (fi.absolutePath() != ".") return QDir::cleanPath(fi.absolutePath());
-    }
+    
+    // FIX: Убрана эвристика смены директории на основе путей output.
+    // Ninja всегда запускает команды из корня (где лежит build.ninja).
     return QDir::currentPath();
 }
 
@@ -72,6 +72,7 @@ int Node::build() {
         return 1;
     }
 
+    // Создаем директории для output'ов
     for (const QString& out : build_->outputs) {
         QFileInfo fi(out);
         if (!fi.absolutePath().isEmpty())
@@ -100,16 +101,9 @@ int Node::build() {
     QString program = args.takeFirst();
     QString workDir = getWorkingDirectory(build_, state_);
 
-    // FIX: печатаем многострочно с отступами и явными метками.
-    //   [N/M] <description>          ← уже напечатано engine_scheduler + console_ui
-    //       command: cmd /c "..."    ← здесь
-    //       workdir: E:\...          ← здесь
-    //       succeeded in X s         ← из runner.cpp (с отступом)
-    // Раньше была дублирующая печать "Starting: ..." в runner.cpp, но
-    // QProcess::splitCommand теряет кавычки — выглядело как мешанина.
     if (pmake::logging::isVerbose()) {
-        LOG_VERBOSE(QString("    command: %1").arg(command));
-        LOG_VERBOSE(QString("    workdir: %1").arg(workDir));
+        LOG_VERBOSE(QString("  %1").arg(command));
+        LOG_VERBOSE(QString("  workdir: %1").arg(workDir));
     }
 
     executor::Command cmd;
@@ -138,8 +132,6 @@ int Node::build() {
 
     refreshOutputMtime();
 
-    // Записать hash команды для детекта изменений при следующем запуске.
-    // Делаем ДО guard.success=true и ДО depfile — output уже создан.
     if (state_) {
         const QString hash = computeCommandHash();
         if (!hash.isEmpty()) {
@@ -151,7 +143,7 @@ int Node::build() {
 
     bool outputChanged = hasOutputChanged(beforeMtimes);
     if (rule_->restat && !outputChanged) {
-        LOG_VERBOSE(QString("    restat: output unchanged, skipping dependents"));
+        LOG_VERBOSE(QString("Restat: output '%1' unchanged, skipping dependents").arg(name_));
         return 2;
     }
 
@@ -165,7 +157,7 @@ int Node::build() {
                 if (!depsListsEqual(existingInputs, inputs)) {
                     deps::DepsLog::instance().record(out, inputs);
                 } else {
-                    LOG_VERBOSE("    deps: already up-to-date, skipping");
+                    LOG_VERBOSE("Dependencies for " + out + " already up-to-date, skipping");
                 }
             }
         }

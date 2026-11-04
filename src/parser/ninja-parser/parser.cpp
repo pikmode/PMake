@@ -1,6 +1,6 @@
-// parser/parser.cpp
-#include "parser/parser.h"
-#include "parser/lexer.h"
+// parser/ninja-parser/parser.cpp
+#include "parser/ninja-parser/parser.h"
+#include "parser/ninja-parser/lexer.h"
 #include "util/filesystem.h"
 #include "util/logging.h"
 #include <QFileInfo>
@@ -8,8 +8,9 @@
 #include <QVector>
 #include <QSet>
 #include <QRegularExpression>
+#include <stdexcept>
 
-namespace pmake::parser {
+namespace pmake::ninja {
 
 namespace {
     QString unescapePath(const QString& path) {
@@ -18,12 +19,6 @@ namespace {
         result.replace(QStringLiteral("$ "), QStringLiteral(" "));
         result.replace(QStringLiteral("$$"), QStringLiteral("$"));
         return result;
-    }
-
-    bool isNumber(const QString& s) {
-        bool ok;
-        s.toInt(&ok);
-        return ok;
     }
 }
 
@@ -64,7 +59,7 @@ private:
     }
 
     void error(const QString& msg) {
-        LOG_ERROR(QString("Parser error at %1 line %2: %3").arg(filename_).arg(cur_.line).arg(msg));
+        LOG_ERROR(QString("Ninja Parser error at %1 line %2: %3").arg(filename_).arg(cur_.line).arg(msg));
         throw std::runtime_error("Parse error");
     }
 
@@ -123,10 +118,6 @@ private:
         while (cur_.type == TOK_NEWLINE) advance();
         if (cur_.type == TOK_INDENT && cur_.indent == 0) advance();
     }
-
-    void logInfo(const QString& msg) {
-        LOG_INFO(msg);
-    }
 };
 
 // ----------------------------------------------------------------------------
@@ -174,7 +165,6 @@ void ParserImpl::parseVariable() {
     if (cur_.type != TOK_EQUALS) error("expected '='");
     QString value = readValueWithContinuation();
     state_.setGlobal(str(nameId), value);
-    logInfo(QString("Variable set: %1 = %2").arg(str(nameId)).arg(value));
     advance();
 }
 
@@ -208,47 +198,46 @@ void ParserImpl::parseRule() {
     });
 
     state_.addRule(std::move(rule));
-    logInfo(QString("Rule added: %1").arg(rule.name));
 }
 
 void ParserImpl::parseBuild() {
-    logInfo("parseBuild called");
-    
     QVector<QString> outputs = parseNameList();
-    
-    QVector<QString> implicit_before;
-    QVector<QString> order_only_before;
-    
+
+    // FIX: implicit outputs (после первого |) игнорируются.
+    // У нас в Build нет поля implicit_outputs, поэтому просто парсим и отбрасываем.
+    // Для CMake это безопасно: там implicit дублирует explicit с абсолютным префиксом.
     if (cur_.type == TOK_PIPE) {
         advance();
         while (cur_.type != TOK_PIPE2 && cur_.type != TOK_COLON &&
                cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
             if (isNameToken())
-                implicit_before.append(parseName());
+                parseName(); // discard
             else
                 break;
         }
     }
+
+    // Order-only outputs перед ':' (в CMake не встречается, тоже отбрасываем)
     if (cur_.type == TOK_PIPE2) {
         advance();
         while (cur_.type != TOK_COLON && cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
             if (isNameToken())
-                order_only_before.append(parseName());
+                parseName(); // discard
             else
                 break;
         }
     }
-    
+
     if (cur_.type != TOK_COLON)
         error("expected ':' after outputs or dependencies");
     advance();
-    
+
     QString ruleName = parseName();
-    
+
     QVector<QString> inputs;
     QVector<QString> implicit_after;
     QVector<QString> order_only_after;
-    
+
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
         if (cur_.type == TOK_PIPE) {
             advance();
@@ -275,18 +264,18 @@ void ParserImpl::parseBuild() {
     if (cur_.type == TOK_NEWLINE)
         advance();
 
-    QVector<QString> implicit = implicit_before + implicit_after;
-    QVector<QString> order_only = order_only_before + order_only_after;
-    
+    // implicit = только implicit_after (implicit INPUTS).
+    QVector<QString> implicit = implicit_after;
+    QVector<QString> order_only = order_only_after;
+
     auto scope = QSharedPointer<core::Scope>::create();
     if (cur_.type == TOK_INDENT && cur_.indent > 0) {
         int baseIndent = cur_.indent;
         parseIndentedBlock(baseIndent, [&](const QString& key, const QString& value) {
             scope->set(key, value);
-            logInfo(QString("  build local: %1 = %2").arg(key).arg(value));
         });
     }
-    
+
     core::Build build;
     build.outputs = outputs;
     build.inputs = inputs;
@@ -295,22 +284,15 @@ void ParserImpl::parseBuild() {
     build.rule_name = ruleName;
     build.scope = scope;
     state_.addBuild(std::move(build));
-    logInfo(QString("Build added: outputs=%1, rule=%2")
-            .arg(build.outputs.join(',')).arg(build.rule_name));
 }
 
 void ParserImpl::parseDefault() {
     QVector<QString> targets = parseNameList();
     state_.defaultTargets() = targets;
     if (cur_.type == TOK_NEWLINE) advance();
-    logInfo(QString("Default targets: %1").arg(state_.defaultTargets().join(',')));
 }
 
-// ============================================================
-// ИСПРАВЛЕННЫЙ parseInclude – добавлен возврат глобальных переменных
-// ============================================================
 void ParserImpl::parseInclude(bool subninja) {
-    logInfo(QString("parseInclude called (subninja=%1)").arg(subninja));
     QString includeFile = parseName();
     if (includeFile.isEmpty()) {
         LOG_WARN("Include with empty filename, skipping");
@@ -320,10 +302,8 @@ void ParserImpl::parseInclude(bool subninja) {
     }
     if (cur_.type == TOK_NEWLINE) advance();
 
-    logInfo(QString("Include raw: '%1'").arg(includeFile));
     includeFile = state_.expandVars(includeFile);
     includeFile = unescapePath(includeFile);
-    logInfo(QString("Include expanded: '%1'").arg(includeFile));
 
     if (includeFile.isEmpty()) {
         LOG_WARN("Include with empty filename after expansion, skipping");
@@ -332,9 +312,7 @@ void ParserImpl::parseInclude(bool subninja) {
 
     QFileInfo current(filename_);
     QString absPath = current.absolutePath() + '/' + includeFile;
-    logInfo(QString("Include absolute path: '%1'").arg(absPath));
 
-    // Проверка на цикл
     if (processingStack_.contains(absPath)) {
         LOG_ERROR(QString("Cyclic include detected: %1").arg(absPath));
         throw std::runtime_error("Cyclic include");
@@ -349,27 +327,19 @@ void ParserImpl::parseInclude(bool subninja) {
         processingStack_.remove(absPath);
         return;
     }
-    logInfo(QString("Include file loaded, size=%1 bytes").arg(data.size()));
 
     ParserImpl subparser(data, absPath);
     subparser.processingStack_ = processingStack_;
 
-    // Для include (не subninja) копируем глобальные переменные из родителя в дочерний
     if (!subninja) {
         for (auto it = state_.globals().begin(); it != state_.globals().end(); ++it) {
             subparser.state_.setGlobal(it.key(), it.value());
         }
-        logInfo("Copied global variables to included file");
     }
 
     subparser.isIncluded_ = true;
     auto subState = subparser.parse();
     if (subState) {
-        logInfo(QString("Sub-state parsed: %1 rules, %2 builds, %3 pools")
-                .arg(subState->rules().size())
-                .arg(subState->builds().size())
-                .arg(subState->pools().size()));
-        // Копируем правила, сборки, пулы
         for (auto& rule : subState->rules()) state_.addRule(std::move(rule));
         for (auto& build : subState->builds()) state_.addBuild(std::move(build));
         for (const auto& pool : subState->pools()) state_.addPool(pool);
@@ -381,12 +351,10 @@ void ParserImpl::parseInclude(bool subninja) {
                 state_.defaultTargets().append(target);
         }
 
-        // НОВОЕ: для include копируем глобальные переменные обратно в родительский state_
         if (!subninja) {
             for (auto it = subState->globals().begin(); it != subState->globals().end(); ++it) {
                 state_.setGlobal(it.key(), it.value());
             }
-            logInfo("Copied global variables back from included file");
         }
     } else {
         LOG_WARN("Sub-state parsing failed");
@@ -418,12 +386,8 @@ void ParserImpl::parsePool(const QString& poolName) {
     });
 
     state_.addPool(std::move(pool));
-    logInfo(QString("Pool added: %1 (depth %2)").arg(pool.name).arg(pool.depth));
 }
 
-// ----------------------------------------------------------------------------
-// Парсинг верхнего уровня
-// ----------------------------------------------------------------------------
 void ParserImpl::parseTopLevel() {
     while (cur_.type != TOK_EOF) {
         if (cur_.type == TOK_IDENT) {
@@ -463,7 +427,6 @@ void ParserImpl::parseTopLevel() {
                 } else if (cur_.type == TOK_EQUALS) {
                     QString value = readValueWithContinuation();
                     state_.setGlobal(word, value);
-                    logInfo(QString("Top-level var: %1 = %2").arg(word).arg(value));
                     advance();
                 } else {
                     error("expected pool name or '=' after pool");
@@ -479,7 +442,6 @@ void ParserImpl::parseTopLevel() {
                 }
                 QString value = readValueWithContinuation();
                 state_.setGlobal(varName, value);
-                logInfo(QString("Top-level var: %1 = %2").arg(varName).arg(value));
                 advance();
                 continue;
             }
@@ -494,12 +456,6 @@ void ParserImpl::parseTopLevel() {
             error(QString("Unexpected token in top level: %1").arg(cur_.type));
         }
     }
-
-    logInfo(QString("Parsing finished: %1 rules, %2 builds, %3 pools, %4 default targets")
-             .arg(state_.rules().size())
-             .arg(state_.builds().size())
-             .arg(state_.pools().size())
-             .arg(state_.defaultTargets().size()));
 }
 
 std::unique_ptr<core::State> ParserImpl::parse() {
@@ -535,7 +491,6 @@ std::unique_ptr<core::State> ParserImpl::parse() {
             phonyRule.name = "phony";
             phonyRule.command = "";
             state_.addRule(std::move(phonyRule));
-            logInfo("Built-in rule 'phony' added (empty command)");
         }
     }
 
@@ -545,7 +500,6 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         rccRule.command = "rcc $in -o $out";
         rccRule.generator = true;
         state_.addRule(std::move(rccRule));
-        logInfo("Built-in rule 'rcc' added");
     }
     if (!state_.getRule("moc")) {
         core::Rule mocRule;
@@ -553,7 +507,6 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         mocRule.command = "moc $in -o $out";
         mocRule.generator = true;
         state_.addRule(std::move(mocRule));
-        logInfo("Built-in rule 'moc' added");
     }
     if (!state_.getRule("uic")) {
         core::Rule uicRule;
@@ -561,7 +514,6 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         uicRule.command = "uic $in -o $out";
         uicRule.generator = true;
         state_.addRule(std::move(uicRule));
-        logInfo("Built-in rule 'uic' added");
     }
 
     return std::make_unique<core::State>(std::move(state_));
@@ -580,4 +532,4 @@ std::unique_ptr<core::State> Parser::parse(const QString& filename) {
     return impl.parse();
 }
 
-} // namespace pmake::parser
+} // namespace pmake::ninja

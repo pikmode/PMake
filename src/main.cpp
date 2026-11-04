@@ -19,8 +19,9 @@
 #include "core/engine.h"
 #include "core/state.h"
 #include "parser/parser.h"
+#include "parser/ninja-parser/parser.h" // <-- НОВЫЙ ПАРСЕР
 #include "util/logging.h"
-#include "util/filesystem.h" // NEW
+#include "util/filesystem.h"
 #include "ui/console_ui.h"
 #include "core/cache.h"
 #include "deps/deps_log.h"
@@ -53,8 +54,7 @@ int main(int argc, char* argv[]) {
     parser.setApplicationDescription("PMake modern build system");
     parser.addHelpOption();
 
-    QCommandLineOption versionOption({"V", "version"},
-                                     "Display version information");
+    QCommandLineOption versionOption({"V", "version"}, "Display version information");
     parser.addOption(versionOption);
 
     QCommandLineOption fileOption({"f", "file"}, "Use <file> as build file", "file");
@@ -92,34 +92,9 @@ int main(int argc, char* argv[]) {
 
     parser.process(app);
 
-    // --version / -V
     if (parser.isSet(versionOption)) {
         QTextStream out(stdout);
-        out << QCoreApplication::applicationName()
-            << " " << QCoreApplication::applicationVersion() << "\n";
-        out.flush();
-        return 0;
-    }
-
-    // --license
-    if (parser.isSet(licenseOption)) {
-        QTextStream out(stdout);
-        out << QCoreApplication::applicationName()
-            << " " << QCoreApplication::applicationVersion() << "\n";
-        out << "Copyright (C) 2026 PikMode\n\n";
-        out << "This software is licensed under the PPL v1 License.\n";
-        out << "See LICENSES/PPL_V1.txt for the full text.\n\n";
-        out << "Third-party libraries:\n\n";
-        out << "  Qt 6.8.3 - GNU Lesser General Public License v3 (LGPLv3)\n";
-        out << "    https://www.qt.io/\n";
-        out << "    Dynamically linked: Qt6Core, Qt6Concurrent.\n";
-        out << "    You may relink PMake against a modified version of Qt.\n\n";
-        out << "Build tools used to produce this binary:\n";
-        out << "  CMake 3.30             BSD 3-Clause\n";
-        out << "  Ninja                  Apache 2.0\n";
-        out << "  MinGW-w64 (g++ 16.1)   GPL v3 + runtime exception\n";
-        out << "  Python 3.12            PSF License\n";
-        out.flush();
+        out << QCoreApplication::applicationName() << " " << QCoreApplication::applicationVersion() << "\n";
         return 0;
     }
 
@@ -131,9 +106,10 @@ int main(int argc, char* argv[]) {
 
     QString buildFile = parser.value(fileOption);
     if (buildFile.isEmpty()) {
-        if (QFile::exists("build.pmake")) buildFile = "build.pmake";
+        if (QFile::exists("build.pmake"))       buildFile = "build.pmake";
+        else if (QFile::exists("build.ninja"))  buildFile = "build.ninja";
         else {
-            LOG_ERROR("No build file found (build.pmake)");
+            LOG_ERROR("No build file found (build.pmake or build.ninja)");
             return 1;
         }
     }
@@ -148,7 +124,6 @@ int main(int argc, char* argv[]) {
     bool isVerbose = parser.isSet(verboseOption);
     bool isQuiet   = parser.isSet(quietOption);
     bool dryRun    = parser.isSet(dryRunOption);
-
     bool noColorEnv = qEnvironmentVariableIsSet("NO_COLOR");
     bool useColor = !parser.isSet(noColorOption) && !noColorEnv;
 
@@ -180,11 +155,28 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // ---------- ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА (NINJA ИЛИ PMAKE) ----------
+    bool isNinja = buildFile.endsWith(".ninja", Qt::CaseInsensitive);
+    if (!isNinja && !buildFile.endsWith(".pmake", Qt::CaseInsensitive)) {
+        QByteArray head;
+        if (QFile f(buildFile); f.open(QIODevice::ReadOnly)) head = f.read(512);
+        if (head.contains("ninja_required_version") || head.contains("cmake_ninja_workdir")) {
+            isNinja = true;
+        }
+    }
+    
+    LOG_VERBOSE(QString("Build file type: %1").arg(isNinja ? "ninja" : "pmake"));
+
     // ---------- ПАРСИНГ ----------
     QFuture<std::unique_ptr<State>> future = QtConcurrent::run([&]() {
-        pmake::parser::Parser parserImpl;
         try {
-            return parserImpl.parse(buildFile, config, platform);
+            if (isNinja) {
+                pmake::ninja::Parser ninjaParser;
+                return ninjaParser.parse(buildFile);
+            } else {
+                pmake::parser::Parser pmakeParser;
+                return pmakeParser.parse(buildFile, config, platform);
+            }
         } catch (const std::exception& e) {
             LOG_ERROR(QString("Parser thread exception: %1").arg(e.what()));
             return std::unique_ptr<State>(nullptr);
@@ -204,14 +196,8 @@ int main(int argc, char* argv[]) {
         timer.start(60000);
 
         bool timedOut = false;
-        QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
-            timedOut = true;
-            loop.quit();
-        });
-        QObject::connect(&watcher, &QFutureWatcherBase::finished, &loop, [&]() {
-            timer.stop();
-            loop.quit();
-        });
+        QObject::connect(&timer, &QTimer::timeout, &loop, [&]() { timedOut = true; loop.quit(); });
+        QObject::connect(&watcher, &QFutureWatcherBase::finished, &loop, [&]() { timer.stop(); loop.quit(); });
 
         loop.exec();
 
@@ -243,22 +229,18 @@ int main(int argc, char* argv[]) {
     // ---------- КЭШ ----------
     bool useCache = true;
     auto cacheVar = state->getGlobal("cache");
-    if (cacheVar.has_value() && cacheVar->toLower() == "false") {
-        useCache = false;
-    }
+    if (cacheVar.has_value() && cacheVar->toLower() == "false") useCache = false;
 
     pmake::core::Cache cache;
     bool cacheValid = false;
     if (useCache) {
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (cache.load(cachePath)) {
-            // Загружаем ВСЕГДА, чтобы isDirty мог сравнить старые хэши с новыми
             for (auto it = cache.fileStates().begin(); it != cache.fileStates().end(); ++it) {
                 state->setFileState(it.key(), it.value());
             }
             state->setCommandHashes(cache.commandHashes());
 
-            // Проверяем, не изменился ли build.pmake после сохранения кэша.
             qint64 buildMtime = pmake::util::getFileMtime(buildFile);
             qint64 cacheMtime = pmake::util::getFileMtime(cachePath);
             bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
@@ -266,13 +248,9 @@ int main(int argc, char* argv[]) {
             if (cache.isValid(buildFile) && !buildFileNewer) {
                 cacheValid = true;
                 LOG_VERBOSE(QString("Cache: valid, %1 file states, %2 deps, %3 command hashes")
-                            .arg(cache.fileStates().size())
-                            .arg(pmake::deps::DepsLog::instance().entries().size())
-                            .arg(cache.commandHashes().size()));
+                            .arg(cache.fileStates().size()).arg(pmake::deps::DepsLog::instance().entries().size()).arg(cache.commandHashes().size()));
             } else {
                 LOG_VERBOSE("Cache: invalid (build file changed)");
-                // Очищаем только DepsLog (зависимости пересканируем), 
-                // но fileStates и commandHashes остаются в памяти для сравнения!
                 pmake::deps::DepsLog::instance().clear();
             }
         } else {
@@ -280,7 +258,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Передаем статус кэша в движок. 
     state->setCacheValid(cacheValid);
 
     // ---------- DEPFILES (если кэш невалиден) ----------
@@ -288,21 +265,16 @@ int main(int argc, char* argv[]) {
         LOG_VERBOSE("Re-scanning depfiles");
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
-            if (!rule || rule->name == "phony" || rule->generator || rule->depfile.isEmpty())
-                continue;
+            if (!rule || rule->name == "phony" || rule->generator || rule->depfile.isEmpty()) continue;
 
             for (const QString& out : build.outputs) {
                 QHash<QString, QString> specialVars;
                 specialVars["out"] = out;
                 specialVars["in"]  = build.inputs.join(' ');
 
-                QString depfilePath = state->expandVarsWithSpecial(rule->depfile,
-                                                                   build.scope.data(),
-                                                                   specialVars);
+                QString depfilePath = state->expandVarsWithSpecial(rule->depfile, build.scope.data(), specialVars);
                 QVector<QString> inputs = pmake::deps::DepParser::parse(depfilePath);
-                if (!inputs.isEmpty()) {
-                    pmake::deps::DepsLog::instance().record(out, inputs);
-                }
+                if (!inputs.isEmpty()) pmake::deps::DepsLog::instance().record(out, inputs);
             }
         }
     }
@@ -311,11 +283,8 @@ int main(int argc, char* argv[]) {
     if (useCache && !dryRun) {
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
-        if (!cache.save(cachePath)) {
-            LOG_WARN("Failed to save cache");
-        } else {
-            LOG_VERBOSE("Cache: saved");
-        }
+        if (!cache.save(cachePath)) LOG_WARN("Failed to save cache");
+        else LOG_VERBOSE("Cache: saved");
     }
 
     // ---------- CLEAN ----------
@@ -341,23 +310,17 @@ int main(int argc, char* argv[]) {
     pmake::core::Engine engine(*state, jobs, dryRun);
     pmake::ui::ConsoleUI ui(isQuiet, useColor);
 
-    QObject::connect(&engine, &pmake::core::Engine::taskStarted,
-                     &ui, &pmake::ui::ConsoleUI::onTaskStarted, Qt::DirectConnection);
-    QObject::connect(&engine, &pmake::core::Engine::taskFinished,
-                     &ui, &pmake::ui::ConsoleUI::onTaskFinished, Qt::DirectConnection);
-    QObject::connect(&engine, &pmake::core::Engine::buildFinished,
-                     &ui, &pmake::ui::ConsoleUI::onBuildFinished, Qt::DirectConnection);
+    QObject::connect(&engine, &pmake::core::Engine::taskStarted, &ui, &pmake::ui::ConsoleUI::onTaskStarted, Qt::DirectConnection);
+    QObject::connect(&engine, &pmake::core::Engine::taskFinished, &ui, &pmake::ui::ConsoleUI::onTaskFinished, Qt::DirectConnection);
+    QObject::connect(&engine, &pmake::core::Engine::buildFinished, &ui, &pmake::ui::ConsoleUI::onBuildFinished, Qt::DirectConnection);
 
     bool result = engine.run(target);
 
-    // ---------- ОБНОВЛЕНИЕ КЭША ПОСЛЕ СБОРКИ ----------
     if (!dryRun && useCache) {
         engine.updateFileStates();
         cache.store(*state, buildFile);
         QString cachePath = QDir::current().filePath("Project-cache.pmake");
-        if (!cache.save(cachePath)) {
-            LOG_WARN("Failed to save cache after build");
-        }
+        if (!cache.save(cachePath)) LOG_WARN("Failed to save cache after build");
     }
 
     return result ? 0 : 1;

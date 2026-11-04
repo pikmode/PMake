@@ -38,3 +38,9 @@ Thumbs.db
 test_*.tmp
 *.dep
 *.d
+
+# old
+old
+
+__pycache__
+.pikmode
