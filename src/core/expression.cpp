@@ -1,61 +1,83 @@
 #include "core/expression.h"
 #include "core/builtins.h"
-#include "util/logging.h"
-#include <QRegularExpression>
+#include "core/state.h"
+#include "util/string_utils.h"
+
+#include <cctype>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace pmake::core {
 
-QVariant Expression::evaluate(const QString& expr, State* state, Scope* scope) {
-    QString trimmed = expr.trimmed();
-    if (trimmed.isEmpty()) return QVariant();
+Value Expression::evaluate(std::string_view expr, State* state, Scope* scope) {
+    std::string trimmed = util::trim(expr);
+    if (trimmed.empty()) return Value();
 
-    // Проверка на вызов функции
-    QRegularExpression funcRegex(R"(^(\w+)\s*\(([^)]*)\)$)");
-    QRegularExpressionMatch match = funcRegex.match(trimmed);
-    if (match.hasMatch()) {
-        QString funcName = match.captured(1);
-        QString argsStr = match.captured(2).trimmed();
-        QVector<QVariant> args;
-        if (!argsStr.isEmpty()) {
-            QStringList argList = argsStr.split(',', Qt::SkipEmptyParts);
-            for (const QString& a : argList) {
-                args.append(evaluate(a.trimmed(), state, scope));
+    // function call: name(args)
+    auto paren = trimmed.find('(');
+    if (paren != std::string::npos && trimmed.back() == ')') {
+        std::string funcName = util::trim(
+            std::string_view(trimmed).substr(0, paren));
+        std::string argsStr = util::trim(
+            std::string_view(trimmed).substr(paren + 1, trimmed.size() - paren - 2));
+
+        std::vector<Value> args;
+        if (!argsStr.empty()) {
+            // split by comma (без вложенности)
+            std::string cur;
+            for (char c : argsStr) {
+                if (c == ',') {
+                    args.push_back(evaluate(cur, state, scope));
+                    cur.clear();
+                } else {
+                    cur.push_back(c);
+                }
             }
+            args.push_back(evaluate(cur, state, scope));
         }
         return Builtins::call(funcName, args, state, scope);
     }
 
-    // Переменная {var}
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-        QString varName = trimmed.mid(1, trimmed.length()-2);
-        QVariant val;
+    // {var}
+    if (trimmed.front() == '{' && trimmed.back() == '}' && trimmed.size() >= 2) {
+        std::string varName = trimmed.substr(1, trimmed.size() - 2);
         if (scope) {
             auto opt = scope->get(varName);
-            if (opt.has_value()) val = QVariant(*opt);
+            if (opt.has_value()) return Value(*opt);
         }
-        if (!val.isValid()) {
-            auto opt = state->getGlobal(varName);
-            if (opt.has_value()) val = QVariant(*opt);
-        }
-        return val.isValid() ? val : QVariant(varName);
+        auto opt = state->getGlobal(varName);
+        if (opt.has_value()) return Value(*opt);
+        return Value(varName);
     }
 
-    // Строка в кавычках
-    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-        return QVariant(trimmed.mid(1, trimmed.length()-2));
+    // "string"
+    if (trimmed.front() == '"' && trimmed.back() == '"' && trimmed.size() >= 2) {
+        return Value(trimmed.substr(1, trimmed.size() - 2));
     }
 
-    // Число
-    bool ok;
-    int num = trimmed.toInt(&ok);
-    if (ok) return QVariant(num);
+    // number
+    bool isNum = !trimmed.empty();
+    for (char c : trimmed) {
+        if (!std::isdigit(static_cast<unsigned char>(c)) && c != '-' && c != '.') {
+            isNum = false;
+            break;
+        }
+    }
+    if (isNum) {
+        try {
+            return Value(std::stod(trimmed));
+        } catch (...) {
+            return Value(trimmed);
+        }
+    }
 
     // bool
-    if (trimmed == "true") return QVariant(true);
-    if (trimmed == "false") return QVariant(false);
+    if (trimmed == "true")  return Value(true);
+    if (trimmed == "false") return Value(false);
 
-    // Список (не реализован)
-    return QVariant(trimmed);
+    // fallback: as string
+    return Value(trimmed);
 }
 
 } // namespace pmake::core

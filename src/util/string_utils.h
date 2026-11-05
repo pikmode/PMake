@@ -1,23 +1,20 @@
 #pragma once
 
-#include <QString>
-#include <QStringList>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace pmake::util {
 
-QStringList split(const QString& s, QChar delimiter);
-QString trim(const QString& s);
-bool startsWith(const QString& s, const QString& prefix);
-bool endsWith(const QString& s, const QString& suffix);
-QString join(const QStringList& parts, const QString& glue);
-QString replaceAll(const QString& s, const QString& from, const QString& to);
-QString toLower(const QString& s);
-QString toUpper(const QString& s);
-
-// Убирает экранирование в путях (для совместимости)
-QString unescapePath(const QString& path);
-
-// Экранирование для shell (кавычки, обратные слеши)
-QString quoteForShell(const QString& arg);
+std::vector<std::string> split(std::string_view s, char delimiter);
+std::string trim(std::string_view s);
+bool startsWith(std::string_view s, std::string_view prefix);
+bool endsWith(std::string_view s, std::string_view suffix);
+std::string join(const std::vector<std::string>& parts, std::string_view glue);
+std::string replaceAll(std::string_view s, std::string_view from, std::string_view to);
+std::string toLower(std::string_view s);
+std::string toUpper(std::string_view s);
+std::string unescapePath(std::string_view path);
+std::string quoteForShell(std::string_view arg);
 
 } // namespace pmake::util

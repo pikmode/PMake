@@ -5,24 +5,24 @@
 #include "parser/parser_utils.h"
 #include "core/state.h"
 #include "core/ast.h"
-#include "util/filesystem.h"
-#include "util/logging.h"
+#include "core/value.h"
 
-#include <QStack>
-#include <QSet>
-#include <QVector>
-#include <QHash>
-#include <QString>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 
 namespace pmake::parser {
 
 using pmake::core::AstNode;
+using pmake::core::Value;
+using pmake::core::ValueList;    // ← ДОБАВЛЕНО
 
 class ParserImpl {
 public:
-    ParserImpl(const QByteArray& data, const QString& filename,
-               const QString& config, const QString& platform);
+    ParserImpl(std::string_view data, std::string_view filename,
+               std::string_view config, std::string_view platform);
     ~ParserImpl();
 
     std::unique_ptr<core::State> parse();
@@ -41,38 +41,36 @@ public:
     static constexpr int MAX_OPERATIONS = 1000000;
 
 private:
-    // ---- Данные ----
     Lexer lexer_;
-    QString filename_;
-    QString config_;
-    QString platform_;
+    std::string filename_;
+    std::string config_;
+    std::string platform_;
     core::State state_;
-    QSet<QString> processingStack_;
-    QSet<QString> definedRules_;
-    QSet<QString> definedAliases_;
-    QSet<QString> definedNamespaces_;
-    QSet<QString> definedEnums_;
-    QSet<QString> definedFunctions_;
-    QSet<QString> definedBuildOutputs_;
-    QStack<core::Scope*> scopeStack_;
+    std::unordered_set<std::string> processingStack_;
+    std::unordered_set<std::string> definedRules_;
+    std::unordered_set<std::string> definedAliases_;
+    std::unordered_set<std::string> definedNamespaces_;
+    std::unordered_set<std::string> definedEnums_;
+    std::unordered_set<std::string> definedFunctions_;
+    std::unordered_set<std::string> definedBuildOutputs_;
+    std::vector<core::Scope*> scopeStack_;
     bool versionDeclared_ = false;
     bool versionChecked_ = false;
     double fileVersion_ = 0.0;
 
     AstNode* root_ = nullptr;
-    QStack<AstNode*> astStack_;
-    QVector<QString> errors_;
+    std::vector<AstNode*> astStack_;
+    std::vector<std::string> errors_;
     bool hasError_ = false;
 
     Token cur_;
     int currentColumn_ = 0;
 
-    // ---- Вспомогательные методы ----
     void advance();
     bool match(TokenType t);
-    bool expect(TokenType t, const QString& msg);
-    void error(const QString& msg, bool recover = true);
-    QString str(int id) const;
+    bool expect(TokenType t, std::string_view msg);
+    void error(std::string_view msg, bool recover = true);
+    std::string_view str(int id) const;
     void skipNewlines();
     void skipNewlinesAndIndents();
     bool skipToBlockStart(int baseIndent);
@@ -80,17 +78,15 @@ private:
     void pushBlock(AstNode* node);
     void popBlock();
 
-    // ---- Парсинг выражений ----
     AstNode* parseExpressionPrecedence(int minPrec = 0, int depth = 0);
     int getPrecedence(TokenType t);
     AstNode* parseAtom();
     AstNode* parseValueSequence(bool stopOnNewline = true);
-    QVector<AstNode*> parseValueList();
+    std::vector<AstNode*> parseValueList();
     AstNode* parseValue();
 
-    // ---- Парсинг конструкций ----
     void parseVersionDirective();
-    QString parseIdent();
+    std::string parseIdent();
     void parseTopLevel();
     void parseStatement(int depth = 0);
     void parseAssignment(AstNode* parent);
@@ -111,31 +107,31 @@ private:
     void parseNamespace(AstNode* parent);
     void parseConst(AstNode* parent);
     void parseEnum(AstNode* parent);
-    void parseCase(AstNode* parent);       // НОВОЕ
-    void parseDefault(AstNode* parent);    // НОВОЕ
+    void parseCase(AstNode* parent);
+    void parseDefault(AstNode* parent);
     AstNode* parseAttributeBlock();
     void parseBlockDirect(AstNode* block);
 
-    // ---- Создание узлов AST ----
-    AstNode* makeStringLiteral(const QString& value);
+    AstNode* makeStringLiteral(std::string_view value);
     AstNode* makeNumberLiteral(double value);
     AstNode* makeBoolLiteral(bool value);
     AstNode* makeNullLiteral();
-    AstNode* makeVariableRef(const QString& name);
+    AstNode* makeVariableRef(std::string_view name);
     AstNode* makeBinaryOp(int op, AstNode* left, AstNode* right);
     AstNode* makeUnaryOp(int op, AstNode* operand);
-    AstNode* makeConcat(const QVector<AstNode*>& parts);
-    AstNode* makeList(const QVector<AstNode*>& elements);
+    AstNode* makeConcat(const std::vector<AstNode*>& parts);
+    AstNode* makeList(const std::vector<AstNode*>& elements);
 
-    // ---- Проверки ----
-    bool checkDuplicate(const QString& name, const QSet<QString>& set, const QString& type);
-    void addDefinition(const QString& name, QSet<QString>& set);
-    void checkIncludeCycle(const QString& path);
-    void checkType(AstNode* node, const QString& expectedType, const QString& context);
-    void checkFunctionArgs(const QString& name, const QVector<QVariant>& args,
+    bool checkDuplicate(std::string_view name,
+                        const std::unordered_set<std::string>& set,
+                        std::string_view type);
+    void addDefinition(std::string_view name, std::unordered_set<std::string>& set);
+    void checkIncludeCycle(std::string_view path);
+    void checkType(AstNode* node, std::string_view expectedType, std::string_view context);
+    void checkFunctionArgs(std::string_view name,
+                           const std::vector<Value>& args,
                            int minCount, int maxCount = -1);
 
-    // ---- Выполнение AST ----
     void evaluateAst(AstNode* root);
     void evaluateAssignment(AstNode* assign);
     void evaluateRule(AstNode* rule);
@@ -153,13 +149,14 @@ private:
     void evaluateConst(AstNode* constNode);
     void evaluateEnum(AstNode* enumNode);
 
-    QString resolveVariable(const QString& name, QSet<QString>& visiting);
-    QVariant evaluateExpression(AstNode* expr);
-    QVariant callBuiltin(const QString& name, const QVector<QVariant>& args);
+    std::string resolveVariable(std::string_view name,
+                                std::unordered_set<std::string>& visiting);
+    Value evaluateExpression(AstNode* expr);
+    Value callBuiltin(std::string_view name, const std::vector<Value>& args);
 
-    QString normalizePath(const QString& path);
+    std::string normalizePath(std::string_view path);
 
-    static QString astNodeToStringWithState(AstNode* node, const core::State* state);
+    static std::string astNodeToStringWithState(AstNode* node, const core::State* state);
 };
 
 } // namespace pmake::parser

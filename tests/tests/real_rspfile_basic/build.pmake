@@ -1,0 +1,9 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule gen {
+    command = "${python} cat_rspfile.py ${rspfile} ${out}"
+    rspfile = "${out}.rsp"
+    rspfile_content = "line1\nline2\n"
+}
+build "out.txt" : gen
+alias all : "out.txt"

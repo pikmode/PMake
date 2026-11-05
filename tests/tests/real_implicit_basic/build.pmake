@@ -1,0 +1,5 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule gen { command = "${python} concat.py ${out} ${in}" }
+build "out.txt" : gen "main.txt" | "hdr.txt"
+alias all : "out.txt"

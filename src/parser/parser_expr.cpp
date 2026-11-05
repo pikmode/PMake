@@ -1,5 +1,9 @@
 #include "parser/parser_impl.h"
 
+#include <string>
+#include <string_view>
+#include <vector>
+
 namespace pmake::parser {
 
 int ParserImpl::getPrecedence(TokenType t) {
@@ -19,7 +23,6 @@ AstNode* ParserImpl::parseExpressionPrecedence(int minPrec, int depth) {
         error("Expression too deep (max 100), aborting", false);
         return nullptr;
     }
-
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
         error("Too many operations in expression parsing", false);
         return nullptr;
@@ -45,11 +48,11 @@ AstNode* ParserImpl::parseExpressionPrecedence(int minPrec, int depth) {
 
 AstNode* ParserImpl::parseAtom() {
     if (cur_.type == TOK_IDENT) {
-        QString ident = str(cur_.strId);
+        std::string ident{str(cur_.strId)};
         advance();
         if (cur_.type == TOK_LPAREN) {
             advance();
-            QVector<AstNode*> args;
+            std::vector<AstNode*> args;
             int argCount = 0;
             const int MAX_ARGS = 1000;
 
@@ -58,34 +61,28 @@ AstNode* ParserImpl::parseAtom() {
                     error("Too many arguments in function call", true);
                     break;
                 }
-
                 TokenType before = cur_.type;
                 AstNode* arg = parseExpressionPrecedence(0, 0);
                 if (arg) {
-                    args.append(arg);
+                    args.push_back(arg);
                 } else {
                     error("Failed to parse argument", true);
                     break;
                 }
-
                 if (cur_.type == before) {
                     error("Parser stuck in function arguments", true);
                     advance();
                     break;
                 }
-
-                if (cur_.type == TOK_COMMA) {
-                    advance();
-                } else {
-                    break;
-                }
+                if (cur_.type == TOK_COMMA) advance();
+                else break;
             }
 
             expect(TOK_RPAREN, "Expected ')'");
             auto node = makeStringLiteral("");
             node->type = AstNode::FUNCTION_CALL;
-            node->name = ident;
-            node->children = args;
+            node->name = std::move(ident);
+            node->children = std::move(args);
             node->line = cur_.line;
             node->column = cur_.column;
             return node;
@@ -93,11 +90,11 @@ AstNode* ParserImpl::parseAtom() {
             return makeVariableRef(ident);
         }
     } else if (cur_.type == TOK_VAR_REF) {
-        QString name = str(cur_.strId);
+        std::string_view name = str(cur_.strId);
         advance();
         return makeVariableRef(name);
     } else if (cur_.type == TOK_STRING) {
-        QString s = str(cur_.strId);
+        std::string_view s = str(cur_.strId);
         advance();
         return makeStringLiteral(s);
     } else if (cur_.type == TOK_NUMBER) {
@@ -112,9 +109,9 @@ AstNode* ParserImpl::parseAtom() {
         return makeBoolLiteral(false);
     } else if (cur_.type == TOK_LBRACKET) {
         advance();
-        QVector<AstNode*> elements;
+        std::vector<AstNode*> elements;
         while (cur_.type != TOK_RBRACKET && cur_.type != TOK_EOF) {
-            elements.append(parseExpressionPrecedence(0, 0));
+            elements.push_back(parseExpressionPrecedence(0, 0));
             if (cur_.type == TOK_COMMA) advance();
         }
         expect(TOK_RBRACKET, "Expected ']'");
@@ -144,11 +141,8 @@ AstNode* ParserImpl::parseAtom() {
     }
 }
 
-// ================================================================
-// ИСПРАВЛЕННЫЙ parseValueSequence – без ложной проверки на застревание
-// ================================================================
 AstNode* ParserImpl::parseValueSequence(bool stopOnNewline) {
-    QVector<AstNode*> parts;
+    std::vector<AstNode*> parts;
     int loopGuard = 0;
     while (true) {
         if (++loopGuard > 10000) {
@@ -167,20 +161,20 @@ AstNode* ParserImpl::parseValueSequence(bool stopOnNewline) {
             error("Failed to parse expression in value sequence", true);
             break;
         }
-        parts.append(part);
+        parts.push_back(part);
 
         if (cur_.type == TOK_NEWLINE || cur_.type == TOK_EOF)
             break;
     }
-    if (parts.isEmpty())
+    if (parts.empty())
         return makeStringLiteral("");
     if (parts.size() == 1)
-        return parts.first();
+        return parts.front();
     return makeConcat(parts);
 }
 
-QVector<AstNode*> ParserImpl::parseValueList() {
-    QVector<AstNode*> list;
+std::vector<AstNode*> ParserImpl::parseValueList() {
+    std::vector<AstNode*> list;
     int loopGuard = 0;
     while (true) {
         if (++loopGuard > 10000) {
@@ -194,7 +188,7 @@ QVector<AstNode*> ParserImpl::parseValueList() {
             cur_.type == TOK_LBRACKET || cur_.type == TOK_NUMBER || cur_.type == TOK_TRUE || cur_.type == TOK_FALSE) {
             AstNode* expr = parseExpressionPrecedence(0, 0);
             if (expr) {
-                list.append(expr);
+                list.push_back(expr);
             } else {
                 error("Failed to parse expression in list", true);
                 break;

@@ -1,171 +1,164 @@
 #pragma once
 
-#include <QString>
-#include <QVector>
-#include <QHash>
-#include <QSharedPointer>
+#include <cstdint>
+#include <memory>
+#include <mutex>
 #include <optional>
-#include <QMutex>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
 #include "core/ast.h"
+#include "core/value.h"
 
 namespace pmake::core {
 
 class Scope;
 
 struct Rule {
-    QString name;
-    QString command;
-    QString description;
+    std::string name;
+    std::string command;
+    std::string description;
     bool generator = false;
     bool restat = false;
-    QString depfile;
-    QString deps;
-    QString rspfile;
-    QString rspfile_content;
+    std::string depfile;
+    std::string deps;
+    std::string rspfile;
+    std::string rspfile_content;
     bool pool = false;
 };
 
 struct Build {
-    QVector<QString> outputs;
-    QVector<QString> inputs;
-    QVector<QString> implicit;
-    QVector<QString> order_only;
-    QString rule_name;
-    QSharedPointer<Scope> scope;
+    std::vector<std::string> outputs;
+    std::vector<std::string> inputs;
+    std::vector<std::string> implicit;
+    std::vector<std::string> order_only;
+    std::string rule_name;
+    std::shared_ptr<Scope> scope;
 };
 
 struct Pool {
-    QString name;
+    std::string name;
     int depth = 1;
 };
 
 struct FileState {
-    qint64 mtime = -1;
-    qint64 size = 0;
-    QString hash;
+    std::int64_t mtime = -1;
+    std::int64_t size = 0;
+    std::string hash;
 };
 
 struct ConfigBlock {
-    QString name;
-    QHash<QString, QString> vars;
+    std::string name;
+    std::unordered_map<std::string, std::string> vars;
 };
 
 struct PlatformBlock {
-    QString name;
-    QHash<QString, QString> vars;
+    std::string name;
+    std::unordered_map<std::string, std::string> vars;
 };
 
 struct FunctionDef {
-    QString name;
-    QStringList params;
+    std::string name;
+    std::vector<std::string> params;
     AstNode* body = nullptr;
 };
 
 class Scope {
 public:
     explicit Scope(Scope* parent = nullptr);
-    void set(const QString& name, const QString& value);
-    std::optional<QString> get(const QString& name) const;
-    void remove(const QString& name);
-    bool has(const QString& name) const;
-    const QHash<QString, QString>& locals() const { return vars_; }
+    void set(std::string_view name, std::string_view value);
+    std::optional<std::string> get(std::string_view name) const;
+    void remove(std::string_view name);
+    bool has(std::string_view name) const;
+    const std::unordered_map<std::string, std::string>& locals() const { return vars_; }
 
 private:
     Scope* parent_;
-    QHash<QString, QString> vars_;
+    std::unordered_map<std::string, std::string> vars_;
 };
 
 class State {
 public:
     State();
     ~State();
-
     State(const State&) = delete;
     State& operator=(const State&) = delete;
     State(State&& other) noexcept;
     State& operator=(State&& other) noexcept;
 
-    // --- Глобальные переменные ---
-    void setGlobal(const QString& name, const QString& value);
-    std::optional<QString> getGlobal(const QString& name) const;
-    const QHash<QString, QString>& globals() const;
+    void setGlobal(std::string_view name, std::string_view value);
+    std::optional<std::string> getGlobal(std::string_view name) const;
+    const std::unordered_map<std::string, std::string>& globals() const;
 
-    // --- Правила ---
     void addRule(const Rule& rule);
-    const Rule* getRule(const QString& name) const;
-    const QHash<QString, Rule>& rules() const;
+    const Rule* getRule(std::string_view name) const;
+    const std::unordered_map<std::string, Rule>& rules() const;
 
-    // --- Сборки ---
     void addBuild(const Build& build);
-    const QVector<Build>& builds() const;
+    const std::vector<Build>& builds() const;
 
-    // --- Пулы ---
     void addPool(const Pool& pool);
-    const Pool* getPool(const QString& name) const;
-    const QHash<QString, Pool>& pools() const;
+    const Pool* getPool(std::string_view name) const;
+    const std::unordered_map<std::string, Pool>& pools() const;
 
-    // --- Состояния файлов ---
-    void setFileState(const QString& path, const FileState& state);
-    std::optional<FileState> getFileState(const QString& path) const;
-    const QHash<QString, FileState>& fileStates() const;
+    void setFileState(std::string_view path, const FileState& state);
+    std::optional<FileState> getFileState(std::string_view path) const;
+    const std::unordered_map<std::string, FileState>& fileStates() const;
 
-    QVector<QString>& defaultTargets();
-    const QVector<QString>& defaultTargets() const;
+    std::vector<std::string>& defaultTargets();
+    const std::vector<std::string>& defaultTargets() const;
 
-    QVector<QString>& includedFiles();
-    const QVector<QString>& includedFiles() const;
+    std::vector<std::string>& includedFiles();
+    const std::vector<std::string>& includedFiles() const;
 
-    // --- Конфигурации ---
     void addConfig(const ConfigBlock& block);
-    bool hasConfig(const QString& name) const;
-    const ConfigBlock* getConfig(const QString& name) const;
-    const QHash<QString, ConfigBlock>& configs() const;
+    bool hasConfig(std::string_view name) const;
+    const ConfigBlock* getConfig(std::string_view name) const;
+    const std::unordered_map<std::string, ConfigBlock>& configs() const;
 
-    // --- Платформы ---
     void addPlatform(const PlatformBlock& block);
-    bool hasPlatform(const QString& name) const;
-    const PlatformBlock* getPlatform(const QString& name) const;
-    const QHash<QString, PlatformBlock>& platforms() const;
+    bool hasPlatform(std::string_view name) const;
+    const PlatformBlock* getPlatform(std::string_view name) const;
+    const std::unordered_map<std::string, PlatformBlock>& platforms() const;
 
-    // --- Пользовательские функции ---
     void addFunction(const FunctionDef& func);
-    const FunctionDef* getFunction(const QString& name) const;
-    const QHash<QString, FunctionDef>& functions() const;
+    const FunctionDef* getFunction(std::string_view name) const;
+    const std::unordered_map<std::string, FunctionDef>& functions() const;
 
-    // --- Command hashes (thread-safe) ---
-    void setCommandHash(const QString& output, const QString& hash) const;
-    std::optional<QString> getCommandHash(const QString& output) const;
-    void setCommandHashes(const QHash<QString, QString>& hashes);
-    const QHash<QString, QString>& commandHashes() const;
+    void setCommandHash(std::string_view output, std::string_view hash) const;
+    std::optional<std::string> getCommandHash(std::string_view output) const;
+    void setCommandHashes(const std::unordered_map<std::string, std::string>& hashes);
+    const std::unordered_map<std::string, std::string>& commandHashes() const;
 
-    // NEW: Флаг валидности кэша (для ленивого SHA1)
     void setCacheValid(bool valid) { cacheValid_ = valid; }
     bool isCacheValid() const { return cacheValid_; }
 
-    QVariant callUserFunction(const QString& name,
-                              const QVector<QVariant>& args,
-                              Scope* callerScope = nullptr);
-    QVariant executeAstNode(AstNode* node, Scope* localScope);
+    Value callUserFunction(std::string_view name,
+                           const std::vector<Value>& args,
+                           Scope* callerScope = nullptr);
+    Value executeAstNode(AstNode* node, Scope* localScope);
 
-    QString expandVars(const QString& input, const Scope* local_scope = nullptr) const;
-    QString expandVarsWithSpecial(const QString& input,
-                                  const Scope* local_scope,
-                                  const QHash<QString, QString>& specialVars) const;
+    std::string expandVars(std::string_view input, const Scope* local_scope = nullptr) const;
+    std::string expandVarsWithSpecial(std::string_view input,
+                                      const Scope* local_scope,
+                                      const std::unordered_map<std::string, std::string>& specialVars) const;
 
 private:
     Scope global_scope_;
-    QHash<QString, Rule> rules_;
-    QVector<Build> builds_;
-    QHash<QString, Pool> pools_;
-    QVector<QString> defaultTargets_;
-    QVector<QString> includedFiles_;
-    QHash<QString, FileState> fileStates_;
-    QHash<QString, ConfigBlock> configs_;
-    QHash<QString, PlatformBlock> platforms_;
-    QHash<QString, FunctionDef> functions_;
-    mutable QHash<QString, QString> commandHashes_;
-    mutable QMutex commandHashesMutex_;
-    bool cacheValid_ = false; // NEW
+    std::unordered_map<std::string, Rule> rules_;
+    std::vector<Build> builds_;
+    std::unordered_map<std::string, Pool> pools_;
+    std::vector<std::string> defaultTargets_;
+    std::vector<std::string> includedFiles_;
+    std::unordered_map<std::string, FileState> fileStates_;
+    std::unordered_map<std::string, ConfigBlock> configs_;
+    std::unordered_map<std::string, PlatformBlock> platforms_;
+    std::unordered_map<std::string, FunctionDef> functions_;
+    mutable std::unordered_map<std::string, std::string> commandHashes_;
+    mutable std::mutex commandHashesMutex_;
+    bool cacheValid_ = false;
 };
 
 } // namespace pmake::core

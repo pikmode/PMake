@@ -1,70 +1,71 @@
 #include "core/node.h"
-#include "util/filesystem.h"
-#include "util/logging.h"
-#include "util/string_utils.h"
+#include "core/graph.h"
 #include "deps/deps_log.h"
-#include <QDir>
-#include <QCryptographicHash>
+#include "util/filesystem.h"
+#include "util/hash.h"
+#include "util/string_utils.h"
+
+#include <format>
+#include <iostream>
+#include <print>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pmake::core {
 
-Node::Node(const QString& name, const Build* build, const Rule* rule, const State* state, Graph* graph, bool dryRun)
-    : name_(name), build_(build), rule_(rule), state_(state), graph_(graph), dryRun_(dryRun), finished_(false) {}
+Node::Node(std::string_view name, const Build* build, const Rule* rule,
+           const State* state, Graph* graph, bool dryRun)
+    : name_(name), build_(build), rule_(rule), state_(state),
+      graph_(graph), dryRun_(dryRun), finished_(false) {}
 
 void Node::addDependency(Node* dep) {
     if (!dep) return;
-    if (!deps_.contains(dep)) {
-        deps_.append(dep);
-        dep->addReverseDependency(this);
-    }
+    for (Node* d : deps_) if (d == dep) return;
+    deps_.push_back(dep);
+    dep->addReverseDependency(this);
 }
 
 void Node::addImplicitDependency(Node* dep) {
     if (!dep) return;
-    if (!implicit_deps_.contains(dep)) {
-        implicit_deps_.append(dep);
-        dep->addReverseDependency(this);
-    }
+    for (Node* d : implicit_deps_) if (d == dep) return;
+    implicit_deps_.push_back(dep);
+    dep->addReverseDependency(this);
 }
 
 void Node::addOrderOnlyDependency(Node* dep) {
     if (!dep) return;
-    if (!order_only_deps_.contains(dep)) {
-        order_only_deps_.append(dep);
-        dep->addReverseOrderOnlyDependency(this);
-    }
+    for (Node* d : order_only_deps_) if (d == dep) return;
+    order_only_deps_.push_back(dep);
+    dep->addReverseOrderOnlyDependency(this);
 }
 
 void Node::addReverseDependency(Node* dep) {
     if (!dep) return;
-    if (!reverse_deps_.contains(dep)) {
-        reverse_deps_.append(dep);
-    }
+    for (Node* d : reverse_deps_) if (d == dep) return;
+    reverse_deps_.push_back(dep);
 }
 
 void Node::addReverseOrderOnlyDependency(Node* dep) {
     if (!dep) return;
-    if (!reverse_order_only_deps_.contains(dep)) {
-        reverse_order_only_deps_.append(dep);
-    }
+    for (Node* d : reverse_order_only_deps_) if (d == dep) return;
+    reverse_order_only_deps_.push_back(dep);
 }
 
-qint64 Node::getFileMtime(const QString& path) {
+std::int64_t Node::getFileMtime(std::string_view path) {
     return util::getFileMtime(path);
 }
 
-QString Node::computeCommandHash() const {
-    if (!rule_ || !build_) return QString();
-
-    QHash<QString, QString> specialVars = getSpecialVars();
-    QString cmd = rule_->command;
+std::string Node::computeCommandHash() const {
+    if (!rule_ || !build_) return {};
+    auto specialVars = getSpecialVars();
+    std::string cmd = rule_->command;
     if (state_) {
-        cmd = state_->expandVarsWithSpecial(cmd, build_->scope.data(), specialVars);
+        cmd = state_->expandVarsWithSpecial(cmd, build_->scope.get(), specialVars);
     }
-
-    QByteArray data = cmd.toUtf8();
-    return QString::fromLatin1(
-        QCryptographicHash::hash(data, QCryptographicHash::Sha1).toHex());
+    return util::sha1_hex(cmd);
 }
 
 bool Node::isDirty() {
@@ -73,26 +74,24 @@ bool Node::isDirty() {
 
     if (rule_->generator) {
         bool anyMissing = false;
-        for (const QString& out : build_->outputs) {
+        for (const auto& out : build_->outputs) {
             if (util::getFileMtime(out) == -1) { anyMissing = true; break; }
         }
         if (anyMissing) return true;
 
-        qint64 maxOut = -1;
-        for (const QString& out : build_->outputs) {
-            qint64 m = util::getFileMtime(out);
+        std::int64_t maxOut = -1;
+        for (const auto& out : build_->outputs) {
+            std::int64_t m = util::getFileMtime(out);
             if (m > maxOut) maxOut = m;
         }
         auto checkGenDep = [&](Node* dep) -> bool {
-            if (dep->isLeaf()) {
-                return util::getFileMtime(dep->name()) > maxOut;
-            }
+            if (dep->isLeaf()) return util::getFileMtime(dep->name()) > maxOut;
             if (dep->wasBuilt()) return true;
             const Build* db = dep->getBuild();
             if (!db) return false;
-            qint64 dm = -1;
-            for (const QString& out : db->outputs) {
-                qint64 mm = util::getFileMtime(out);
+            std::int64_t dm = -1;
+            for (const auto& out : db->outputs) {
+                std::int64_t mm = util::getFileMtime(out);
                 if (mm > dm) dm = mm;
             }
             return dm > maxOut;
@@ -105,9 +104,9 @@ bool Node::isDirty() {
     }
 
     bool anyExists = false;
-    qint64 maxOut = -1;
-    for (const QString& out : build_->outputs) {
-        qint64 m = util::getFileMtime(out);
+    std::int64_t maxOut = -1;
+    for (const auto& out : build_->outputs) {
+        std::int64_t m = util::getFileMtime(out);
         if (m != -1) {
             anyExists = true;
             if (m > maxOut) maxOut = m;
@@ -119,16 +118,15 @@ bool Node::isDirty() {
 
     auto checkNode = [&](Node* dep) -> bool {
         if (dep->isLeaf()) {
-            qint64 m = util::getFileMtime(dep->name());
+            std::int64_t m = util::getFileMtime(dep->name());
             if (m > maxOut) return true;
         } else {
             if (dep->wasBuilt()) return true;
-
             const Build* db = dep->getBuild();
             if (!db) return false;
-            qint64 m = -1;
-            for (const QString& out : db->outputs) {
-                qint64 mm = util::getFileMtime(out);
+            std::int64_t m = -1;
+            for (const auto& out : db->outputs) {
+                std::int64_t mm = util::getFileMtime(out);
                 if (mm > m) m = mm;
             }
             if (m > maxOut) return true;
@@ -136,36 +134,28 @@ bool Node::isDirty() {
         return false;
     };
 
-    for (Node* dep : deps_) {
-        if (checkNode(dep)) return true;
-    }
-    for (Node* dep : implicit_deps_) {
-        if (checkNode(dep)) return true;
-    }
+    for (Node* dep : deps_) if (checkNode(dep)) return true;
+    for (Node* dep : implicit_deps_) if (checkNode(dep)) return true;
 
-    if (rule_ && !rule_->depfile.isEmpty()) {
+    if (rule_ && !rule_->depfile.empty()) {
         auto depInputs = deps::DepsLog::instance().inputsFor(name_);
-        if (depInputs.isEmpty()) {
-            LOG_VERBOSE(QString("Depfile lost for '%1' → force rebuild").arg(name_));
+        if (depInputs.empty()) {
+            std::println(std::cerr, "Depfile lost for '{}' -> force rebuild", name_);
             return true;
         }
-        qint64 maxDepMtime = -1;
-        for (const QString& in : depInputs) {
-            qint64 m = util::getFileMtime(in);
+        std::int64_t maxDepMtime = -1;
+        for (const auto& in : depInputs) {
+            std::int64_t m = util::getFileMtime(in);
             if (m > maxDepMtime) maxDepMtime = m;
         }
         if (maxDepMtime > maxOut) return true;
     }
 
-    // P0: Ленивый SHA1. Если build.pmake не менялся (кэш валиден),
-    // мы гарантированно знаем, что команды не изменились. Не считаем SHA1.
     if (state_ && !state_->isCacheValid()) {
-        QString currentHash = computeCommandHash();
-        if (!currentHash.isEmpty()) {
+        std::string currentHash = computeCommandHash();
+        if (!currentHash.empty()) {
             auto cached = state_->getCommandHash(name_);
-            if (cached.has_value() && *cached != currentHash) {
-                return true;
-            }
+            if (cached.has_value() && *cached != currentHash) return true;
         }
     }
 
@@ -174,52 +164,58 @@ bool Node::isDirty() {
     return false;
 }
 
-QHash<QString, QString> Node::getSpecialVars() const {
-    QHash<QString, QString> specialVars;
+std::unordered_map<std::string, std::string> Node::getSpecialVars() const {
+    std::unordered_map<std::string, std::string> specialVars;
     if (!build_ || !rule_) return specialVars;
 
-    auto quote = [](const QString& s) -> QString {
-        return util::quoteForShell(s);
-    };
+    std::string quotedOutputs;
+    for (std::size_t i = 0; i < build_->outputs.size(); ++i) {
+        if (i) quotedOutputs += ' ';
+        quotedOutputs += util::quoteForShell(build_->outputs[i]);
+    }
+    specialVars["out"] = std::move(quotedOutputs);
 
-    QStringList quotedOutputs;
-    for (const QString& out : build_->outputs) quotedOutputs.append(quote(out));
-    specialVars["out"] = quotedOutputs.join(' ');
+    std::string quotedInputs;
+    for (std::size_t i = 0; i < build_->inputs.size(); ++i) {
+        if (i) quotedInputs += ' ';
+        quotedInputs += util::quoteForShell(build_->inputs[i]);
+    }
+    specialVars["in"] = std::move(quotedInputs);
 
-    QStringList quotedInputs;
-    for (const QString& in : build_->inputs) quotedInputs.append(quote(in));
-    specialVars["in"] = quotedInputs.join(' ');
-    specialVars["in_newline"] = build_->inputs.join('\n');
+    std::string inNewline;
+    for (std::size_t i = 0; i < build_->inputs.size(); ++i) {
+        if (i) inNewline += '\n';
+        inNewline += build_->inputs[i];
+    }
+    specialVars["in_newline"] = std::move(inNewline);
 
-    // ОГРОМНЫЙ FIX: убрано копирование build->scope->locals() и state->globals()
-    // Это экономит 20 000 аллокаций QString на 400 нодах.
-    // expandVarsWithSpecial сам найдет их через fallback.
-    
     return specialVars;
 }
 
-QHash<QString, qint64> Node::getOutputMtimesBefore() const {
-    QHash<QString, qint64> before;
-    for (const QString& out : build_->outputs) {
+std::unordered_map<std::string, std::int64_t> Node::getOutputMtimesBefore() const {
+    std::unordered_map<std::string, std::int64_t> before;
+    for (const auto& out : build_->outputs) {
         before[out] = util::getFileMtime(out);
     }
     return before;
 }
 
-bool Node::hasOutputChanged(const QHash<QString, qint64>& before) const {
-    for (const QString& out : build_->outputs) {
+bool Node::hasOutputChanged(const std::unordered_map<std::string, std::int64_t>& before) const {
+    for (const auto& out : build_->outputs) {
         util::FileCache::instance().invalidate(out);
-        qint64 now = util::getFileMtime(out);
-        if (before.value(out) != now) return true;
+        std::int64_t now = util::getFileMtime(out);
+        auto it = before.find(out);
+        std::int64_t prev = (it != before.end()) ? it->second : -1;
+        if (prev != now) return true;
     }
     return false;
 }
 
 void Node::refreshOutputMtime() {
-    qint64 maxOut = -1;
-    for (const QString& out : build_->outputs) {
+    std::int64_t maxOut = -1;
+    for (const auto& out : build_->outputs) {
         util::FileCache::instance().invalidate(out);
-        qint64 m = util::getFileMtime(out);
+        std::int64_t m = util::getFileMtime(out);
         if (m > maxOut) maxOut = m;
     }
     cachedOutputMtime_ = maxOut;

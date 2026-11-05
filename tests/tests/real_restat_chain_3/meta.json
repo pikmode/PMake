@@ -1,0 +1,36 @@
+{
+  "description": "restat chain 3: touch src → только m1",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 3
+      }
+    },
+    {
+      "name": "touch_src",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "src.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

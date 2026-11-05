@@ -1,6 +1,7 @@
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
+
+#include <string>
+#include <string_view>
 
 namespace pmake::parser {
 
@@ -11,7 +12,7 @@ void ParserImpl::parseIf(AstNode* parent) {
     node->line = cur_.line;
     node->column = cur_.column;
 
-    node->children.append(parseExpressionPrecedence(0, 0));
+    node->children.push_back(parseExpressionPrecedence(0, 0));
 
     if (cur_.type != TOK_NEWLINE && cur_.type != TOK_INDENT && cur_.type != TOK_LBRACE) {
         error("Expected newline or block after if condition", true);
@@ -28,7 +29,7 @@ void ParserImpl::parseIf(AstNode* parent) {
     pushBlock(thenBlock);
     parseBlockDirect(thenBlock);
     popBlock();
-    node->children.append(thenBlock);
+    node->children.push_back(thenBlock);
 
     int guard = 0;
     while (true) {
@@ -41,7 +42,7 @@ void ParserImpl::parseIf(AstNode* parent) {
             advance();
             auto elseifNode = makeStringLiteral("");
             elseifNode->type = AstNode::ELSEIF;
-            elseifNode->children.append(parseExpressionPrecedence(0, 0));
+            elseifNode->children.push_back(parseExpressionPrecedence(0, 0));
             if (cur_.type == TOK_NEWLINE) advance();
             skipNewlines();
             if (!skipToBlockStart(0)) {
@@ -53,8 +54,8 @@ void ParserImpl::parseIf(AstNode* parent) {
             pushBlock(elseIfBlock);
             parseBlockDirect(elseIfBlock);
             popBlock();
-            elseifNode->children.append(elseIfBlock);
-            node->children.append(elseifNode);
+            elseifNode->children.push_back(elseIfBlock);
+            node->children.push_back(elseifNode);
         } else if (cur_.type == TOK_IDENT && str(cur_.strId) == "else") {
             advance();
             auto elseNode = makeStringLiteral("");
@@ -70,8 +71,8 @@ void ParserImpl::parseIf(AstNode* parent) {
             pushBlock(elseBlock);
             parseBlockDirect(elseBlock);
             popBlock();
-            elseNode->children.append(elseBlock);
-            node->children.append(elseNode);
+            elseNode->children.push_back(elseBlock);
+            node->children.push_back(elseNode);
             break;
         } else {
             break;
@@ -84,7 +85,7 @@ void ParserImpl::parseIf(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseForeach ----
@@ -95,7 +96,7 @@ void ParserImpl::parseForeach(AstNode* parent) {
     node->column = cur_.column;
 
     node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -107,7 +108,7 @@ void ParserImpl::parseForeach(AstNode* parent) {
     }
     advance();
 
-    node->children.append(parseExpressionPrecedence(0, 0));
+    node->children.push_back(parseExpressionPrecedence(0, 0));
 
     if (cur_.type == TOK_NEWLINE) advance();
     skipNewlines();
@@ -123,9 +124,9 @@ void ParserImpl::parseForeach(AstNode* parent) {
     parseBlockDirect(bodyBlock);
     popBlock();
 
-    node->children.append(bodyBlock);
+    node->children.push_back(bodyBlock);
 
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
@@ -136,7 +137,7 @@ void ParserImpl::parseWhile(AstNode* parent) {
     node->line = cur_.line;
     node->column = cur_.column;
 
-    node->children.append(parseExpressionPrecedence(0, 0));
+    node->children.push_back(parseExpressionPrecedence(0, 0));
 
     if (cur_.type == TOK_NEWLINE) advance();
     skipNewlines();
@@ -150,7 +151,7 @@ void ParserImpl::parseWhile(AstNode* parent) {
     pushBlock(bodyBlock);
     parseBlockDirect(bodyBlock);
     popBlock();
-    node->children.append(bodyBlock);
+    node->children.push_back(bodyBlock);
 
     skipNewlinesAndIndents();
     if (cur_.type == TOK_IDENT && str(cur_.strId) == "endwhile") {
@@ -158,7 +159,7 @@ void ParserImpl::parseWhile(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseSwitch ----
@@ -168,7 +169,7 @@ void ParserImpl::parseSwitch(AstNode* parent) {
     node->line = cur_.line;
     node->column = cur_.column;
 
-    node->children.append(parseExpressionPrecedence(0, 0));
+    node->children.push_back(parseExpressionPrecedence(0, 0));
 
     if (cur_.type == TOK_NEWLINE) advance();
     skipNewlines();
@@ -188,7 +189,7 @@ void ParserImpl::parseSwitch(AstNode* parent) {
             error("Only 'case' and 'default' allowed inside switch", true);
         }
     }
-    node->children.append(casesBlock);
+    node->children.push_back(casesBlock);
 
     skipNewlinesAndIndents();
     if (cur_.type == TOK_IDENT && str(cur_.strId) == "endswitch") {
@@ -196,7 +197,7 @@ void ParserImpl::parseSwitch(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseCase ----
@@ -206,10 +207,8 @@ void ParserImpl::parseCase(AstNode* parent) {
     node->line = cur_.line;
     node->column = cur_.column;
 
-    // Значение case
-    node->children.append(parseExpressionPrecedence(0, 0));
+    node->children.push_back(parseExpressionPrecedence(0, 0));
 
-    // Блок { ... } или indent
     if (cur_.type == TOK_NEWLINE) advance();
     skipNewlines();
 
@@ -219,10 +218,10 @@ void ParserImpl::parseCase(AstNode* parent) {
         pushBlock(block);
         parseBlockDirect(block);
         popBlock();
-        node->children.append(block);
+        node->children.push_back(block);
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
@@ -242,10 +241,10 @@ void ParserImpl::parseDefault(AstNode* parent) {
         pushBlock(block);
         parseBlockDirect(block);
         popBlock();
-        node->children.append(block);
+        node->children.push_back(block);
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
@@ -256,7 +255,7 @@ void ParserImpl::parseBreak(AstNode* parent) {
     node->type = AstNode::BREAK;
     node->line = cur_.line;
     node->column = cur_.column;
-    parent->children.append(node);
+    parent->children.push_back(node);
     if (cur_.type == TOK_NEWLINE) advance();
 }
 
@@ -267,7 +266,7 @@ void ParserImpl::parseContinue(AstNode* parent) {
     node->type = AstNode::CONTINUE;
     node->line = cur_.line;
     node->column = cur_.column;
-    parent->children.append(node);
+    parent->children.push_back(node);
     if (cur_.type == TOK_NEWLINE) advance();
 }
 

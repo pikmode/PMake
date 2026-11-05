@@ -1,0 +1,23 @@
+{
+  "description": "order-only: out ждёт stamp (порядок задач)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 2,
+        "files": [
+          "stamp.txt",
+          "out.txt"
+        ]
+      }
+    }
+  ]
+}

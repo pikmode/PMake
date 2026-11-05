@@ -1,0 +1,18 @@
+{
+  "description": "ссылка на несуществующее правило → ошибка",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "missing_rule_should_fail",
+      "expect": {
+        "exit": 1
+      }
+    }
+  ]
+}

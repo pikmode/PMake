@@ -1,0 +1,24 @@
+{
+  "description": "foreach: 3 build из списка",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 3,
+        "files": [
+          "out_alpha.txt",
+          "out_beta.txt",
+          "out_gamma.txt"
+        ]
+      }
+    }
+  ]
+}

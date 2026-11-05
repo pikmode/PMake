@@ -1,12 +1,16 @@
 // parser/ninja-parser/lexer.cpp
 #include "parser/ninja-parser/lexer.h"
+
 #include <cctype>
-#include <QDebug>
+#include <iostream>
+#include <print>
+#include <string>
+#include <string_view>
 
 namespace pmake::ninja {
 
-Lexer::Lexer(const QByteArray& data, const QString& filename)
-    : data_(data.constData()), pos_(data_), end_(data_ + data.size()),
+Lexer::Lexer(std::string_view data, std::string_view filename)
+    : data_(data.data()), pos_(data.data()), end_(data.data() + data.size()),
       line_(1), filename_(filename), atLineStart_(true), hadWhitespace_(false) {
     pool_ = &util::StringPool::instance();
 }
@@ -63,17 +67,17 @@ Token Lexer::readIdentOrKeyword() {
         }
         get();
     }
-    QByteArray name(start, pos_ - start);
+    std::string_view name(start, static_cast<std::size_t>(pos_ - start));
     int id = pool_->intern(name);
     return {TOK_IDENT, id, line_, 0};
 }
 
 Token Lexer::readString() {
-    QByteArray result;
+    std::string result;
     char c;
     while ((c = get()) != '\0') {
         if (c == '"') break;
-        result.append(c);
+        result.push_back(c);
     }
     int id = pool_->intern(result);
     return {TOK_STRING, id, line_, 0};
@@ -81,28 +85,28 @@ Token Lexer::readString() {
 
 Token Lexer::readVariable() {
     char c = get();
-    QByteArray var;
+    std::string var;
     if (c == '{') {
         while (true) {
             c = get();
             if (c == '}') break;
             if (c == '\0') { error("Unterminated ${}"); break; }
-            var.append(c);
+            var.push_back(c);
         }
         int id = pool_->intern(var);
         return {TOK_VAR_REF, id, line_, 0};
-    } else if (isalpha(c) || c == '_') {
-        var.append(c);
+    } else if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
+        var.push_back(c);
         while (true) {
             char n = peek();
-            if (isalnum(n) || n == '_') var.append(get());
+            if (std::isalnum(static_cast<unsigned char>(n)) || n == '_') var.push_back(get());
             else break;
         }
         int id = pool_->intern(var);
         return {TOK_VAR_REF, id, line_, 0};
     } else {
         // $:  $$  $  — экранирование одиночного символа
-        QByteArray lit(1, c);
+        std::string lit(1, c);
         int id = pool_->intern(lit);
         return {TOK_STRING, id, line_, 0};
     }
@@ -153,7 +157,7 @@ Token Lexer::nextToken() {
 }
 
 // ============================================================
-// FIX: readValue теперь корректно обрабатывает ninja-эскейпы:
+// readValue корректно обрабатывает ninja-эскейпы:
 //   $<newline>  → ничего (continuation)
 //   $<space>    → пробел
 //   $:          → :
@@ -161,10 +165,10 @@ Token Lexer::nextToken() {
 //   $var, ${var} → оставить как есть (раскроется позже в expandVars)
 //   \X          → \X (literal, в ninja \ не escape)
 // ============================================================
-QString Lexer::readValue(bool /*allowContinuation*/) {
+std::string Lexer::readValue(bool /*allowContinuation*/) {
     while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) pos_++;
 
-    QByteArray result;
+    std::string result;
     bool inQuotes = false;
 
     while (pos_ < end_) {
@@ -187,28 +191,28 @@ QString Lexer::readValue(bool /*allowContinuation*/) {
                 continue;
             }
 
-            if (n == ' ') { result.append(' '); pos_ += 2; continue; }
-            if (n == ':') { result.append(':'); pos_ += 2; continue; }
-            if (n == '$') { result.append('$'); pos_ += 2; continue; }
+            if (n == ' ') { result.push_back(' '); pos_ += 2; continue; }
+            if (n == ':') { result.push_back(':'); pos_ += 2; continue; }
+            if (n == '$') { result.push_back('$'); pos_ += 2; continue; }
 
             // $var или ${var} — оставить как есть (раскроется позже)
-            result.append('$');
+            result.push_back('$');
             pos_++;
             continue;
         }
 
-        result.append(c);
+        result.push_back(c);
         pos_++;
     }
 
-    while (!result.isEmpty() && (result.back() == ' ' || result.back() == '\t'))
-        result.chop(1);
+    while (!result.empty() && (result.back() == ' ' || result.back() == '\t'))
+        result.pop_back();
 
-    return QString::fromUtf8(result);
+    return result;
 }
 
-void Lexer::error(const QString& msg) {
-    qCritical() << "Ninja lexer error in" << filename_ << "line" << line_ << ":" << msg;
+void Lexer::error(std::string_view msg) {
+    std::println(std::cerr, "Ninja lexer error in {} line {}: {}", filename_, line_, msg);
 }
 
 } // namespace pmake::ninja

@@ -1,0 +1,41 @@
+{
+  "description": "phony (input-зависимость): порядок через BFS reverse_deps",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "j2_ordered",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "2"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2,
+        "files": [
+          "stamp.txt",
+          "out.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    }
+  ]
+}

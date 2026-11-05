@@ -1,53 +1,74 @@
 #pragma once
 
-#include <QString>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
 #include "core/state.h"
-#include "deps/deps_log.h"
+
+namespace pmake::deps { class DepsLog; }
 
 namespace pmake::core {
 
 /**
  * @brief Бинарный кэш состояния сборки.
- * Версия 6: добавлен commandHashes (детект изменения command / flags).
+ *
+ * ВАЖНО: Формат изменён с QDataStream (версия 6) на собственный (версия 7).
+ * При первом запуске STL-версии на существующем проекте кэш от Qt-версии
+ * будет проигнорирован (version mismatch) → полный rebuild. Это ожидаемо.
  */
 class Cache {
 public:
     Cache();
 
-    bool save(const QString& path) const;
-    bool load(const QString& path);
+    bool save(std::string_view path) const;
+    bool load(std::string_view path);
 
-    bool isValid(const QString& mainFile = QString()) const;
+    bool isValid(std::string_view mainFile = {}) const;
 
-    void store(const State& state, const QString& mainFile = QString());
+    void store(const State& state, std::string_view mainFile = {});
     std::unique_ptr<State> restore() const;
 
-    const QHash<QString, FileState>& fileStates() const { return data_.fileStates; }
-    const QHash<QString, QString>& commandHashes() const { return data_.commandHashes; }
-
-    const deps::DepsLog& depsLog() const { return deps::DepsLog::instance(); }
-    void setDepsLog(const deps::DepsLog& /*log*/) {}
+    const std::unordered_map<std::string, FileState>& fileStates() const { return data_.fileStates; }
+    const std::unordered_map<std::string, std::string>& commandHashes() const { return data_.commandHashes; }
 
 private:
     struct Data {
-        quint32 version = 6;
-        QHash<QString, QString> globalVars;
-        QVector<Rule> rules;
-        QVector<Build> builds;
-        QVector<QHash<QString, QString>> buildLocalVars;
-        QHash<QString, Pool> pools;
-        QVector<QString> defaultTargets;
-        QVector<QString> includedFilesList;
-        QHash<QString, FileState> fileStates;
-        QHash<QString, QString> commandHashes;   // NEW
+        std::uint32_t version = 7;
+        std::unordered_map<std::string, std::string> globalVars;
+        std::vector<Rule> rules;
+        std::vector<Build> builds;
+        std::vector<std::unordered_map<std::string, std::string>> buildLocalVars;
+        std::unordered_map<std::string, Pool> pools;
+        std::vector<std::string> defaultTargets;
+        std::vector<std::string> includedFilesList;
+        std::unordered_map<std::string, FileState> fileStates;
+        std::unordered_map<std::string, std::string> commandHashes;
     };
 
     Data data_;
     bool loaded_ = false;
 
-    void serialize(QDataStream& out) const;
-    void deserialize(QDataStream& in);
+    bool write(std::ostream& out) const;
+    bool read(std::istream& in);
+
+    // helpers для бинарной сериализации
+    static void write_u32(std::ostream& out, std::uint32_t v);
+    static void write_u64(std::ostream& out, std::uint64_t v);
+    static void write_i64(std::ostream& out, std::int64_t v);
+    static void write_u8(std::ostream& out, std::uint8_t v);
+    static void write_str(std::ostream& out, std::string_view s);
+    static void write_strs(std::ostream& out, const std::vector<std::string>& v);
+
+    static bool read_u32(std::istream& in, std::uint32_t& v);
+    static bool read_u64(std::istream& in, std::uint64_t& v);
+    static bool read_i64(std::istream& in, std::int64_t& v);
+    static bool read_u8(std::istream& in, std::uint8_t& v);
+    static bool read_str(std::istream& in, std::string& s);
+    static bool read_strs(std::istream& in, std::vector<std::string>& v);
 };
 
 } // namespace pmake::core

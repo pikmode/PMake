@@ -4,37 +4,71 @@
 #include "deps/dep_parser.h"
 #include "deps/deps_log.h"
 #include "util/filesystem.h"
-#include "util/logging.h"
-#include <QDir>
-#include <QFileInfo>
-#include <QProcess>
-#include <QMutexLocker>
-#include <QSet>
+#include "util/string_utils.h"
+
+#include <filesystem>
+#include <format>
+#include <iostream>
+#include <mutex>
+#include <print>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace pmake::core {
 
-static QString getWorkingDirectory(const Build* build, const State* state) {
-    // 1. Явно заданный workdir в правилах или переменных
+namespace {
+
+std::string getWorkingDirectory(const Build* build, const State* state) {
     if (build && build->scope) {
         auto wd = build->scope->get("workdir");
-        if (wd.has_value() && !wd->isEmpty()) return QDir::cleanPath(*wd);
+        if (wd.has_value() && !wd->empty()) {
+            return std::filesystem::path(*wd).lexically_normal().string();
+        }
     }
     if (state) {
         auto wd = state->getGlobal("workdir");
-        if (wd.has_value() && !wd->isEmpty()) return QDir::cleanPath(*wd);
+        if (wd.has_value() && !wd->empty()) {
+            return std::filesystem::path(*wd).lexically_normal().string();
+        }
     }
-    
-    // FIX: Убрана эвристика смены директории на основе путей output.
-    // Ninja всегда запускает команды из корня (где лежит build.ninja).
-    return QDir::currentPath();
+    std::error_code ec;
+    return std::filesystem::current_path(ec).string();
 }
 
-static bool depsListsEqual(const QVector<QString>& a, const QVector<QString>& b) {
+bool depsListsEqual(const std::vector<std::string>& a, const std::vector<std::string>& b) {
     if (a.size() != b.size()) return false;
-    QSet<QString> setA(a.begin(), a.end());
-    QSet<QString> setB(b.begin(), b.end());
-    return setA == setB;
+    std::unordered_set<std::string> sa(a.begin(), a.end());
+    std::unordered_set<std::string> sb(b.begin(), b.end());
+    return sa == sb;
 }
+
+// Разбивает строку команды на tokens с учётом кавычек (одинарных и двойных).
+// Замена QProcess::splitCommand.
+std::vector<std::string> split_command(std::string_view cmd) {
+    std::vector<std::string> out;
+    std::string cur;
+    char quote = 0;
+    for (char c : cmd) {
+        if (quote) {
+            if (c == quote) { quote = 0; }
+            else cur.push_back(c);
+        } else if (c == '"' || c == '\'') {
+            quote = c;
+        } else if (c == ' ' || c == '\t') {
+            if (!cur.empty()) { out.push_back(std::move(cur)); cur.clear(); }
+        } else {
+            cur.push_back(c);
+        }
+    }
+    if (!cur.empty()) out.push_back(std::move(cur));
+    return out;
+}
+
+} // namespace
 
 int Node::build() {
     if (!build_ || !rule_) return 0;
@@ -46,7 +80,7 @@ int Node::build() {
     }
 
     {
-        QMutexLocker locker(&buildMutex_);
+        std::lock_guard<std::mutex> lk(buildMutex_);
         if (isBuilding_ || buildSuccess_) return 0;
         isBuilding_ = true;
     }
@@ -56,76 +90,78 @@ int Node::build() {
         bool success = false;
         BuildGuard(Node* n) : node(n) {}
         ~BuildGuard() {
-            QMutexLocker locker(&node->buildMutex_);
+            std::lock_guard<std::mutex> lk(node->buildMutex_);
             node->isBuilding_ = false;
             if (success) node->buildSuccess_ = true;
         }
     } guard(this);
 
-    QHash<QString, QString> specialVars = getSpecialVars();
-    QString command = rule_->command;
+    auto specialVars = getSpecialVars();
+    std::string command = rule_->command;
     if (state_) {
-        command = state_->expandVarsWithSpecial(command, build_->scope.data(), specialVars);
+        command = state_->expandVarsWithSpecial(command, build_->scope.get(), specialVars);
     }
-    if (command.trimmed().isEmpty()) {
-        LOG_ERROR(QString("Empty command for node '%1'").arg(name_));
+    if (util::trim(command).empty()) {
+        std::println(std::cerr, "Empty command for node '{}'", name_);
         return 1;
     }
 
-    // Создаем директории для output'ов
-    for (const QString& out : build_->outputs) {
-        QFileInfo fi(out);
-        if (!fi.absolutePath().isEmpty())
-            QDir().mkpath(fi.absolutePath());
+    // Создаём директории для outputs
+    for (const auto& out : build_->outputs) {
+        std::filesystem::path p(out);
+        if (p.has_parent_path()) {
+            std::error_code ec;
+            std::filesystem::create_directories(p.parent_path(), ec);
+        }
     }
 
-    QString rspFilePath;
-    if (!rule_->rspfile.isEmpty()) {
-        rspFilePath = state_->expandVarsWithSpecial(rule_->rspfile, build_->scope.data(), specialVars);
-        QString rspContent = state_->expandVarsWithSpecial(rule_->rspfile_content, build_->scope.data(), specialVars);
-        if (!util::writeFile(rspFilePath, rspContent.toUtf8())) {
-            LOG_ERROR("Failed to write response file: " + rspFilePath);
+    std::string rspFilePath;
+    if (!rule_->rspfile.empty()) {
+        rspFilePath = state_->expandVarsWithSpecial(
+            rule_->rspfile, build_->scope.get(), specialVars);
+        std::string rspContent = state_->expandVarsWithSpecial(
+            rule_->rspfile_content, build_->scope.get(), specialVars);
+        if (!util::writeFile(rspFilePath, rspContent)) {
+            std::println(std::cerr, "Failed to write response file: {}", rspFilePath);
             return 1;
         }
         specialVars["rspfile"] = rspFilePath;
-        command = state_->expandVarsWithSpecial(rule_->command, build_->scope.data(), specialVars);
+        command = state_->expandVarsWithSpecial(rule_->command, build_->scope.get(), specialVars);
     }
 
-    QHash<QString, qint64> beforeMtimes = getOutputMtimesBefore();
+    auto beforeMtimes = getOutputMtimesBefore();
 
-    QStringList args = QProcess::splitCommand(command);
-    if (args.isEmpty()) {
-        LOG_ERROR(QString("Failed to split command for '%1'").arg(name_));
+    auto args = split_command(command);
+    if (args.empty()) {
+        std::println(std::cerr, "Failed to split command for '{}'", name_);
         return 1;
     }
-    QString program = args.takeFirst();
-    QString workDir = getWorkingDirectory(build_, state_);
-
-    if (pmake::logging::isVerbose()) {
-        LOG_VERBOSE(QString("  %1").arg(command));
-        LOG_VERBOSE(QString("  workdir: %1").arg(workDir));
-    }
+    std::string program = args.front();
+    args.erase(args.begin());
+    std::string workDir = getWorkingDirectory(build_, state_);
 
     executor::Command cmd;
-    cmd.program = program;
-    cmd.arguments = args;
-    cmd.workingDirectory = workDir;
+    cmd.program = std::move(program);
+    cmd.arguments = std::move(args);
+    cmd.workingDirectory = std::move(workDir);
     cmd.captureOutput = true;
 
     executor::Result res = executor::Runner::runSync(cmd);
     if (res.exitCode != 0) {
-        LOG_ERROR(QString("Build failed for '%1' (exit %2)").arg(name_).arg(res.exitCode));
-        if (!res.stderrOutput.isEmpty()) LOG_ERROR("STDERR: " + res.stderrOutput);
+        std::println(std::cerr, "Build failed for '{}' (exit {})", name_, res.exitCode);
+        if (!res.stderrOutput.empty())
+            std::println(std::cerr, "STDERR: {}", res.stderrOutput);
         return res.exitCode;
     }
 
-    if (!rspFilePath.isEmpty() && util::fileExists(rspFilePath)) {
-        QFile::remove(rspFilePath);
+    if (!rspFilePath.empty() && util::fileExists(rspFilePath)) {
+        std::error_code ec;
+        std::filesystem::remove(rspFilePath, ec);
     }
 
-    for (const QString& out : build_->outputs) {
+    for (const auto& out : build_->outputs) {
         if (!util::fileExists(out)) {
-            LOG_ERROR(QString("Output file not created: %1").arg(out));
+            std::println(std::cerr, "Output file not created: {}", out);
             return 1;
         }
     }
@@ -133,8 +169,8 @@ int Node::build() {
     refreshOutputMtime();
 
     if (state_) {
-        const QString hash = computeCommandHash();
-        if (!hash.isEmpty()) {
+        const std::string hash = computeCommandHash();
+        if (!hash.empty()) {
             state_->setCommandHash(name_, hash);
         }
     }
@@ -143,21 +179,18 @@ int Node::build() {
 
     bool outputChanged = hasOutputChanged(beforeMtimes);
     if (rule_->restat && !outputChanged) {
-        LOG_VERBOSE(QString("Restat: output '%1' unchanged, skipping dependents").arg(name_));
         return 2;
     }
 
-    if (rule_ && !rule_->depfile.isEmpty()) {
-        QString depfilePath = rule_->depfile;
-        depfilePath = state_->expandVarsWithSpecial(depfilePath, build_->scope.data(), specialVars);
-        QVector<QString> inputs = deps::DepParser::parse(depfilePath);
-        if (!inputs.isEmpty()) {
-            for (const QString& out : build_->outputs) {
-                auto existingInputs = deps::DepsLog::instance().inputsFor(out);
-                if (!depsListsEqual(existingInputs, inputs)) {
+    if (rule_ && !rule_->depfile.empty()) {
+        std::string depfilePath = rule_->depfile;
+        depfilePath = state_->expandVarsWithSpecial(depfilePath, build_->scope.get(), specialVars);
+        auto inputs = deps::DepParser::parse(depfilePath);
+        if (!inputs.empty()) {
+            for (const auto& out : build_->outputs) {
+                auto existing = deps::DepsLog::instance().inputsFor(out);
+                if (!depsListsEqual(existing, inputs)) {
                     deps::DepsLog::instance().record(out, inputs);
-                } else {
-                    LOG_VERBOSE("Dependencies for " + out + " already up-to-date, skipping");
                 }
             }
         }

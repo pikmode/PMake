@@ -1,20 +1,17 @@
-// ui/console_ui.h
 #pragma once
 
-#include <QObject>
+#include <mutex>
+#include <string_view>
 
 namespace pmake::ui {
 
-class ConsoleUI : public QObject {
-    Q_OBJECT
+class ConsoleUI {
 public:
-    explicit ConsoleUI(bool quiet = false, bool color = false,
-                       QObject* parent = nullptr);
+    explicit ConsoleUI(bool quiet = false, bool color = false);
 
-public slots:
-    void onTaskStarted(const QString& displayName, int total);
-    void onTaskFinished(const QString& name, bool success, double duration,
-                        const QString& errorMsg = QString());
+    void onTaskStarted(std::string_view displayName, int total);
+    void onTaskFinished(std::string_view name, bool success, double duration,
+                        std::string_view errorMsg = {});
     void onBuildFinished(bool success, double durationSeconds);
 
 private:
@@ -22,6 +19,7 @@ private:
     int  totalTasks_ = 0;
     bool quiet_      = false;
     bool color_      = false;
+    std::mutex outputMutex_;
 };
 
 } // namespace pmake::ui

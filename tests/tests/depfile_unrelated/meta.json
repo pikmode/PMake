@@ -1,0 +1,36 @@
+{
+  "description": "depfile: touch нерелевантного → НЕ пересборка",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "touch_unrelated",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "touch": [
+            "other.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    }
+  ]
+}

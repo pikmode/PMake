@@ -1,0 +1,25 @@
+{
+  "description": "пробелы в именах файлов (Windows cmd-кавычки)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out file.txt"
+        ],
+        "filesWith": {
+          "out file.txt": "spaces work"
+        }
+      }
+    }
+  ]
+}

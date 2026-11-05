@@ -1,13 +1,16 @@
 #pragma once
 
-#include <QString>
-#include <QHash>
-#include <QVector>
-#include <QSet>
-#include <QSharedPointer>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include "core/state.h"
 #include "core/node.h"
-#include "deps/deps_log.h"
+
+namespace pmake::deps { class DepsLog; }// forward (определён в deps/deps_log.h)
 
 namespace pmake::core {
 
@@ -16,26 +19,31 @@ public:
     static constexpr int MAX_NODES = 100000;
 
     explicit Graph(const State& state, bool dryRun = false);
-    bool build();                                   // ← было void
-    Node* getOrCreateNode(const QString& name);
-    Node* node(const QString& name) const;
-    const QHash<QString, QSharedPointer<Node>>& nodes() const { return nodes_; }
-    QVector<Node*> leafNodes() const;
-    QVector<Node*> allNodes() const;
-    QVector<Node*> topologicalSort(const QString& target);
-    bool hasCycle() const;
-    QVector<Node*> affectedNodes(const QVector<QString>& changedLeaves) const;
+    bool build();
 
-    void addDepsFromLog(const deps::DepsLog& log);
-    void addDepsForOutput(const QString& output, const QVector<QString>& inputs);
+    Node* getOrCreateNode(const std::string& name);
+    Node* node(std::string_view name) const;
+    const std::unordered_map<std::string, std::shared_ptr<Node>>& nodes() const { return nodes_; }
+
+    std::vector<Node*> leafNodes() const;
+    std::vector<Node*> allNodes() const;
+    std::vector<Node*> topologicalSort(std::string_view target);
+    bool hasCycle() const;
+    std::vector<Node*> affectedNodes(const std::vector<std::string>& changedLeaves) const;
+
+    void addDepsFromLog(const pmake::deps::DepsLog& log);
+    void addDepsForOutput(const std::string& output, const std::vector<std::string>& inputs);
 
 private:
     const State& state_;
     bool dryRun_;
-    QHash<QString, QSharedPointer<Node>> nodes_;
+    std::unordered_map<std::string, std::shared_ptr<Node>> nodes_;
+
     void buildEdges();
-    bool dfs(const QString& nodeName, QSet<QString>& visited,
-             QSet<QString>& recursionStack, QVector<Node*>& order) const;
+    bool dfs(std::string_view nodeName,
+             std::unordered_set<std::string>& visited,
+             std::unordered_set<std::string>& recursionStack,
+             std::vector<Node*>& order) const;
 };
 
 } // namespace pmake::core

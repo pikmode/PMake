@@ -1,14 +1,16 @@
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
+
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace pmake::parser {
 
 // ---- parseBlockDirect ----
 void ParserImpl::parseBlockDirect(AstNode* block) {
     if (cur_.type == TOK_LBRACE) {
-        advance(); // съедаем {
-        skipNewlinesAndIndents(); // пропускаем начальные пробелы/переносы
+        advance();
+        skipNewlinesAndIndents();
         while (cur_.type != TOK_RBRACE && cur_.type != TOK_EOF) {
             if (cur_.type == TOK_NEWLINE || cur_.type == TOK_INDENT) {
                 skipNewlinesAndIndents();
@@ -25,7 +27,7 @@ void ParserImpl::parseBlockDirect(AstNode* block) {
         while (true) {
             if (cur_.type == TOK_EOF) break;
             if (cur_.type == TOK_IDENT) {
-                QString word = str(cur_.strId);
+                std::string_view word = str(cur_.strId);
                 if (word == "endforeach" || word == "endwhile" || word == "endif" ||
                     word == "endfunction" || word == "endnamespace" || word == "endswitch" ||
                     word == "endconfig" || word == "endplatform") {
@@ -71,7 +73,7 @@ AstNode* ParserImpl::parseAttributeBlock() {
                 break;
             }
             if (cur_.type == TOK_IDENT) {
-                QString key = parseIdent();
+                std::string key = parseIdent();
                 bool isAppend = false;
                 if (cur_.type == TOK_EQUALS) {
                     isAppend = false;
@@ -88,8 +90,8 @@ AstNode* ParserImpl::parseAttributeBlock() {
                 assign->type = AstNode::ASSIGNMENT;
                 assign->name = key;
                 assign->isAppend = isAppend;
-                assign->children.append(val);
-                block->children.append(assign);
+                assign->children.push_back(val);
+                block->children.push_back(assign);
                 skipNewlinesAndIndents();
             } else {
                 break;
@@ -118,7 +120,7 @@ AstNode* ParserImpl::parseAttributeBlock() {
                 break;
             }
             if (cur_.type == TOK_IDENT) {
-                QString key = parseIdent();
+                std::string key = parseIdent();
                 bool isAppend = false;
                 if (cur_.type == TOK_EQUALS) {
                     isAppend = false;
@@ -135,8 +137,8 @@ AstNode* ParserImpl::parseAttributeBlock() {
                 assign->type = AstNode::ASSIGNMENT;
                 assign->name = key;
                 assign->isAppend = isAppend;
-                assign->children.append(val);
-                block->children.append(assign);
+                assign->children.push_back(val);
+                block->children.push_back(assign);
                 skipNewlinesAndIndents();
             } else {
                 break;

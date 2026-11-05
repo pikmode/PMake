@@ -1,0 +1,42 @@
+{
+  "description": "multi order-only: out || s1 s2 — ждёт обоих",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "j2_ordered",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "2"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 3,
+        "files": [
+          "s1.txt",
+          "s2.txt",
+          "out.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    }
+  ]
+}

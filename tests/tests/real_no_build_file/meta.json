@@ -1,0 +1,25 @@
+{
+  "description": "нет build.pmake → exit 1 + осмысленный stderr",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "no_file",
+      "args": [
+        "-f",
+        "build.pmake"
+      ],
+      "expect": {
+        "exit": 1,
+        "stderrMatches": [
+          "(?i)cannot read|no build file|build\\.pmake"
+        ]
+      }
+    }
+  ]
+}

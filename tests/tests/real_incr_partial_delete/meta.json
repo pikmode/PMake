@@ -1,0 +1,38 @@
+{
+  "description": "10 → удалили 3 → только 3 пересобираются",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 10
+      }
+    },
+    {
+      "name": "delete_3",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "delete": [
+            "o_3.out",
+            "o_7.out",
+            "o_9.out"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 3
+      }
+    }
+  ]
+}

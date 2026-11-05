@@ -1,0 +1,27 @@
+{
+  "description": "-n не создаёт файлы",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "dry",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-n"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesNot": [
+          "out.txt"
+        ]
+      }
+    }
+  ]
+}

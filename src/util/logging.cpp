@@ -1,30 +1,32 @@
 #include "util/logging.h"
-#include <QCoreApplication>
-#include <QDir>
-#include <QThread>
-#include <QRegularExpression>
-#include <QTextStream>
-#include <QDateTime>
 
-#ifdef Q_OS_WIN
+#include <cstdio>
+#include <ctime>
+#include <fstream>
+#include <mutex>
+#include <string>
+#include <string_view>
+
+#ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
     #include <io.h>
-    #include <fcntl.h>
 #else
     #include <unistd.h>
 #endif
 
 namespace pmake::logging {
 
-static Config g_config;
-static QFile g_logFile;
-static QTextStream g_logStream;
-static bool g_hasColor = false;
-static bool g_verbose = false;
-static QMutex g_mutex;
+namespace {
 
-static void enableAnsiSupport() {
-#ifdef Q_OS_WIN
+Config g_config;
+std::ofstream g_logFile;
+bool g_hasColor = false;
+bool g_verbose = false;
+std::mutex g_mutex;
+
+void enableAnsiSupport() {
+#ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE || hOut == nullptr) return;
     DWORD mode = 0;
@@ -33,112 +35,107 @@ static void enableAnsiSupport() {
     SetConsoleMode(hOut, mode);
     g_hasColor = true;
 #else
-    if (isatty(STDOUT_FILENO)) {
-        g_hasColor = true;
-    }
+    if (isatty(STDOUT_FILENO)) g_hasColor = true;
 #endif
 }
 
+std::string_view levelColor(Level level) {
+    if (!g_hasColor || !g_config.color_output) return {};
+    switch (level) {
+        case Level::WARN:  return "\033[33m";
+        case Level::ERR:   return "\033[31m";
+        case Level::FATAL: return "\033[35m";
+        default: return {};
+    }
+}
+
+std::string formatMessage(Level level, std::string_view message) {
+    std::string result;
+    if (g_config.show_timestamp) {
+        std::time_t t = std::time(nullptr);
+        std::tm tm{};
+#ifdef _WIN32
+        localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        result += buf;
+        result += ' ';
+    }
+    auto color = levelColor(level);
+    if (!color.empty()) result += color;
+    result += message;
+    if (!color.empty()) result += "\033[0m";
+    return result;
+}
+
+} // namespace
+
 void init(const Config& cfg) {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     g_config = cfg;
-    if (cfg.log_to_file && !cfg.log_file.isEmpty()) {
-        if (g_logFile.isOpen()) g_logFile.close();
-        g_logFile.setFileName(cfg.log_file);
-        if (g_logFile.open(QIODevice::Append | QIODevice::Text)) {
-            g_logStream.setDevice(&g_logFile);
-        } else {
-            qWarning() << "Failed to open log file:" << cfg.log_file;
+    if (cfg.log_to_file && !cfg.log_file.empty()) {
+        if (g_logFile.is_open()) g_logFile.close();
+        g_logFile.open(cfg.log_file, std::ios::app);
+        if (!g_logFile) {
+            std::fprintf(stderr,
+                "Warning: failed to open log file: %s\n", cfg.log_file.c_str());
         }
     }
-    if (cfg.color_output) {
-        enableAnsiSupport();
-    }
-    // Принудительно отключаем цвет для INFO (зелёный) — оставляем только для WARN и ERR
+    if (cfg.color_output) enableAnsiSupport();
 }
 
 void setLevel(Level level) {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     g_config.min_level = level;
 }
 
 void setColorEnabled(bool enabled) {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     g_config.color_output = enabled;
-    if (enabled) {
-        enableAnsiSupport();
-    } else {
-        g_hasColor = false;
-    }
+    if (enabled) enableAnsiSupport();
+    else g_hasColor = false;
 }
 
 void setTimestampEnabled(bool enabled) {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     g_config.show_timestamp = enabled;
 }
 
 void setVerbose(bool enabled) {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     g_verbose = enabled;
     if (enabled) {
         g_config.min_level = Level::DEBUG;
-    } else {
-        if (g_config.min_level == Level::DEBUG) {
-            g_config.min_level = Level::INFO;
-        }
+    } else if (g_config.min_level == Level::DEBUG) {
+        g_config.min_level = Level::INFO;
     }
 }
 
 bool isVerbose() {
-    QMutexLocker locker(&g_mutex);
+    std::lock_guard<std::mutex> lk(g_mutex);
     return g_verbose;
 }
 
-static QString levelColor(Level level) {
-    if (!g_hasColor || !g_config.color_output) return QString();
-    switch (level) {
-        case Level::WARN:  return "\033[33m";  // жёлтый
-        case Level::ERR:   return "\033[31m";  // красный
-        case Level::FATAL: return "\033[35m";  // пурпурный (оставим)
-        default: return "";  // INFO, DEBUG без цвета
-    }
-}
-
-static QString formatMessage(Level level, const QString& message) {
-    if (level < g_config.min_level) return QString();
-    QString result;
-    if (g_config.show_timestamp) {
-        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-        result += timestamp + " ";
-    }
-    QString color = levelColor(level);
-    if (!color.isEmpty()) {
-        result += color;
-    }
-    result += message;
-    if (!color.isEmpty()) {
-        result += "\033[0m";
-    }
-    return result;
-}
-
-void log(Level level, const QString& message) {
+void log(Level level, std::string_view message) {
     if (level < g_config.min_level) return;
-    QMutexLocker locker(&g_mutex);
-    QString formatted = formatMessage(level, message);
-    if (formatted.isEmpty()) return;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    if (!g_config.log_to_console && !g_config.log_to_file) return;
+    if (level == Level::DEBUG && !g_verbose) return;
+
+    std::string formatted = formatMessage(level, message);
 
     if (g_config.log_to_console) {
-        if (level != Level::DEBUG || g_verbose) {
-            QTextStream(stderr) << formatted << Qt::endl;
-        }
+        std::fwrite(formatted.data(), 1, formatted.size(), stderr);
+        std::fputc('\n', stderr);
+        std::fflush(stderr);
     }
 
-    if (g_config.log_to_file && g_logFile.isOpen()) {
-        QString plain = formatted;
-        plain.remove(QRegularExpression("\\033\\[[0-9;]+m"));
-        g_logStream << plain << Qt::endl;
-        g_logStream.flush();
+    if (g_config.log_to_file && g_logFile.is_open()) {
+        g_logFile << formatted << '\n';
+        g_logFile.flush();
     }
 }
 

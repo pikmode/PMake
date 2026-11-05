@@ -1,0 +1,51 @@
+{
+  "description": "depfile: touch заголовка → пересборка",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.o"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "touch_header",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "touch": [
+            "hdr.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

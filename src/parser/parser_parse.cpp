@@ -1,6 +1,11 @@
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
+
+#include <iostream>
+#include <memory>
+#include <print>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace pmake::parser {
 
@@ -46,23 +51,23 @@ void ParserImpl::parseTopLevel() {
 std::unique_ptr<core::State> ParserImpl::parse() {
     try {
         parseTopLevel();
-        if (!errors_.isEmpty()) {
-            for (const QString& err : errors_) {
-                LOG_ERROR(err);
+        if (!errors_.empty()) {
+            for (const auto& err : errors_) {
+                std::println(std::cerr, "{}", err);
             }
             return nullptr;
         }
         if (hasError_) {
-            LOG_ERROR("Skipping AST evaluation due to parse errors.");
+            std::println(std::cerr, "Skipping AST evaluation due to parse errors.");
         }
 
         evaluateAst(root_);
 
     } catch (const std::exception& e) {
-        LOG_ERROR(QString("Parsing failed: %1").arg(e.what()));
+        std::println(std::cerr, "Parsing failed: {}", e.what());
         return nullptr;
     } catch (...) {
-        LOG_ERROR("Unknown exception during parsing");
+        std::println(std::cerr, "Unknown exception during parsing");
         return nullptr;
     }
 

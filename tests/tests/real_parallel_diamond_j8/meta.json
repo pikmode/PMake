@@ -1,0 +1,32 @@
+{
+  "description": "Diamond -j 8",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "j8",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "8"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 5,
+        "files": [
+          "b.out",
+          "c.out",
+          "d.out",
+          "e.out",
+          "f.out"
+        ]
+      }
+    }
+  ]
+}

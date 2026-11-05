@@ -1,246 +1,287 @@
 #include "core/builtins.h"
+#include "core/state.h"
 #include "util/filesystem.h"
-#include "util/logging.h"
-#include <QDir>
-#include <QFileInfo>
-#include <QProcessEnvironment>
-#include <QThread>
-#include <QCryptographicHash>
-#include <QRegularExpression>
+#include "util/hash.h"
+#include "util/string_utils.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <print>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <vector>
 
 namespace pmake::core {
 
-static QStringList toStringList(const QVector<QVariant>& args) {
-    QStringList list;
-    for (const QVariant& v : args) {
-        if (v.canConvert<QVariantList>()) {
-            QVariantList vl = v.toList();
-            for (const QVariant& item : vl) list.append(item.toString());
+namespace fs = std::filesystem;
+
+namespace {
+
+// Простой glob matcher: '*' и '?'. Аналог QDir::entryList с паттерном.
+bool glob_match(std::string_view pattern, std::string_view str) {
+    std::size_t p = 0, s = 0;
+    std::size_t star_p = std::string_view::npos, star_s = 0;
+    while (s < str.size()) {
+        if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == str[s])) {
+            ++p; ++s;
+        } else if (p < pattern.size() && pattern[p] == '*') {
+            star_p = p++;
+            star_s = s;
+        } else if (star_p != std::string_view::npos) {
+            p = star_p + 1;
+            s = ++star_s;
         } else {
-            list.append(v.toString());
+            return false;
         }
     }
-    return list;
+    while (p < pattern.size() && pattern[p] == '*') ++p;
+    return p == pattern.size();
 }
 
-// --- Существующие функции ---
+std::vector<std::string> flatten_args(const std::vector<Value>& args) {
+    std::vector<std::string> out;
+    for (const auto& v : args) {
+        if (v.is_list()) {
+            for (const auto& item : *v.as_list()) out.push_back(item.to_string());
+        } else {
+            out.push_back(v.to_string());
+        }
+    }
+    return out;
+}
 
-static QVariant globFunction(const QVector<QVariant>& args, State* state) {
-    if (args.isEmpty()) return QVariant();
-    QString pattern = args[0].toString();
-    QStringList result;
-    QDir dir;
+std::string absolute_path_str(const fs::path& p) {
+    if (p.is_absolute()) return p.string();
+    std::error_code ec;
+    auto a = fs::absolute(p, ec);
+    return ec ? p.string() : a.string();
+}
+
+} // namespace
+
+static Value globFunction(const std::vector<Value>& args, State* state) {
+    if (args.empty()) return Value();
+    std::string pattern = args[0].to_string();
+    std::string baseDir;
     if (args.size() > 1) {
-        QString base = args[1].toString();
-        dir.setPath(base);
+        baseDir = args[1].to_string();
     } else {
         auto projDir = state->getGlobal("project_directory");
-        if (projDir.has_value()) dir.setPath(*projDir);
-        else dir.setPath(QDir::currentPath());
+        if (projDir.has_value()) baseDir = *projDir;
+        else {
+            std::error_code ec;
+            baseDir = fs::current_path(ec).string();
+        }
     }
-    QStringList files = dir.entryList(QStringList(pattern), QDir::Files | QDir::NoDotAndDotDot);
-    for (QString& f : files) f = dir.absoluteFilePath(f);
-    QVariantList resultVariant;
-    for (const QString& f : files) resultVariant.append(f);
-    return QVariant(resultVariant);
-}
 
-static QVariant replaceSuffixFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return QVariant();
-    QString newSuffix = args[1].toString();
-    QVariantList items;
-    if (args[0].canConvert<QVariantList>()) {
-        items = args[0].toList();
-    } else {
-        items.append(args[0]);
+    ValueList result;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(baseDir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        std::string name = entry.path().filename().string();
+        if (glob_match(pattern, name)) {
+            result.emplace_back(absolute_path_str(entry.path()));
+        }
     }
-    QStringList result;
-    for (const QVariant& v : items) {
-        QString s = v.toString();
-        QFileInfo fi(s);
-        QString base = fi.completeBaseName();
-        QString path = fi.absolutePath();
-        result.append(path + "/" + base + newSuffix);
+    return Value(std::move(result));
+}
+
+static Value replaceSuffixFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value();
+    std::string newSuffix = args[1].to_string();
+    std::vector<std::string> items = flatten_args({args[0]});
+    ValueList result;
+    for (const auto& s : items) {
+        fs::path p(s);
+        auto parent = p.parent_path();
+        std::string dir = parent.is_absolute() ? parent.string() : absolute_path_str(parent);
+        std::string base = p.stem().string();
+        if (dir.empty() || dir == ".") {
+            result.emplace_back(base + newSuffix);
+        } else {
+            result.emplace_back(dir + "/" + base + newSuffix);
+        }
     }
-    return QVariant(result);
+    return Value(std::move(result));
 }
 
-static QVariant joinFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return QVariant();
-    QStringList parts = toStringList(args);
-    QString glue = parts.takeLast();
-    return QVariant(parts.join(glue));
+static Value joinFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value();
+    std::vector<std::string> parts = flatten_args(args);
+    if (parts.empty()) return Value();
+    std::string glue = parts.back();
+    parts.pop_back();
+    std::string result;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i) result += glue;
+        result += parts[i];
+    }
+    return Value(std::move(result));
 }
 
-static QVariant relativePathFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return QVariant();
-    QString path = args[0].toString();
-    QString base = args[1].toString();
-    QDir dir(base);
-    return QVariant(dir.relativeFilePath(path));
+static Value relativePathFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value();
+    std::error_code ec;
+    auto rel = fs::relative(fs::path(args[0].to_string()),
+                            fs::path(args[1].to_string()), ec);
+    return Value(ec ? args[0].to_string() : rel.string());
 }
 
-static QVariant basenameFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QFileInfo fi(path);
-    return QVariant(fi.fileName());
+static Value basenameFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    return Value(fs::path(args[0].to_string()).filename().string());
 }
 
-static QVariant dirnameFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QFileInfo fi(path);
-    return QVariant(fi.absolutePath());
+static Value dirnameFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    auto p = fs::path(args[0].to_string()).parent_path();
+    return Value(p.empty() ? std::string(".") : absolute_path_str(p));
 }
 
-static QVariant envFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString name = args[0].toString();
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    if (env.contains(name)) return QVariant(env.value(name));
-    return QVariant();
+static Value envFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    const char* v = std::getenv(args[0].to_string().c_str());
+    return v ? Value(std::string(v)) : Value();
 }
 
-static QVariant existsFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return false;
-    QString path = args[0].toString();
-    return QVariant(util::fileExists(path));
+static Value existsFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value(false);
+    return Value(util::fileExists(args[0].to_string()));
 }
 
-static QVariant fileMtimeFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant(-1);
-    QString path = args[0].toString();
-    return QVariant(util::getFileMtime(path));
+static Value fileMtimeFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value(-1.0);
+    return Value(static_cast<double>(util::getFileMtime(args[0].to_string())));
 }
 
-static QVariant readFileFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QByteArray data;
-    if (util::readFile(path, data))
-        return QVariant(QString::fromUtf8(data));
-    return QVariant();
+static Value readFileFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    std::string data;
+    if (util::readFile(args[0].to_string(), data)) return Value(std::move(data));
+    return Value();
 }
 
-// --- Новые функции для PMake 1.0 ---
-
-static QVariant extensionFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QFileInfo fi(path);
-    return QVariant(fi.suffix());
+static Value extensionFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    auto ext = fs::path(args[0].to_string()).extension().string();
+    if (!ext.empty() && ext.front() == '.') ext.erase(ext.begin());
+    return Value(std::move(ext));
 }
 
-static QVariant filenameFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QFileInfo fi(path);
-    return QVariant(fi.fileName());
+static Value filenameFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    return Value(fs::path(args[0].to_string()).filename().string());
 }
 
-static QVariant splitFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return QVariant();
-    QString str = args[0].toString();
-    QString delimiter = args[1].toString();
-    QStringList parts = str.split(delimiter, Qt::KeepEmptyParts);
-    QVariantList result;
-    for (const QString& p : parts) result.append(p);
-    return QVariant(result);
+static Value splitFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value();
+    std::string str = args[0].to_string();
+    std::string delim = args[1].to_string();
+    ValueList result;
+    if (delim.empty()) {
+        for (char c : str) result.emplace_back(std::string(1, c));
+        return Value(std::move(result));
+    }
+    std::size_t start = 0;
+    while (start <= str.size()) {
+        auto pos = str.find(delim, start);
+        if (pos == std::string::npos) {
+            result.emplace_back(str.substr(start));
+            break;
+        }
+        result.emplace_back(str.substr(start, pos - start));
+        start = pos + delim.size();
+    }
+    return Value(std::move(result));
 }
 
-static QVariant replaceFunction(const QVector<QVariant>& args) {
-    if (args.size() < 3) return QVariant();
-    QString str = args[0].toString();
-    QString from = args[1].toString();
-    QString to = args[2].toString();
-    return QVariant(str.replace(from, to));
+static Value replaceFunction(const std::vector<Value>& args) {
+    if (args.size() < 3) return Value();
+    std::string s = args[0].to_string();
+    std::string from = args[1].to_string();
+    std::string to = args[2].to_string();
+    if (!from.empty()) {
+        std::size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    }
+    return Value(std::move(s));
 }
 
-static QVariant startsWithFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return false;
-    QString str = args[0].toString();
-    QString prefix = args[1].toString();
-    return QVariant(str.startsWith(prefix));
+static Value startsWithFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value(false);
+    std::string s = args[0].to_string();
+    std::string p = args[1].to_string();
+    return Value(s.size() >= p.size() && s.compare(0, p.size(), p) == 0);
 }
 
-static QVariant endsWithFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return false;
-    QString str = args[0].toString();
-    QString suffix = args[1].toString();
-    return QVariant(str.endsWith(suffix));
+static Value endsWithFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value(false);
+    std::string s = args[0].to_string();
+    std::string suf = args[1].to_string();
+    return Value(s.size() >= suf.size() &&
+                 s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
 }
 
-static QVariant containsFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return false;
-    QString str = args[0].toString();
-    QString substr = args[1].toString();
-    return QVariant(str.contains(substr));
+static Value containsFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value(false);
+    return Value(args[0].to_string().find(args[1].to_string()) != std::string::npos);
 }
 
-static QVariant cwdFunction() {
-    return QVariant(QDir::currentPath());
+static Value cwdFunction() {
+    std::error_code ec;
+    return Value(fs::current_path(ec).string());
 }
 
-static QVariant absolutePathFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString path = args[0].toString();
-    QFileInfo fi(path);
-    if (fi.isAbsolute())
-        return QVariant(fi.absoluteFilePath());
-    else
-        return QVariant(QDir::current().absoluteFilePath(path));
+static Value absolutePathFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    return Value(absolute_path_str(fs::path(args[0].to_string())));
 }
 
-static QVariant hashFunction(const QVector<QVariant>& args) {
-    if (args.isEmpty()) return QVariant();
-    QString str = args[0].toString();
-    QByteArray data = str.toUtf8();
-    QByteArray hash = QCryptographicHash::hash(data, QCryptographicHash::Sha1);
-    return QVariant(QString::fromUtf8(hash.toHex()));
+static Value hashFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    return Value(util::sha1_hex(args[0].to_string()));
 }
 
-static QVariant writeFileFunction(const QVector<QVariant>& args) {
-    if (args.size() < 2) return false;
-    QString path = args[0].toString();
-    QString content = args[1].toString();
-    QByteArray data = content.toUtf8();
-    bool ok = util::writeFile(path, data);
-    return QVariant(ok);
+static Value writeFileFunction(const std::vector<Value>& args) {
+    if (args.size() < 2) return Value(false);
+    return Value(util::writeFile(args[0].to_string(), args[1].to_string()));
 }
 
-QVariant Builtins::call(const QString& name,
-                        const QVector<QVariant>& args,
-                        State* state,
-                        Scope* scope) {
+Value Builtins::call(std::string_view name,
+                     const std::vector<Value>& args,
+                     State* state,
+                     Scope* scope) {
     (void)scope;
-    // Существующие
-    if (name == "glob") return globFunction(args, state);
+    if (name == "glob")           return globFunction(args, state);
     if (name == "replace_suffix") return replaceSuffixFunction(args);
-    if (name == "join") return joinFunction(args);
-    if (name == "relative_path") return relativePathFunction(args);
-    if (name == "basename") return basenameFunction(args);
-    if (name == "dirname") return dirnameFunction(args);
-    if (name == "env") return envFunction(args);
-    if (name == "exists") return existsFunction(args);
-    if (name == "file_mtime") return fileMtimeFunction(args);
-    if (name == "read_file") return readFileFunction(args);
+    if (name == "join")           return joinFunction(args);
+    if (name == "relative_path")  return relativePathFunction(args);
+    if (name == "basename")       return basenameFunction(args);
+    if (name == "dirname")        return dirnameFunction(args);
+    if (name == "env")            return envFunction(args);
+    if (name == "exists")         return existsFunction(args);
+    if (name == "file_mtime")     return fileMtimeFunction(args);
+    if (name == "read_file")      return readFileFunction(args);
+    if (name == "extension")      return extensionFunction(args);
+    if (name == "filename")       return filenameFunction(args);
+    if (name == "split")          return splitFunction(args);
+    if (name == "replace")        return replaceFunction(args);
+    if (name == "starts_with")    return startsWithFunction(args);
+    if (name == "ends_with")      return endsWithFunction(args);
+    if (name == "contains")       return containsFunction(args);
+    if (name == "cwd")            return cwdFunction();
+    if (name == "absolute_path")  return absolutePathFunction(args);
+    if (name == "hash")           return hashFunction(args);
+    if (name == "write_file")     return writeFileFunction(args);
 
-    // Новые
-    if (name == "extension") return extensionFunction(args);
-    if (name == "filename") return filenameFunction(args);
-    if (name == "split") return splitFunction(args);
-    if (name == "replace") return replaceFunction(args);
-    if (name == "starts_with") return startsWithFunction(args);
-    if (name == "ends_with") return endsWithFunction(args);
-    if (name == "contains") return containsFunction(args);
-    if (name == "cwd") return cwdFunction();
-    if (name == "absolute_path") return absolutePathFunction(args);
-    if (name == "hash") return hashFunction(args);
-    if (name == "write_file") return writeFileFunction(args);
-
-    LOG_WARN(QString("Unknown builtin function: %1").arg(name));
-    return QVariant();
+    std::println(std::cerr, "Unknown builtin function: {}", name);
+    return Value();
 }
 
 } // namespace pmake::core

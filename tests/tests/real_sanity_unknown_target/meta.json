@@ -1,0 +1,23 @@
+{
+  "description": "pmake nonexistent_target → exit 1",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "unknown",
+      "args": [
+        "-f",
+        "build.pmake",
+        "nonexistent_target"
+      ],
+      "expect": {
+        "exit": 1
+      }
+    }
+  ]
+}

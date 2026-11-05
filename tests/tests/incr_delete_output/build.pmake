@@ -1,0 +1,7 @@
+pmake_required_version = 1.0
+python = "D:/bin/python3.exe"
+rule echo {
+    command = "${python} echo_to.py ${out} z"
+}
+build "out.txt" : echo
+alias all : "out.txt"

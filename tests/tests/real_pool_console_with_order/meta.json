@@ -1,0 +1,30 @@
+{
+  "description": "pool=console + order-only: сериализация сохраняется",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "j8_serialized",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "8"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2,
+        "files": [
+          "stamp.txt",
+          "out.txt"
+        ],
+        "elapsedMin": 0.55
+      }
+    }
+  ]
+}

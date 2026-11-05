@@ -1,0 +1,33 @@
+{
+  "description": "fail: -n показывает b + c",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 1,
+        "files": [
+          "a.txt"
+        ]
+      }
+    },
+    {
+      "name": "dry",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-n"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    }
+  ]
+}

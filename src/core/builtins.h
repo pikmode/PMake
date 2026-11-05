@@ -1,19 +1,21 @@
 #pragma once
 
-#include <QVariant>
-#include <QVector>
-#include <QString>
-#include "core/state.h"
+#include <string_view>
+#include <vector>
+
+#include "core/value.h"
 
 namespace pmake::core {
 
+class State;
+class Scope;
+
 class Builtins {
 public:
-    // Вызов встроенной функции по имени
-    static QVariant call(const QString& name,
-                         const QVector<QVariant>& args,
-                         State* state,
-                         Scope* scope);
+    static Value call(std::string_view name,
+                      const std::vector<Value>& args,
+                      State* state,
+                      Scope* scope);
 };
 
 } // namespace pmake::core

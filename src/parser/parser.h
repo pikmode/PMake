@@ -1,9 +1,9 @@
 // parser/parser.h
 // Парсер PMake 1.0 — поддерживает все конструкции языка.
-// Требует наличия обновлённого ast.h с новыми типами узлов.
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include "core/state.h"
 
 namespace pmake::parser {
@@ -28,9 +28,9 @@ public:
      * @param platform Имя платформы (опционально).
      * @return Состояние сборки (State) или nullptr при ошибке.
      */
-    std::unique_ptr<core::State> parse(const QString& filename,
-                                       const QString& config = QString(),
-                                       const QString& platform = QString());
+    std::unique_ptr<core::State> parse(std::string_view filename,
+                                       std::string_view config = {},
+                                       std::string_view platform = {});
 
     /**
      * @brief Разбор строки с кодом PMake (для тестов).
@@ -40,10 +40,10 @@ public:
      * @param platform Имя платформы (опционально).
      * @return Состояние сборки (State) или nullptr при ошибке.
      */
-    std::unique_ptr<core::State> parseFromString(const QByteArray& data,
-                                                 const QString& filename = "test.pmake",
-                                                 const QString& config = QString(),
-                                                 const QString& platform = QString());
+    std::unique_ptr<core::State> parseFromString(std::string_view data,
+                                                 std::string_view filename = "test.pmake",
+                                                 std::string_view config = {},
+                                                 std::string_view platform = {});
 };
 
 } // namespace pmake::parser

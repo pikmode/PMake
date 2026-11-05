@@ -1,18 +1,22 @@
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
+
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pmake::parser {
 
 // ---- parseRule ----
 void ParserImpl::parseRule(AstNode* parent) {
-    if (state_.rules().size() >= MAX_RULES) {
+    if (state_.rules().size() >= static_cast<std::size_t>(MAX_RULES)) {
         error("Too many rules (max 10000)", true);
         return;
     }
 
-    QString name = parseIdent();
-    if (name.isEmpty()) {
+    std::string name{parseIdent()};
+    if (name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -20,25 +24,24 @@ void ParserImpl::parseRule(AstNode* parent) {
 
     auto node = makeStringLiteral("");
     node->type = AstNode::RULE;
-    node->name = name;
+    node->name = std::move(name);
     node->line = cur_.line;
     node->column = cur_.column;
 
     skipNewlines();
     auto block = parseAttributeBlock();
-    node->children = block->children;
-    block->children.clear();
+    node->children = std::move(block->children);
     delete block;
 
     skipNewlinesAndIndents();
 
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
 // ---- parseBuild ----
 void ParserImpl::parseBuild(AstNode* parent) {
-    if (state_.builds().size() >= MAX_BUILDS) {
+    if (state_.builds().size() >= static_cast<std::size_t>(MAX_BUILDS)) {
         error("Too many builds (max 10000)", true);
         return;
     }
@@ -48,7 +51,7 @@ void ParserImpl::parseBuild(AstNode* parent) {
     node->line = cur_.line;
     node->column = cur_.column;
 
-    QVector<AstNode*> outputs;
+    std::vector<AstNode*> outputs;
     int guard = 0;
     while (true) {
         if (++guard > 100000) { // FIX: было 1000
@@ -56,9 +59,10 @@ void ParserImpl::parseBuild(AstNode* parent) {
             break;
         }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
-            outputs.append(parseAtom());
+            outputs.push_back(parseAtom());
         } else if (cur_.type == TOK_IDENT) {
-            error(QString("Expected string literal in quotes, got identifier '%1'. Use \"%1\".").arg(str(cur_.strId)), true);
+            error(std::format("Expected string literal in quotes, got identifier '{}'. Use \"{}\".",
+                              str(cur_.strId), str(cur_.strId)), true);
             advance();
             continue;
         } else {
@@ -67,7 +71,7 @@ void ParserImpl::parseBuild(AstNode* parent) {
         if (cur_.type == TOK_COMMA) advance();
         else break;
     }
-    if (outputs.isEmpty()) {
+    if (outputs.empty()) {
         error("Expected at least one output for build", true);
         return;
     }
@@ -78,10 +82,10 @@ void ParserImpl::parseBuild(AstNode* parent) {
 
     for (auto out : outputs) {
         if (out->type == AstNode::STRING_LITERAL) {
-            QString outName = out->value.toString();
-            if (!outName.isEmpty() && !outName.contains("${")) {
+            std::string outName = out->value.to_string();
+            if (!outName.empty() && !outName.contains("${")) {
                 if (definedBuildOutputs_.contains(outName)) {
-                    error(QString("Build output '%1' already defined.").arg(outName), true);
+                    error(std::format("Build output '{}' already defined.", outName), true);
                 } else {
                     addDefinition(outName, definedBuildOutputs_);
                 }
@@ -99,13 +103,13 @@ void ParserImpl::parseBuild(AstNode* parent) {
         error("Expected rule name (identifier)", true);
         return;
     }
-    QString ruleName = str(cur_.strId);
+    std::string ruleName{str(cur_.strId)};
     node->name = ruleName;
     advance();
 
-    QVector<AstNode*> inputs;
-    QVector<AstNode*> implicitInputs;
-    QVector<AstNode*> orderOnlyInputs;
+    std::vector<AstNode*> inputs;
+    std::vector<AstNode*> implicitInputs;
+    std::vector<AstNode*> orderOnlyInputs;
     int section = 0;
     guard = 0;
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF && cur_.type != TOK_LBRACE) {
@@ -131,11 +135,12 @@ void ParserImpl::parseBuild(AstNode* parent) {
         }
         if (cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF) {
             AstNode* val = parseAtom();
-            if (section == 0)      inputs.append(val);
-            else if (section == 1) implicitInputs.append(val);
-            else                   orderOnlyInputs.append(val);
+            if (section == 0)      inputs.push_back(val);
+            else if (section == 1) implicitInputs.push_back(val);
+            else                   orderOnlyInputs.push_back(val);
         } else if (cur_.type == TOK_IDENT) {
-            error(QString("Expected string literal in quotes, got identifier '%1'. Use \"%1\".").arg(str(cur_.strId)), true);
+            error(std::format("Expected string literal in quotes, got identifier '{}'. Use \"{}\".",
+                              str(cur_.strId), str(cur_.strId)), true);
             advance();
             continue;
         } else {
@@ -144,13 +149,13 @@ void ParserImpl::parseBuild(AstNode* parent) {
         if (cur_.type == TOK_NEWLINE || cur_.type == TOK_EOF || cur_.type == TOK_LBRACE) break;
     }
 
-    QHash<QString, QString> vars;
+    std::unordered_map<std::string, std::string> vars;
     if (cur_.type == TOK_LBRACE) {
         advance();
         skipNewlinesAndIndents();
         while (cur_.type != TOK_RBRACE && cur_.type != TOK_EOF) {
             if (cur_.type == TOK_IDENT) {
-                QString key = parseIdent();
+                std::string key{parseIdent()};
                 bool isAppend = false;
                 if (cur_.type == TOK_EQUALS) {
                     isAppend = false;
@@ -163,10 +168,12 @@ void ParserImpl::parseBuild(AstNode* parent) {
                     break;
                 }
                 auto val = parseValueSequence(false);
-                QString value = astNodeToStringWithState(val, &state_);
+                std::string value = astNodeToStringWithState(val, &state_);
                 if (isAppend) {
-                    QString current = vars.value(key);
-                    vars[key] = current.isEmpty() ? value : current + " " + value;
+                    std::string current;
+                    auto it = vars.find(key);
+                    if (it != vars.end()) current = it->second;
+                    vars[key] = current.empty() ? value : current + " " + value;
                 } else {
                     vars[key] = value;
                 }
@@ -182,7 +189,7 @@ void ParserImpl::parseBuild(AstNode* parent) {
         auto block = parseAttributeBlock();
         for (auto child : block->children) {
             if (child->type == AstNode::ASSIGNMENT) {
-                QString val = astNodeToStringWithState(child->children[0], &state_);
+                std::string val = astNodeToStringWithState(child->children[0], &state_);
                 vars[child->name] = val;
                 node->vars[child->name] = val;
             }
@@ -194,17 +201,17 @@ void ParserImpl::parseBuild(AstNode* parent) {
 
     auto outConcat = makeConcat(outputs);
     auto inConcat  = makeConcat(inputs);
-    node->children.append(outConcat);
-    node->children.append(inConcat);
+    node->children.push_back(outConcat);
+    node->children.push_back(inConcat);
 
-    if (!implicitInputs.isEmpty()) {
+    if (!implicitInputs.empty()) {
         node->implicitInputs = makeConcat(implicitInputs);
     }
-    if (!orderOnlyInputs.isEmpty()) {
+    if (!orderOnlyInputs.empty()) {
         node->orderOnlyInputs = makeConcat(orderOnlyInputs);
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
@@ -212,8 +219,8 @@ void ParserImpl::parseBuild(AstNode* parent) {
 void ParserImpl::parseConfigBlock(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::CONFIG;
-    node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    node->name = std::string{parseIdent()};
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -223,8 +230,7 @@ void ParserImpl::parseConfigBlock(AstNode* parent) {
 
     skipNewlines();
     auto block = parseAttributeBlock();
-    node->children = block->children;
-    block->children.clear();
+    node->children = std::move(block->children);
     delete block;
 
     skipNewlinesAndIndents();
@@ -233,15 +239,15 @@ void ParserImpl::parseConfigBlock(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parsePlatform ----
 void ParserImpl::parsePlatform(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::PLATFORM;
-    node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    node->name = std::string{parseIdent()};
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -251,8 +257,7 @@ void ParserImpl::parsePlatform(AstNode* parent) {
 
     skipNewlines();
     auto block = parseAttributeBlock();
-    node->children = block->children;
-    block->children.clear();
+    node->children = std::move(block->children);
     delete block;
 
     skipNewlinesAndIndents();
@@ -261,15 +266,15 @@ void ParserImpl::parsePlatform(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseAlias ----
 void ParserImpl::parseAlias(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::ALIAS;
-    node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    node->name = std::string{parseIdent()};
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -285,7 +290,7 @@ void ParserImpl::parseAlias(AstNode* parent) {
 
     auto targets = parseValueList();
 
-    if (targets.isEmpty() && cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
+    if (targets.empty() && cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
         error("No valid targets for alias", true);
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
@@ -293,11 +298,11 @@ void ParserImpl::parseAlias(AstNode* parent) {
     }
 
     for (auto target : targets) {
-        node->children.append(target);
+        node->children.push_back(target);
     }
 
     if (cur_.type == TOK_NEWLINE) advance();
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 

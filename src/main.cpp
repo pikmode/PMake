@@ -1,25 +1,22 @@
-#include <QCoreApplication>
-#include <QCommandLineParser>
-#include <QEventLoop>
-#include <QDebug>
-#include <QThread>
-#include <QElapsedTimer>
-#include <QFile>
-#include <QTextStream>
-#include <iostream>
-#include <memory>
+#include <cctype>
 #include <csignal>
-#include <QTimer>
-#include <QDir>
+#include <cstdio>
 #include <cstdlib>
-#include <QtConcurrent/QtConcurrentRun>
-#include <QFuture>
-#include <QFutureWatcher>
+#include <cstring>
+#include <filesystem>
+#include <format>
+#include <memory>
+#include <print>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include "core/engine.h"
 #include "core/state.h"
 #include "parser/parser.h"
-#include "parser/ninja-parser/parser.h" // <-- НОВЫЙ ПАРСЕР
+#include "parser/ninja-parser/parser.h"
 #include "util/logging.h"
 #include "util/filesystem.h"
 #include "ui/console_ui.h"
@@ -29,226 +26,254 @@
 
 using namespace pmake::core;
 
-static QCoreApplication* g_app = nullptr;
+// ============================================================
+// Единая точка правды для версии. Меняешь здесь — меняется
+// везде (--version, -V, потенциально --help, логи).
+// ============================================================
+namespace {
+constexpr const char* PMAKE_NAME    = "PMake";
+constexpr const char* PMAKE_VERSION = "1.0.0";
 
-static void signalHandler(int sig) {
-    (void)sig;
-    if (g_app) g_app->quit();
-    else std::exit(1);
+void print_version() {
+    std::fprintf(stdout, "%s %s\n", PMAKE_NAME, PMAKE_VERSION);
+    std::fflush(stdout);
+}
+} // namespace
+
+namespace {
+
+struct Options {
+    bool version   = false;
+    bool help      = false;
+    bool verbose   = false;
+    bool quiet     = false;
+    bool dryRun    = false;
+    bool noColor   = false;
+    bool clean     = false;
+    std::string buildFile;
+    int jobs = 0;
+    std::string config = "release";
+    std::string platform;
+    std::string command = "build";
+    std::string target;
+};
+
+int idealThreadCount() {
+    unsigned hc = std::thread::hardware_concurrency();
+    return hc > 0 ? static_cast<int>(hc) : 1;
 }
 
-int main(int argc, char* argv[]) {
-    QCoreApplication app(argc, argv);
-    g_app = &app;
+void printHelp() {
+    std::fprintf(stdout,
+        "%s %s — modern build system\n"
+        "Usage: pmake [options] [command] [target]\n"
+        "\n"
+        "Options:\n"
+        "  -V, --version                Display version information\n"
+        "  -f, --file <file>            Use <file> as build file\n"
+        "  -j, --jobs <N>               Run <N> jobs in parallel\n"
+        "  --clean                      Clean all outputs\n"
+        "  --config <name>              Build configuration (debug/release)\n"
+        "  --platform <name>            Target platform (windows/linux/darwin)\n"
+        "  -v, --verbose                Show detailed command output\n"
+        "  -q, --quiet                  Minimal output\n"
+        "  -n, --dry-run                Show what would be built\n"
+        "  --no-color                   Disable colored output\n"
+        "  --license                    Show license\n"
+        "  -h, --help                   Show this help\n"
+        "\n",
+        PMAKE_NAME, PMAKE_VERSION);
+    std::fflush(stdout);
+}
 
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
-#ifdef SIGBREAK
-    signal(SIGBREAK, signalHandler);
-#endif
+std::string to_lower(std::string_view s) {
+    std::string out(s);
+    for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
 
-    QCoreApplication::setApplicationName("PMake");
-    QCoreApplication::setApplicationVersion("1.0.0");
+bool ends_with(std::string_view s, std::string_view suffix) {
+    return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
+}
 
-    QCommandLineParser parser;
-    parser.setApplicationDescription("PMake modern build system");
-    parser.addHelpOption();
-
-    QCommandLineOption versionOption({"V", "version"}, "Display version information");
-    parser.addOption(versionOption);
-
-    QCommandLineOption fileOption({"f", "file"}, "Use <file> as build file", "file");
-    parser.addOption(fileOption);
-
-    QCommandLineOption jobsOption({"j", "jobs"}, "Run <N> jobs in parallel", "N");
-    parser.addOption(jobsOption);
-
-    QCommandLineOption cleanOption("clean", "Clean all outputs");
-    parser.addOption(cleanOption);
-
-    QCommandLineOption configOption("config", "Build configuration (debug/release)", "config", "release");
-    parser.addOption(configOption);
-
-    QCommandLineOption platformOption("platform", "Target platform (windows/linux/darwin)", "platform");
-    parser.addOption(platformOption);
-
-    QCommandLineOption verboseOption({"v", "verbose"}, "Show detailed command output");
-    parser.addOption(verboseOption);
-
-    QCommandLineOption quietOption({"q", "quiet"}, "Minimal output (errors + final status only)");
-    parser.addOption(quietOption);
-
-    QCommandLineOption dryRunOption({"n", "dry-run"}, "Show what would be built without executing commands");
-    parser.addOption(dryRunOption);
-
-    QCommandLineOption noColorOption("no-color", "Disable colored output");
-    parser.addOption(noColorOption);
-
-    QCommandLineOption licenseOption("license", "Show license and third-party notices");
-    parser.addOption(licenseOption);
-
-    parser.addPositionalArgument("command", "Command: build, clean, help", "build");
-    parser.addPositionalArgument("target", "Target to build", "target");
-
-    parser.process(app);
-
-    if (parser.isSet(versionOption)) {
-        QTextStream out(stdout);
-        out << QCoreApplication::applicationName() << " " << QCoreApplication::applicationVersion() << "\n";
-        return 0;
+// Возврат: -1 = выйти с 0 (version/help), 0 = ошибка (выйти с 1), 1 = продолжить
+int parse_args(int argc, char** argv, Options& opt) {
+    std::vector<std::string> positional;
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg = argv[i];
+        if (arg == "-f" || arg == "--file") {
+            if (i + 1 < argc) opt.buildFile = argv[++i];
+        } else if (arg == "-j" || arg == "--jobs") {
+            if (i + 1 < argc) {
+                try { opt.jobs = std::stoi(argv[++i]); } catch (...) {}
+            }
+        } else if (arg == "--clean") {
+            opt.clean = true;
+        } else if (arg == "--config") {
+            if (i + 1 < argc) opt.config = argv[++i];
+        } else if (arg == "--platform") {
+            if (i + 1 < argc) opt.platform = argv[++i];
+        } else if (arg == "-v" || arg == "--verbose") {
+            opt.verbose = true;
+        } else if (arg == "-q" || arg == "--quiet") {
+            opt.quiet = true;
+        } else if (arg == "-n" || arg == "--dry-run") {
+            opt.dryRun = true;
+        } else if (arg == "--no-color") {
+            opt.noColor = true;
+        } else if (arg == "--license") {
+            std::fprintf(stdout, "%s %s — see LICENSE file\n", PMAKE_NAME, PMAKE_VERSION);
+            std::fflush(stdout);
+            return -1;
+        } else if (!arg.empty() && arg[0] != '-') {
+            positional.emplace_back(argv[i]);
+        } else {
+            std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            return 0;
+        }
     }
 
-    QStringList args = parser.positionalArguments();
-    QString command = args.isEmpty() ? "build" : args.at(0);
-    QString target  = args.size() > 1 ? args.at(1) : QString();
+    if (!positional.empty()) opt.command = positional[0];
+    if (positional.size() > 1) opt.target = positional[1];
 
-    if (command == "help") parser.showHelp(0);
+    if (opt.command == "build" && positional.size() > 1) {
+        if (positional[1] == "debug" || positional[1] == "release") {
+            opt.config = positional[1];
+            if (positional.size() > 2) opt.target = positional[2];
+        } else {
+            opt.target = positional[1];
+        }
+    }
 
-    QString buildFile = parser.value(fileOption);
-    if (buildFile.isEmpty()) {
-        if (QFile::exists("build.pmake"))       buildFile = "build.pmake";
-        else if (QFile::exists("build.ninja"))  buildFile = "build.ninja";
+    if (opt.jobs <= 0) opt.jobs = idealThreadCount();
+    return 1;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    // ============================================================
+    // --version / -V / --help / -h — САМЫЕ ПЕРВЫЕ, до любого парсинга.
+    // Это гарантирует, что даже при битом argv или сломанном parse_args
+    // версия всё равно выведется.
+    // ============================================================
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "-V") == 0 || std::strcmp(argv[i], "--version") == 0) {
+            print_version();
+            return 0;
+        }
+        if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
+            printHelp();
+            return 0;
+        }
+    }
+
+    Options opt;
+    int rc = parse_args(argc, argv, opt);
+    if (rc < 0) return 0;
+    if (rc == 0) return 1;
+
+    signal(SIGINT, [](int) { std::_Exit(130); });
+    signal(SIGTERM, [](int) { std::_Exit(143); });
+
+    // ---------- build file ----------
+    std::string buildFile = opt.buildFile;
+    if (buildFile.empty()) {
+        if (pmake::util::fileExists("build.pmake"))      buildFile = "build.pmake";
+        else if (pmake::util::fileExists("build.ninja")) buildFile = "build.ninja";
         else {
-            LOG_ERROR("No build file found (build.pmake or build.ninja)");
+            std::fputs("No build file found (build.pmake or build.ninja)\n", stderr);
             return 1;
         }
     }
 
-    int jobs = QThread::idealThreadCount();
-    if (parser.isSet(jobsOption)) {
-        bool ok;
-        int val = parser.value(jobsOption).toInt(&ok);
-        if (ok && val > 0) jobs = val;
-    }
-
-    bool isVerbose = parser.isSet(verboseOption);
-    bool isQuiet   = parser.isSet(quietOption);
-    bool dryRun    = parser.isSet(dryRunOption);
-    bool noColorEnv = qEnvironmentVariableIsSet("NO_COLOR");
-    bool useColor = !parser.isSet(noColorOption) && !noColorEnv;
-
+    // ---------- logging ----------
     pmake::logging::Config logCfg;
-    logCfg.log_to_console  = true;
-    logCfg.color_output    = useColor;
-    logCfg.show_timestamp  = false;
+    logCfg.log_to_console = true;
+    logCfg.color_output   = !opt.noColor && std::getenv("NO_COLOR") == nullptr;
+    logCfg.show_timestamp = false;
 
-    if (isVerbose) {
+    if (opt.verbose) {
         logCfg.min_level = pmake::logging::Level::DEBUG;
         pmake::logging::setVerbose(true);
-    } else if (isQuiet) {
+    } else if (opt.quiet) {
         logCfg.min_level = pmake::logging::Level::ERR;
     } else {
         logCfg.min_level = pmake::logging::Level::INFO;
     }
     pmake::logging::init(logCfg);
 
-    QString config   = parser.value(configOption);
-    QString platform = parser.value(platformOption);
-
-    if (config.isEmpty() && command == "build" && args.size() > 1) {
-        QString possibleConfig = args.at(1);
-        if (possibleConfig == "debug" || possibleConfig == "release") {
-            config = possibleConfig;
-            if (args.size() > 2) target = args.at(2);
-        } else {
-            target = possibleConfig;
-        }
-    }
-
-    // ---------- ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА (NINJA ИЛИ PMAKE) ----------
-    bool isNinja = buildFile.endsWith(".ninja", Qt::CaseInsensitive);
-    if (!isNinja && !buildFile.endsWith(".pmake", Qt::CaseInsensitive)) {
-        QByteArray head;
-        if (QFile f(buildFile); f.open(QIODevice::ReadOnly)) head = f.read(512);
-        if (head.contains("ninja_required_version") || head.contains("cmake_ninja_workdir")) {
-            isNinja = true;
-        }
-    }
-    
-    LOG_VERBOSE(QString("Build file type: %1").arg(isNinja ? "ninja" : "pmake"));
-
-    // ---------- ПАРСИНГ ----------
-    QFuture<std::unique_ptr<State>> future = QtConcurrent::run([&]() {
-        try {
-            if (isNinja) {
-                pmake::ninja::Parser ninjaParser;
-                return ninjaParser.parse(buildFile);
-            } else {
-                pmake::parser::Parser pmakeParser;
-                return pmakeParser.parse(buildFile, config, platform);
+    // ---------- ninja vs pmake ----------
+    bool isNinja = ends_with(to_lower(buildFile), ".ninja");
+    if (!isNinja && !ends_with(to_lower(buildFile), ".pmake")) {
+        std::string head;
+        if (pmake::util::readFile(buildFile, head)) {
+            if (head.size() > 512) head.resize(512);
+            if (head.find("ninja_required_version") != std::string::npos ||
+                head.find("cmake_ninja_workdir")     != std::string::npos) {
+                isNinja = true;
             }
-        } catch (const std::exception& e) {
-            LOG_ERROR(QString("Parser thread exception: %1").arg(e.what()));
-            return std::unique_ptr<State>(nullptr);
-        } catch (...) {
-            LOG_ERROR("Parser thread unknown exception");
-            return std::unique_ptr<State>(nullptr);
-        }
-    });
-
-    QFutureWatcher<std::unique_ptr<State>> watcher;
-    watcher.setFuture(future);
-
-    if (!future.isFinished()) {
-        QEventLoop loop;
-        QTimer timer;
-        timer.setSingleShot(true);
-        timer.start(60000);
-
-        bool timedOut = false;
-        QObject::connect(&timer, &QTimer::timeout, &loop, [&]() { timedOut = true; loop.quit(); });
-        QObject::connect(&watcher, &QFutureWatcherBase::finished, &loop, [&]() { timer.stop(); loop.quit(); });
-
-        loop.exec();
-
-        if (timedOut && !future.isFinished()) {
-            LOG_ERROR("Parsing timed out after 60 seconds");
-            _Exit(1);
         }
     }
 
-    auto state = future.takeResult();
+    LOG_VERBOSE(std::format("Build file type: {}", isNinja ? "ninja" : "pmake"));
+
+    // ---------- parse ----------
+    std::unique_ptr<State> state;
+    try {
+        if (isNinja) {
+            pmake::ninja::Parser ninjaParser;
+            state = ninjaParser.parse(buildFile);
+        } else {
+            pmake::parser::Parser pmakeParser;
+            state = pmakeParser.parse(buildFile, opt.config, opt.platform);
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR(std::format("Parser exception: {}", e.what()));
+        return 1;
+    } catch (...) {
+        LOG_ERROR("Parser unknown exception");
+        return 1;
+    }
     if (!state) {
         LOG_ERROR("Failed to parse build file");
         return 1;
     }
 
-    // ---------- DEFAULT-ЦЕЛЬ ----------
-    if (target.isEmpty() && command == "build") {
+    // ---------- default target ----------
+    if (opt.target.empty() && opt.command == "build") {
         bool hasAll = false;
-        for (const auto& build : state->builds()) {
-            if (!build.outputs.isEmpty() && build.outputs[0] == "all") {
-                hasAll = true;
-                break;
-            }
+        for (const auto& b : state->builds()) {
+            if (!b.outputs.empty() && b.outputs[0] == "all") { hasAll = true; break; }
         }
-        if (hasAll) target = "all";
-        else if (!state->defaultTargets().isEmpty()) target = state->defaultTargets().first();
+        if (hasAll) opt.target = "all";
+        else if (!state->defaultTargets().empty()) opt.target = state->defaultTargets().front();
     }
 
-    // ---------- КЭШ ----------
+    // ---------- cache ----------
     bool useCache = true;
     auto cacheVar = state->getGlobal("cache");
-    if (cacheVar.has_value() && cacheVar->toLower() == "false") useCache = false;
+    if (cacheVar.has_value() && to_lower(*cacheVar) == "false") useCache = false;
 
     pmake::core::Cache cache;
     bool cacheValid = false;
+    const std::string cachePath = "Project-cache.pmake";
+
     if (useCache) {
-        QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (cache.load(cachePath)) {
-            for (auto it = cache.fileStates().begin(); it != cache.fileStates().end(); ++it) {
-                state->setFileState(it.key(), it.value());
-            }
+            for (const auto& [path, fs] : cache.fileStates()) state->setFileState(path, fs);
             state->setCommandHashes(cache.commandHashes());
 
-            qint64 buildMtime = pmake::util::getFileMtime(buildFile);
-            qint64 cacheMtime = pmake::util::getFileMtime(cachePath);
+            std::int64_t buildMtime = pmake::util::getFileMtime(buildFile);
+            std::int64_t cacheMtime = pmake::util::getFileMtime(cachePath);
             bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
 
             if (cache.isValid(buildFile) && !buildFileNewer) {
                 cacheValid = true;
-                LOG_VERBOSE(QString("Cache: valid, %1 file states, %2 deps, %3 command hashes")
-                            .arg(cache.fileStates().size()).arg(pmake::deps::DepsLog::instance().entries().size()).arg(cache.commandHashes().size()));
+                LOG_VERBOSE(std::format("Cache: valid, {} file states, {} deps, {} command hashes",
+                    cache.fileStates().size(),
+                    pmake::deps::DepsLog::instance().entries().size(),
+                    cache.commandHashes().size()));
             } else {
                 LOG_VERBOSE("Cache: invalid (build file changed)");
                 pmake::deps::DepsLog::instance().clear();
@@ -257,69 +282,80 @@ int main(int argc, char* argv[]) {
             LOG_VERBOSE("Cache: not found");
         }
     }
-
     state->setCacheValid(cacheValid);
 
-    // ---------- DEPFILES (если кэш невалиден) ----------
+    // ---------- depfiles ----------
     if (!cacheValid) {
         LOG_VERBOSE("Re-scanning depfiles");
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
-            if (!rule || rule->name == "phony" || rule->generator || rule->depfile.isEmpty()) continue;
+            if (!rule || rule->name == "phony" || rule->generator || rule->depfile.empty()) continue;
 
-            for (const QString& out : build.outputs) {
-                QHash<QString, QString> specialVars;
+            for (const auto& out : build.outputs) {
+                std::unordered_map<std::string, std::string> specialVars;
                 specialVars["out"] = out;
-                specialVars["in"]  = build.inputs.join(' ');
+                std::string joined;
+                for (std::size_t i = 0; i < build.inputs.size(); ++i) {
+                    if (i) joined += ' ';
+                    joined += build.inputs[i];
+                }
+                specialVars["in"] = std::move(joined);
 
-                QString depfilePath = state->expandVarsWithSpecial(rule->depfile, build.scope.data(), specialVars);
-                QVector<QString> inputs = pmake::deps::DepParser::parse(depfilePath);
-                if (!inputs.isEmpty()) pmake::deps::DepsLog::instance().record(out, inputs);
+                std::string depfilePath = state->expandVarsWithSpecial(
+                    rule->depfile, build.scope.get(), specialVars);
+                auto inputs = pmake::deps::DepParser::parse(depfilePath);
+                if (!inputs.empty()) pmake::deps::DepsLog::instance().record(out, inputs);
             }
         }
     }
 
-    // ---------- СОХРАНЕНИЕ КЭША ПОСЛЕ ПАРСИНГА ----------
-    if (useCache && !dryRun) {
+    // ---------- cache save after parse ----------
+    if (useCache && !opt.dryRun && !cacheValid) {
         cache.store(*state, buildFile);
-        QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (!cache.save(cachePath)) LOG_WARN("Failed to save cache");
         else LOG_VERBOSE("Cache: saved");
     }
 
-    // ---------- CLEAN ----------
-    if (command == "clean") {
+    // ---------- clean ----------
+    if (opt.clean || opt.command == "clean") {
         int removed = 0;
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
             if (rule && rule->generator) continue;
-            for (const QString& out : build.outputs) {
-                if (QFile::remove(out)) ++removed;
+            for (const auto& out : build.outputs) {
+                std::error_code ec;
+                if (std::filesystem::remove(std::filesystem::path(out), ec)) ++removed;
             }
         }
-        LOG_INFO(QString("Cleaned %1 files").arg(removed));
+        LOG_INFO(std::format("Cleaned {} files", removed));
         return 0;
     }
 
-    if (command != "build") {
-        LOG_ERROR(QString("Unknown command: %1").arg(command));
+    if (opt.command != "build") {
+        LOG_ERROR(std::format("Unknown command: {}", opt.command));
         return 1;
     }
 
-    // ---------- ЗАПУСК ----------
-    pmake::core::Engine engine(*state, jobs, dryRun);
-    pmake::ui::ConsoleUI ui(isQuiet, useColor);
+    // ---------- engine + UI ----------
+    pmake::core::Engine engine(*state, opt.jobs, opt.dryRun);
+    pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output);
 
-    QObject::connect(&engine, &pmake::core::Engine::taskStarted, &ui, &pmake::ui::ConsoleUI::onTaskStarted, Qt::DirectConnection);
-    QObject::connect(&engine, &pmake::core::Engine::taskFinished, &ui, &pmake::ui::ConsoleUI::onTaskFinished, Qt::DirectConnection);
-    QObject::connect(&engine, &pmake::core::Engine::buildFinished, &ui, &pmake::ui::ConsoleUI::onBuildFinished, Qt::DirectConnection);
+    engine.onTaskStarted([&ui](const std::string& name, int total) {
+        ui.onTaskStarted(name, total);
+    });
+    engine.onTaskFinished([&ui](const std::string& name, bool ok, double dur, const std::string& err) {
+        ui.onTaskFinished(name, ok, dur, err);
+    });
+    engine.onBuildFinished([&ui](bool ok, double dur) {
+        ui.onBuildFinished(ok, dur);
+    });
 
-    bool result = engine.run(target);
+    bool result = engine.run(opt.target);
 
-    if (!dryRun && useCache) {
+    // ---------- cache save after build ----------
+    if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
         cache.store(*state, buildFile);
-        QString cachePath = QDir::current().filePath("Project-cache.pmake");
         if (!cache.save(cachePath)) LOG_WARN("Failed to save cache after build");
     }
 

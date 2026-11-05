@@ -1,0 +1,10 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule copy   { command = "${python} copy.py ${in} ${out}" }
+rule concat { command = "${python} concat.py ${out} ${in}" }
+build "b.out" : copy "a.in"
+build "c.out" : copy "a.in"
+build "d.out" : copy "b.out"
+build "e.out" : copy "c.out"
+build "f.out" : concat "d.out" "e.out"
+alias all : "f.out"

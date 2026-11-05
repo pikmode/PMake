@@ -1,0 +1,9 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule cp_preserve {
+    command = "${python} copy_preserve.py ${in} ${out}"
+    restat = true
+}
+build "mid.txt" : cp_preserve "src.in"
+build "final.txt" : cp_preserve "mid.txt"
+alias all : "final.txt"

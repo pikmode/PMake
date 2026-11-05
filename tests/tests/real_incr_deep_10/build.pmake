@@ -1,0 +1,14 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule copy { command = "${python} copy.py ${in} ${out}" }
+build "c0.out" : copy "src.in"
+build "c1.out" : copy "c0.out"
+build "c2.out" : copy "c1.out"
+build "c3.out" : copy "c2.out"
+build "c4.out" : copy "c3.out"
+build "c5.out" : copy "c4.out"
+build "c6.out" : copy "c5.out"
+build "c7.out" : copy "c6.out"
+build "c8.out" : copy "c7.out"
+build "c9.out" : copy "c8.out"
+alias all : "c9.out"

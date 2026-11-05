@@ -1,0 +1,36 @@
+{
+  "description": "restat=true: файл touch'ится, но контент тот же → final не пересобирается",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 2,
+        "files": [
+          "mid.txt",
+          "final.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop_restat",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      },
+      "comment": "restat=true + content unchanged → downstream не пересобирается"
+    }
+  ]
+}

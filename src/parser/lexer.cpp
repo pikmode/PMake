@@ -1,13 +1,18 @@
 #include "parser/lexer.h"
+
 #include <cctype>
-#include <QDebug>
-#include <QString>
+#include <charconv>
+#include <format>
+#include <iostream>
+#include <print>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace pmake::parser {
 
-Lexer::Lexer(const QByteArray& data, const QString& filename)
-    : data_(data.constData()), pos_(data_), end_(pos_ + data.size()),
+Lexer::Lexer(std::string_view data, std::string_view filename)
+    : data_(data.data()), pos_(data.data()), end_(data.data() + data.size()),
       line_(1), column_(0), filename_(filename), atLineStart_(true) {
     pool_ = &util::StringPool::instance();
     if (data.size() >= 3 &&
@@ -104,24 +109,40 @@ Token Lexer::readIdentOrKeyword() {
     while (pos_ < end_) {
         char n = peek();
         if (n >= 0 && n < 32) break;
-        if (isalnum(static_cast<unsigned char>(n)) || n == '_' || n == '.' || n == '/' || n == '-' || n == '\\') {
+        if (std::isalnum(static_cast<unsigned char>(n)) || n == '_' || n == '.' || n == '/' || n == '-' || n == '\\') {
             get();
         } else {
             break;
         }
     }
-    QByteArray name(start, pos_ - start);
+    std::string_view name(start, static_cast<std::size_t>(pos_ - start));
     int id = pool_->intern(name);
-    QString str = QString::fromUtf8(name);
-    if (str == QLatin1String("true"))
-        return {TOK_TRUE, -1, line_, column_, 0, .boolVal = true};
-    if (str == QLatin1String("false"))
-        return {TOK_FALSE, -1, line_, column_, 0, .boolVal = false};
+
+    if (name == "true") {
+        Token t{};
+        t.type = TOK_TRUE;
+        t.strId = -1;
+        t.line = line_;
+        t.column = column_;
+        t.indent = 0;
+        t.boolVal = true;
+        return t;
+    }
+    if (name == "false") {
+        Token t{};
+        t.type = TOK_FALSE;
+        t.strId = -1;
+        t.line = line_;
+        t.column = column_;
+        t.indent = 0;
+        t.boolVal = false;
+        return t;
+    }
     return {TOK_IDENT, id, line_, column_, 0};
 }
 
 Token Lexer::readString() {
-    QByteArray result;
+    std::string result;
     bool escaped = false;
     bool foundClosing = false;
 
@@ -135,18 +156,18 @@ Token Lexer::readString() {
 
         if (escaped) {
             switch (c) {
-                case 'n':  result.append('\n'); break;
-                case 'r':  result.append('\r'); break;
-                case 't':  result.append('\t'); break;
-                case '\\': result.append('\\'); break;
-                case '"':  result.append('"');  break;
-                default:   result.append(c);    break;
+                case 'n':  result.push_back('\n'); break;
+                case 'r':  result.push_back('\r'); break;
+                case 't':  result.push_back('\t'); break;
+                case '\\': result.push_back('\\'); break;
+                case '"':  result.push_back('"');  break;
+                default:   result.push_back(c);    break;
             }
             escaped = false;
         } else if (c == '\\') {
             escaped = true;
         } else {
-            result.append(c);
+            result.push_back(c);
         }
     }
 
@@ -160,30 +181,35 @@ Token Lexer::readString() {
 
 Token Lexer::readNumber() {
     const char* start = pos_;
-    while (pos_ < end_ && isdigit(static_cast<unsigned char>(peek())))
+    while (pos_ < end_ && std::isdigit(static_cast<unsigned char>(peek())))
         get();
     if (peek() == '.') {
         get();
-        while (pos_ < end_ && isdigit(static_cast<unsigned char>(peek())))
+        while (pos_ < end_ && std::isdigit(static_cast<unsigned char>(peek())))
             get();
     }
-    QByteArray num(start, pos_ - start);
-    bool ok;
-    double d = num.toDouble(&ok);
-    if (ok) {
-        return {TOK_NUMBER, -1, line_, column_, 0, .doubleVal = d};
-    } else {
-        int val = num.toInt();
-        return {TOK_NUMBER, -1, line_, column_, 0, .doubleVal = static_cast<double>(val)};
+    std::string_view num(start, static_cast<std::size_t>(pos_ - start));
+    double d = 0.0;
+    auto [ptr, ec] = std::from_chars(num.data(), num.data() + num.size(), d);
+    if (ec != std::errc{}) {
+        d = 0.0;
     }
+    Token t{};
+    t.type = TOK_NUMBER;
+    t.strId = -1;
+    t.line = line_;
+    t.column = column_;
+    t.indent = 0;
+    t.doubleVal = d;
+    return t;
 }
 
 Token Lexer::readVarRef() {
-    QByteArray var;
+    std::string var;
     while (pos_ < end_) {
         char c = get();
         if (c == '}') break;
-        var.append(c);
+        var.push_back(c);
     }
     if (pos_ >= end_) error("Unterminated variable reference");
     int id = pool_->intern(var);
@@ -262,13 +288,13 @@ Token Lexer::nextToken() {
             return {TOK_NEWLINE, -1, line_, column_, 0};
         }
 
-        if (isalpha(static_cast<unsigned char>(c)) || c == '_')
+        if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
             return readIdentOrKeyword();
 
-        if (isdigit(static_cast<unsigned char>(c))) {
+        if (std::isdigit(static_cast<unsigned char>(c))) {
             const char* p = pos_;
-            while (p < end_ && (isdigit(static_cast<unsigned char>(*p)) || *p == '.')) p++;
-            if (p < end_ && (isalpha(static_cast<unsigned char>(*p)) || *p == '_'))
+            while (p < end_ && (std::isdigit(static_cast<unsigned char>(*p)) || *p == '.')) p++;
+            if (p < end_ && (std::isalpha(static_cast<unsigned char>(*p)) || *p == '_'))
                 return readIdentOrKeyword();
             else
                 return readNumber();
@@ -299,15 +325,15 @@ Token Lexer::nextToken() {
     }
 }
 
-QString Lexer::str(int id) const {
-    if (id < 0 || id >= pool_->size()) return QString();
-    return QString::fromUtf8(pool_->get(id));
+std::string_view Lexer::str(int id) const {
+    if (id < 0 || id >= static_cast<int>(pool_->size())) return {};
+    return pool_->get(id);
 }
 
-void Lexer::error(const QString& msg) {
-    QString err = QString("Lexer error in %1 line %2: %3").arg(filename_).arg(line_).arg(msg);
-    qCritical() << err;
-    throw std::runtime_error(err.toStdString());
+void Lexer::error(std::string_view msg) {
+    std::string err = std::format("Lexer error in {} line {}: {}", filename_, line_, msg);
+    std::println(std::cerr, "{}", err);
+    throw std::runtime_error(std::move(err));
 }
 
 } // namespace pmake::parser

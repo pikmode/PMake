@@ -1,11 +1,11 @@
 // parser/ninja-parser/lexer.h
 #pragma once
 
-#include <QByteArray>
-#include <QVector>
+#include <string>
+#include <string_view>
 #include "util/string_pool.h"
 
-namespace pmake::ninja {   // ← было pmake::parser
+namespace pmake::ninja {
 
 enum TokenType {
     TOK_EOF, TOK_NEWLINE, TOK_INDENT, TOK_EQUALS, TOK_COLON,
@@ -22,11 +22,13 @@ struct Token {
 
 class Lexer {
 public:
-    Lexer(const QByteArray& data, const QString& filename);
+    // ВАЖНО: filename должен жить дольше Lexer (копируется внутрь — безопасно).
+    Lexer(std::string_view data, std::string_view filename);
+
     Token nextToken();
-    QString readValue(bool allowContinuation = true);
+    std::string readValue(bool allowContinuation = true);
     int line() const { return line_; }
-    const QString& filename() const { return filename_; }
+    std::string_view filename() const { return filename_; }
     bool hadWhitespace() const { return hadWhitespace_; }
 
 private:
@@ -34,7 +36,7 @@ private:
     const char* pos_;
     const char* end_;
     int line_;
-    QString filename_;
+    std::string filename_;
     util::StringPool* pool_;
     bool atLineStart_;
     bool hadWhitespace_ = false;
@@ -45,7 +47,7 @@ private:
     Token readIdentOrKeyword();
     Token readString();
     Token readVariable();
-    void error(const QString& msg);
+    void error(std::string_view msg);
 };
 
 } // namespace pmake::ninja

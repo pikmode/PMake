@@ -1,0 +1,7 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule copy { command = "${python} copy.py ${in} ${out}" }
+build "s1.txt" : copy "s1.in"
+build "s2.txt" : copy "s2.in" || "s1.txt"
+build "out.txt" : copy "out.in" || "s2.txt"
+alias all : "out.txt"

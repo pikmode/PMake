@@ -1,0 +1,54 @@
+{
+  "description": "Изменение src.c → out.c пересобирается с новым содержимым",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.c"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "modify_src",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "modify": {
+            "src.c": "int v = 2;\n"
+          }
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesWith": {
+          "out.c": "int v = 2;"
+        }
+      }
+    }
+  ]
+}

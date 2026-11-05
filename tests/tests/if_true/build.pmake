@@ -1,0 +1,13 @@
+pmake_required_version = 1.0
+python = "D:/bin/python3.exe"
+mode = "release"
+rule echo {
+    command = "${python} echo_to.py ${out} ${tag}"
+}
+if mode == "release" {
+    tag = "R"
+} else {
+    tag = "D"
+}
+build "out.txt" : echo
+alias all : "out.txt"

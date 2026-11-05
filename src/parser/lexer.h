@@ -1,8 +1,6 @@
 #pragma once
 
-#include <QByteArray>
-#include <QVector>
-#include <QString>
+#include <string_view>
 #include "util/string_pool.h"
 
 namespace pmake::parser {
@@ -59,13 +57,16 @@ struct Token {
 
 class Lexer {
 public:
-    Lexer(const QByteArray& data, const QString& filename);
+    // ВАЖНО: data и filename должны жить дольше Lexer (string_view не владеет).
+    Lexer(std::string_view data, std::string_view filename);
+
     Token nextToken();
     int line() const { return line_; }
     int column() const { return column_; }
-    const QString& filename() const { return filename_; }
+    std::string_view filename() const { return filename_; }
 
-    QString str(int id) const;
+    // Возвращает интернированную строку по id (пустую для невалидного id).
+    std::string_view str(int id) const;
 
 private:
     const char* data_;
@@ -73,7 +74,7 @@ private:
     const char* end_;
     int line_;
     int column_;
-    QString filename_;
+    std::string_view filename_;
     util::StringPool* pool_;
     bool atLineStart_;
 
@@ -87,7 +88,7 @@ private:
     Token readNumber();
     Token readVarRef();
     Token readSymbol();
-    void error(const QString& msg);
+    [[noreturn]] void error(std::string_view msg);
 };
 
 } // namespace pmake::parser

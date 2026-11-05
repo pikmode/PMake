@@ -1,8 +1,15 @@
 #include "parser/parser_impl.h"
 #include "parser/parser_utils.h"
-#include <QDebug>
-#include <QFileInfo>
+
+#include <filesystem>
+#include <format>
+#include <iostream>
+#include <print>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 
 namespace pmake::parser {
 
@@ -12,12 +19,12 @@ int ParserImpl::includeDepth = 0;
 int ParserImpl::functionCallDepth = 0;
 
 // ---- Конструктор/деструктор ----
-ParserImpl::ParserImpl(const QByteArray& data, const QString& filename,
-                       const QString& config, const QString& platform)
+ParserImpl::ParserImpl(std::string_view data, std::string_view filename,
+                       std::string_view config, std::string_view platform)
     : lexer_(data, filename), filename_(filename),
       config_(config), platform_(platform) {
-    state_.setGlobal("config", config);
-    state_.setGlobal("platform", platform);
+    state_.setGlobal("config", config_);
+    state_.setGlobal("platform", platform_);
     state_.setGlobal("os",
 #ifdef _WIN32
         "windows"
@@ -31,7 +38,7 @@ ParserImpl::ParserImpl(const QByteArray& data, const QString& filename,
     );
     root_ = new AstNode();
     root_->type = AstNode::BLOCK;
-    astStack_.push(root_);
+    astStack_.push_back(root_);
     operationCounter = 0;
     includeDepth = 0;
     functionCallDepth = 0;
@@ -50,14 +57,14 @@ void ParserImpl::advance() {
         cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
         currentColumn_ = cur_.column;
         hasError_ = true;
-        errors_.append(QString("Lexer error: %1").arg(e.what()));
-        LOG_ERROR(errors_.last());
+        errors_.push_back(std::format("Lexer error: {}", e.what()));
+        std::println(std::cerr, "{}", errors_.back());
     } catch (...) {
         cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
         currentColumn_ = cur_.column;
         hasError_ = true;
-        errors_.append("Unknown lexer error");
-        LOG_ERROR(errors_.last());
+        errors_.push_back("Unknown lexer error");
+        std::println(std::cerr, "{}", errors_.back());
     }
 }
 
@@ -69,7 +76,7 @@ bool ParserImpl::match(TokenType t) {
     return false;
 }
 
-bool ParserImpl::expect(TokenType t, const QString& msg) {
+bool ParserImpl::expect(TokenType t, std::string_view msg) {
     if (cur_.type == t) {
         advance();
         return true;
@@ -78,25 +85,25 @@ bool ParserImpl::expect(TokenType t, const QString& msg) {
     return false;
 }
 
-void ParserImpl::error(const QString& msg, bool recover) {
-    static QString lastError;
+void ParserImpl::error(std::string_view msg, bool recover) {
+    static std::string lastError;
     static int lastLine = -1;
     if (lastError == msg && lastLine == cur_.line) {
         return;
     }
-    lastError = msg;
+    lastError = std::string(msg);
     lastLine = cur_.line;
 
-    QString err = formatError(filename_, cur_.line, currentColumn_, msg, lexer_.str(cur_.strId));
-    errors_.append(err);
-    LOG_ERROR(err);
+    std::string err = formatError(filename_, cur_.line, currentColumn_, msg, lexer_.str(cur_.strId));
+    errors_.push_back(err);
+    std::println(std::cerr, "{}", err);
     hasError_ = true;
     if (!recover) {
-        throw std::runtime_error(err.toStdString());
+        throw std::runtime_error(err);
     }
 }
 
-QString ParserImpl::str(int id) const {
+std::string_view ParserImpl::str(int id) const {
     return lexer_.str(id);
 }
 
@@ -136,25 +143,25 @@ bool ParserImpl::skipToBlockStart(int baseIndent) {
 }
 
 AstNode* ParserImpl::currentBlock() {
-    return astStack_.isEmpty() ? root_ : astStack_.top();
+    return astStack_.empty() ? root_ : astStack_.back();
 }
 
 void ParserImpl::pushBlock(AstNode* node) {
-    astStack_.push(node);
+    astStack_.push_back(node);
 }
 
 void ParserImpl::popBlock() {
-    if (!astStack_.isEmpty()) astStack_.pop();
+    if (!astStack_.empty()) astStack_.pop_back();
 }
 
 // ---- Создание узлов AST ----
-AstNode* ParserImpl::makeStringLiteral(const QString& value) {
+AstNode* ParserImpl::makeStringLiteral(std::string_view value) {
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
         error("Too many AST nodes created", false);
     }
     auto node = new AstNode();
     node->type = AstNode::STRING_LITERAL;
-    node->value = value;
+    node->value = Value(std::string(value));
     node->line = cur_.line;
     node->column = cur_.column;
     return node;
@@ -163,7 +170,7 @@ AstNode* ParserImpl::makeStringLiteral(const QString& value) {
 AstNode* ParserImpl::makeNumberLiteral(double value) {
     auto node = new AstNode();
     node->type = AstNode::NUMBER_LITERAL;
-    node->value = value;
+    node->value = Value(value);
     node->line = cur_.line;
     node->column = cur_.column;
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
@@ -175,7 +182,7 @@ AstNode* ParserImpl::makeNumberLiteral(double value) {
 AstNode* ParserImpl::makeBoolLiteral(bool value) {
     auto node = new AstNode();
     node->type = AstNode::BOOL_LITERAL;
-    node->value = value;
+    node->value = Value(value);
     node->line = cur_.line;
     node->column = cur_.column;
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
@@ -195,10 +202,10 @@ AstNode* ParserImpl::makeNullLiteral() {
     return node;
 }
 
-AstNode* ParserImpl::makeVariableRef(const QString& name) {
+AstNode* ParserImpl::makeVariableRef(std::string_view name) {
     auto node = new AstNode();
     node->type = AstNode::VARIABLE_REF;
-    node->name = name;
+    node->name = std::string(name);
     node->line = cur_.line;
     node->column = cur_.column;
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
@@ -234,7 +241,7 @@ AstNode* ParserImpl::makeUnaryOp(int op, AstNode* operand) {
     return node;
 }
 
-AstNode* ParserImpl::makeConcat(const QVector<AstNode*>& parts) {
+AstNode* ParserImpl::makeConcat(const std::vector<AstNode*>& parts) {
     auto node = new AstNode();
     node->type = AstNode::CONCAT;
     node->children = parts;
@@ -246,7 +253,7 @@ AstNode* ParserImpl::makeConcat(const QVector<AstNode*>& parts) {
     return node;
 }
 
-AstNode* ParserImpl::makeList(const QVector<AstNode*>& elements) {
+AstNode* ParserImpl::makeList(const std::vector<AstNode*>& elements) {
     if (elements.size() > 10000) {
         error("List size exceeds 10000", true);
         return makeStringLiteral("");
@@ -263,89 +270,91 @@ AstNode* ParserImpl::makeList(const QVector<AstNode*>& elements) {
 }
 
 // ---- Проверки ----
-bool ParserImpl::checkDuplicate(const QString& name, const QSet<QString>& set, const QString& type) {
-    if (set.contains(name)) {
-        error(QString("%1 '%2' already defined.").arg(type).arg(name), true);
+bool ParserImpl::checkDuplicate(std::string_view name,
+                                const std::unordered_set<std::string>& set,
+                                std::string_view type) {
+    if (set.contains(std::string(name))) {
+        error(std::format("{} '{}' already defined.", type, name), true);
         return true;
     }
     return false;
 }
 
-void ParserImpl::addDefinition(const QString& name, QSet<QString>& set) {
-    set.insert(name);
+void ParserImpl::addDefinition(std::string_view name, std::unordered_set<std::string>& set) {
+    set.insert(std::string(name));
 }
 
 // ВАЖНО: recover=false — прерывает рекурсию include через throw.
-// С recover=true ошибка только логировалась, и парсер продолжал
-// бесконечно вкладывать include (stack overflow 0xC00000FD).
-void ParserImpl::checkIncludeCycle(const QString& path) {
-    QString canonical = normalizePath(path);
+void ParserImpl::checkIncludeCycle(std::string_view path) {
+    std::string canonical = normalizePath(path);
     if (processingStack_.contains(canonical)) {
-        error(QString("Include/import cycle detected: %1").arg(path), false);
+        error(std::format("Include/import cycle detected: {}", path), false);
     }
 }
 
-void ParserImpl::checkType(AstNode* node, const QString& expectedType, const QString& context) {
-    Q_UNUSED(node); Q_UNUSED(expectedType); Q_UNUSED(context);
+void ParserImpl::checkType(AstNode* node, std::string_view expectedType, std::string_view context) {
+    (void)node; (void)expectedType; (void)context;
 }
 
-void ParserImpl::checkFunctionArgs(const QString& name, const QVector<QVariant>& args,
+void ParserImpl::checkFunctionArgs(std::string_view name, const std::vector<Value>& args,
                                    int minCount, int maxCount) {
-    if (args.size() < minCount) {
-        error(QString("Function '%1' expects at least %2 arguments, got %3")
-              .arg(name).arg(minCount).arg(args.size()), true);
+    if (static_cast<int>(args.size()) < minCount) {
+        error(std::format("Function '{}' expects at least {} arguments, got {}",
+                          name, minCount, args.size()), true);
     }
-    if (maxCount >= 0 && args.size() > maxCount) {
-        error(QString("Function '%1' expects at most %2 arguments, got %3")
-              .arg(name).arg(maxCount).arg(args.size()), true);
+    if (maxCount >= 0 && static_cast<int>(args.size()) > maxCount) {
+        error(std::format("Function '{}' expects at most {} arguments, got {}",
+                          name, maxCount, args.size()), true);
     }
 }
 
-// ---- parseIdent ----
-QString ParserImpl::parseIdent() {
+// ---- parseIdent — ИЗМЕНЕНО: возвращает std::string ----
+std::string ParserImpl::parseIdent() {
     if (cur_.type != TOK_IDENT) {
         error("Expected identifier", true);
-        return QString();
+        return {};
     }
-    QString s = str(cur_.strId);
+    std::string s{str(cur_.strId)};
     advance();
     return s;
 }
 
 // ---- Нормализация пути ----
-QString ParserImpl::normalizePath(const QString& path) {
-    if (path.isEmpty()) return path;
-    QFileInfo fi(path);
-    if (fi.exists()) {
-        return fi.canonicalFilePath();
+std::string ParserImpl::normalizePath(std::string_view path) {
+    if (path.empty()) return {};
+    std::filesystem::path p{std::string(path)};
+    std::error_code ec;
+    if (std::filesystem::exists(p, ec)) {
+        auto canon = std::filesystem::canonical(p, ec);
+        if (!ec) return canon.string();
     }
-    return QFileInfo(path).absoluteFilePath();
+    return std::filesystem::absolute(p, ec).lexically_normal().string();
 }
 
 // ---- Вспомогательная функция ----
-QString ParserImpl::astNodeToStringWithState(AstNode* node, const core::State* state) {
-    if (!node) return QString();
+std::string ParserImpl::astNodeToStringWithState(AstNode* node, const core::State* state) {
+    if (!node) return {};
     switch (node->type) {
         case AstNode::STRING_LITERAL:
-            return node->value.toString();
+            return node->value.to_string();
         case AstNode::VARIABLE_REF: {
             auto opt = state->getGlobal(node->name);
             if (opt.has_value()) return *opt;
             return node->name;
         }
         case AstNode::CONCAT: {
-            QString result;
+            std::string result;
             for (auto child : node->children) {
                 result += astNodeToStringWithState(child, state);
             }
             return result;
         }
         case AstNode::NUMBER_LITERAL:
-            return QString::number(node->value.toDouble());
+            return std::format("{}", node->value.as_number());
         case AstNode::BOOL_LITERAL:
-            return node->value.toBool() ? "true" : "false";
+            return node->value.to_bool() ? "true" : "false";
         default:
-            return QString();
+            return {};
     }
 }
 

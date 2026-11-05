@@ -1,0 +1,11 @@
+pmake_required_version = 1.0
+python = "D:/bin/python3.exe"
+function say(msg) {
+    payload = "${msg}"
+}
+say("hello_func")
+rule echo {
+    command = "${python} echo_to.py ${out} ${payload}"
+}
+build "out.txt" : echo
+alias all : "out.txt"

@@ -1,15 +1,19 @@
 #pragma once
 
-#include <QVariant>
-#include <QString>
-#include "core/state.h"
+#include <string_view>
+
+#include "core/value.h"
 
 namespace pmake::core {
 
-// Упрощённый интерпретатор выражений (будет расширяться)
+class State;
+class Scope;
+
+// Упрощённый интерпретатор выражений (для legacy-кода; новый парсер
+// использует ParserImpl::evaluateExpression напрямую).
 class Expression {
 public:
-    static QVariant evaluate(const QString& expr, State* state, Scope* scope);
+    static Value evaluate(std::string_view expr, State* state, Scope* scope);
 };
 
 } // namespace pmake::core

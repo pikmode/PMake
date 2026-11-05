@@ -1,38 +1,32 @@
 #pragma once
 
-#include <QString>
-#include <QHash>
-#include <QMutex>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 namespace pmake::util {
 
-// Кэш для mtime файлов – избегаем повторных stat
 class FileCache {
 public:
     static FileCache& instance();
-
-    qint64 getMtime(const QString& path); // возвращает -1 если нет
-    void touch(const QString& path);       // обновить кэш (после записи)
-    void setMtime(const QString& path, qint64 mtime); // заполнить кэш напрямую
-    void invalidate(const QString& path);  // если файл удалён
+    std::int64_t getMtime(std::string_view path);
+    void touch(std::string_view path);
+    void setMtime(std::string_view path, std::int64_t mtime);
+    void invalidate(std::string_view path);
     void clear();
 
 private:
-    QHash<QString, qint64> cache_;
-    QMutex mutex_;
+    std::unordered_map<std::string, std::int64_t> cache_;
+    std::mutex mutex_;
 };
 
-// Утилиты
-bool fileExists(const QString& path);     // ВСЕГДА реальный stat (без кэша)
-qint64 getFileMtime(const QString& path); // через кэш
-
-// Быстрый stat — один системный вызов отдает и mtime, и size.
-// На Windows использует GetFileAttributesExW (в 10 раз быстрее QFileInfo).
-// На Linux/macOS использует ::stat.
-bool statFileFast(const QString& path, qint64& mtime, qint64& size);
-
-bool readFile(const QString& path, QByteArray& out);
-bool writeFile(const QString& path, const QByteArray& data);
-bool ensureDirectory(const QString& path);
+bool fileExists(std::string_view path);
+std::int64_t getFileMtime(std::string_view path);
+bool statFileFast(std::string_view path, std::int64_t& mtime, std::int64_t& size);
+bool readFile(std::string_view path, std::string& out);
+bool writeFile(std::string_view path, std::string_view data);
+bool ensureDirectory(std::string_view path);
 
 } // namespace pmake::util

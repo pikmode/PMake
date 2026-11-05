@@ -1,69 +1,66 @@
 #pragma once
 
-#include <QObject>
-#include <QThreadPool>
-#include <QVector>
-#include <QHash>
-#include <QQueue>
-#include <QSet>
-#include <QMutex>
-#include <QElapsedTimer>
-#include <QTimer>
-#include "core/state.h"
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include "core/graph.h"
+#include "core/state.h"
 
 namespace pmake::core {
 
 class Node;
 
-/**
- * Ninja-style планировщик.
- *
- * Модель: задача = Build (несколько outputs одного Build = одна задача).
- * Состояния: Want -> Ready -> Running -> Done/Failed.
- * Завершение: runningTasks_ == 0 && pendingTasks_ == 0 (под planMutex_).
- * buildFinished эмитится ровно один раз из checkFinished().
- */
-class Engine : public QObject {
-    Q_OBJECT
+class Engine {
 public:
-    Engine(State& state, int maxJobs, bool dryRun = false, QObject* parent = nullptr);
+    using BuildStartedFn   = std::function<void()>;
+    using BuildProgressFn  = std::function<void(int, int)>;
+    using NodeBuiltFn      = std::function<void(const std::string&, int, double)>;
+    using BuildFinishedFn  = std::function<void(bool, double)>;
+    using BuildErrorFn     = std::function<void(const std::string&)>;
+    using TaskStartedFn    = std::function<void(const std::string&, int)>;
+    using TaskFinishedFn   = std::function<void(const std::string&, bool, double, const std::string&)>;
+
+    Engine(State& state, int maxJobs, bool dryRun = false);
     ~Engine();
 
-    // Синхронный запуск — блокирует до завершения сборки
-    bool run(const QString& target = QString());
+    void onBuildStarted(BuildStartedFn fn)   { buildStarted_ = std::move(fn); }
+    void onBuildProgress(BuildProgressFn fn) { buildProgress_ = std::move(fn); }
+    void onNodeBuilt(NodeBuiltFn fn)         { nodeBuilt_ = std::move(fn); }
+    void onBuildFinished(BuildFinishedFn fn) { buildFinished_ = std::move(fn); }
+    void onBuildError(BuildErrorFn fn)       { buildError_ = std::move(fn); }
+    void onTaskStarted(TaskStartedFn fn)     { taskStarted_ = std::move(fn); }
+    void onTaskFinished(TaskFinishedFn fn)   { taskFinished_ = std::move(fn); }
+
+    bool run(std::string_view target = {});
 
     void updateFileStates();
     void initializeFileStates();
 
-signals:
-    void buildStarted();
-    void buildProgress(int current, int total);
-    void nodeBuilt(const QString& node, int exitCode, double duration);
-    void buildFinished(bool success, double durationSeconds);
-    void buildError(const QString& error);
-    void taskStarted(const QString& name, int total);
-    void taskFinished(const QString& name, bool success, double duration,
-                      const QString& errorMsg = QString());
-
-    // internal: из воркера -> в main-thread через queued connection
-    void nodeDoneInternal(pmake::core::Node* node, int exitCode, double duration);
-
-private slots:
-    void handleNodeDone(pmake::core::Node* node, int exitCode, double duration);
+    bool wasNoop() const { return totalTasks_ == 0; }
 
 private:
     enum class TaskState { Want, Ready, Running, Done, Failed };
 
     struct SchedTask {
         const Build* build = nullptr;
-        QVector<Node*> nodes;              // все output-nodes этой задачи
-        Node* runnerNode = nullptr;        // node, который вызывает build()
+        std::vector<Node*> nodes;
+        Node* runnerNode = nullptr;
         TaskState state = TaskState::Want;
-        int pendingDeps = 0;               // сколько задач-зависимостей ещё не Done
-        QVector<SchedTask*> dependents;    // кто ждёт эту задачу
-        QString poolName = "default";
-        bool isReal = false;               // false для phony / пустых команд
+        int pendingDeps = 0;
+        std::vector<SchedTask*> dependents;
+        std::string poolName = "default";
+        bool isReal = false;
     };
 
     struct PoolCounter {
@@ -71,43 +68,62 @@ private:
         int active = 0;
     };
 
+    struct Completion {
+        Node* node;
+        int exitCode;
+        double duration;
+    };
+
     State& state_;
     Graph graph_;
-    QThreadPool pool_;
     int maxJobs_;
     bool dryRun_;
-    QElapsedTimer buildTimer_;
-    QTimer* watchdog_ = nullptr;
 
-    // План — всё под planMutex_
-    mutable QMutex planMutex_;
-    QHash<const Build*, SchedTask*> tasks_;
-    QHash<Node*, SchedTask*> nodeToTask_;
-    QQueue<SchedTask*> readyQueue_;
-    QSet<SchedTask*> readySet_;
-    QHash<QString, PoolCounter> poolCounters_;
+    std::chrono::steady_clock::time_point buildStart_;
 
-    int runningTasks_ = 0;    // Running сейчас
-    int pendingTasks_ = 0;    // Want + Ready + Running
-    int totalTasks_ = 0;      // для прогресса
-    int completedTasks_ = 0;  // Done
+    mutable std::mutex planMutex_;
+    std::unordered_map<const Build*, SchedTask*> tasks_;
+    std::unordered_map<Node*, SchedTask*> nodeToTask_;
+    std::queue<SchedTask*> readyQueue_;
+    std::unordered_set<SchedTask*> readySet_;
+    std::unordered_map<std::string, PoolCounter> poolCounters_;
+
+    std::mutex completionMutex_;
+    std::condition_variable completionCv_;
+    std::queue<Completion> completed_;
+
+    std::vector<std::thread> workers_;
+
+    int runningTasks_ = 0;
+    int pendingTasks_ = 0;
+    int totalTasks_ = 0;
+    int completedTasks_ = 0;
     bool aborted_ = false;
     bool finished_ = false;
-    bool graphBuildFailed_ = false;   // ← NEW: граф не построился (unknown rule, cycle)
+    bool success_ = false;
+    bool graphBuildFailed_ = false;
 
-    void runInternal(const QString& target);
-    void buildPlan(const QVector<Node*>& dirtyNodes);
+    BuildStartedFn   buildStarted_;
+    BuildProgressFn  buildProgress_;
+    NodeBuiltFn      nodeBuilt_;
+    BuildFinishedFn  buildFinished_;
+    BuildErrorFn     buildError_;
+    TaskStartedFn    taskStarted_;
+    TaskFinishedFn   taskFinished_;
+
+    void runInternal(const std::string& target);
+    void buildPlan(const std::vector<Node*>& dirtyNodes);
     void pumpReady();
     void startTask(SchedTask* t);
+    void workerRoutine(Node* runner);
+    void handleNodeDone(Node* node, int exitCode, double duration);
     void checkFinished();
-    void abortBuild(const QString& reason);
+    void abortBuild(const std::string& reason);
     void cleanupPlan();
 
-    QVector<Node*> collectDirtyNodes(const QVector<Node*>& order);
+    std::vector<Node*> collectDirtyNodes(const std::vector<Node*>& order);
     bool isRealBuild(const Build* build) const;
-    QString poolNameFor(const Build* b) const;
+    std::string poolNameFor(const Build* b) const;
 };
 
 } // namespace pmake::core
-
-Q_DECLARE_METATYPE(pmake::core::Node*)

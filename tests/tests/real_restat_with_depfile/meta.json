@@ -1,0 +1,36 @@
+{
+  "description": "restat + depfile (cc_make_dep всегда touch — restat не срабатывает, поведение документируем)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    },
+    {
+      "name": "touch_h",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "common.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    }
+  ]
+}

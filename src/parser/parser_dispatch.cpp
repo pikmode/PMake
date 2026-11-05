@@ -1,6 +1,7 @@
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
+
+#include <string>
+#include <string_view>
 
 namespace pmake::parser {
 
@@ -22,7 +23,7 @@ void ParserImpl::parseStatement(int depth) {
         return;
     }
 
-    QString word = str(cur_.strId);
+    std::string_view word = str(cur_.strId);
     auto parent = currentBlock();
 
     if (word == "pmake_required_version") {
@@ -55,8 +56,8 @@ void ParserImpl::parseStatement(int depth) {
         }
         auto node = makeStringLiteral("");
         node->type = AstNode::RETURN;
-        node->children.append(expr);
-        parent->children.append(node);
+        node->children.push_back(expr);
+        parent->children.push_back(node);
         skipNewlinesAndIndents();
         return;
     }
@@ -69,8 +70,8 @@ void ParserImpl::parseStatement(int depth) {
             auto node = makeStringLiteral("");
             node->type = AstNode::ASSIGNMENT;
             node->name = "config";
-            node->children.append(val);
-            parent->children.append(node);
+            node->children.push_back(val);
+            parent->children.push_back(node);
             skipNewlinesAndIndents();
             return;
         } else {
@@ -92,128 +93,35 @@ void ParserImpl::parseStatement(int depth) {
         auto node = makeStringLiteral("");
         node->type = AstNode::ALIAS;
         node->name = "clean";
-        node->children.append(target);
-        parent->children.append(node);
+        node->children.push_back(target);
+        parent->children.push_back(node);
         skipNewlinesAndIndents();
         return;
     }
 
-    if (word == "rule") {
-        advance();
-        parseRule(parent);
-        return;
-    }
-
-    if (word == "build") {
-        advance();
-        parseBuild(parent);
-        return;
-    }
-
-    if (word == "platform") {
-        advance();
-        parsePlatform(parent);
-        return;
-    }
-
-    if (word == "if") {
-        advance();
-        parseIf(parent);
-        return;
-    }
-
-    if (word == "foreach") {
-        advance();
-        parseForeach(parent);
-        return;
-    }
-
-    if (word == "function") {
-        advance();
-        parseFunction(parent);
-        return;
-    }
-
-    if (word == "alias") {
-        advance();
-        parseAlias(parent);
-        return;
-    }
-
-    if (word == "include") {
-        advance();
-        parseInclude(parent);
-        return;
-    }
-
-    if (word == "switch") {
-        advance();
-        parseSwitch(parent);
-        return;
-    }
-
-    if (word == "while") {
-        advance();
-        parseWhile(parent);
-        return;
-    }
-
-    if (word == "break") {
-        parseBreak(parent);
-        return;
-    }
-
-    if (word == "continue") {
-        parseContinue(parent);
-        return;
-    }
-
-    if (word == "import") {
-        advance();
-        parseImport(parent);
-        return;
-    }
-
-    if (word == "namespace") {
-        advance();
-        parseNamespace(parent);
-        return;
-    }
-
-    if (word == "const") {
-        advance();
-        parseConst(parent);
-        return;
-    }
-
-    if (word == "enum") {
-        advance();
-        parseEnum(parent);
-        return;
-    }
-
-    // ---- case / default (внутри switch) ----
-    if (word == "case") {
-        advance();
-        parseCase(parent);
-        return;
-    }
-
-    if (word == "default") {
-        advance();
-        parseDefault(parent);
-        return;
-    }
+    if (word == "rule") { advance(); parseRule(parent); return; }
+    if (word == "build") { advance(); parseBuild(parent); return; }
+    if (word == "platform") { advance(); parsePlatform(parent); return; }
+    if (word == "if") { advance(); parseIf(parent); return; }
+    if (word == "foreach") { advance(); parseForeach(parent); return; }
+    if (word == "function") { advance(); parseFunction(parent); return; }
+    if (word == "alias") { advance(); parseAlias(parent); return; }
+    if (word == "include") { advance(); parseInclude(parent); return; }
+    if (word == "switch") { advance(); parseSwitch(parent); return; }
+    if (word == "while") { advance(); parseWhile(parent); return; }
+    if (word == "break") { parseBreak(parent); return; }
+    if (word == "continue") { parseContinue(parent); return; }
+    if (word == "import") { advance(); parseImport(parent); return; }
+    if (word == "namespace") { advance(); parseNamespace(parent); return; }
+    if (word == "const") { advance(); parseConst(parent); return; }
+    if (word == "enum") { advance(); parseEnum(parent); return; }
+    if (word == "case") { advance(); parseCase(parent); return; }
+    if (word == "default") { advance(); parseDefault(parent); return; }
 
     parseAssignment(parent);
 }
 
 // ---- parseAssignment ----
-// Обрабатывает ДВА случая:
-//   1. assignment:   x = 5      |  x += "flags"
-//   2. top-level call: say(...) |  add_flags("-Wall")
-// Различие: после идентификатора идёт '=' / '+=' (assignment)
-//           или '(' (вызов функции).
 void ParserImpl::parseAssignment(AstNode* parent) {
     if (cur_.type != TOK_IDENT) {
         error("Expected identifier in assignment", true);
@@ -221,24 +129,18 @@ void ParserImpl::parseAssignment(AstNode* parent) {
         return;
     }
 
-    // parseAtom для IDENT:
-    //   - если после ident идёт '(' → вернёт FUNCTION_CALL (уже с аргументами)
-    //   - иначе → вернёт VARIABLE_REF(ident)
     AstNode* left = parseAtom();
     if (!left) {
-        // parseAtom уже залогировал ошибку
         skipNewlinesAndIndents();
         return;
     }
 
-    // Top-level function call: say("hello") — это самостоятельный statement
     if (left->type == AstNode::FUNCTION_CALL) {
-        parent->children.append(left);
+        parent->children.push_back(left);
         skipNewlinesAndIndents();
         return;
     }
 
-    // Иначе должен быть VARIABLE_REF слева от '=' / '+='
     if (left->type != AstNode::VARIABLE_REF) {
         error("Expected identifier in assignment", true);
         delete left;
@@ -247,7 +149,7 @@ void ParserImpl::parseAssignment(AstNode* parent) {
         return;
     }
 
-    QString name = left->name;
+    std::string name = left->name;
     delete left;
 
     bool isAppend = false;
@@ -269,11 +171,11 @@ void ParserImpl::parseAssignment(AstNode* parent) {
     node->type = AstNode::ASSIGNMENT;
     node->name = name;
     node->isAppend = isAppend;
-    node->children.append(valNode);
+    node->children.push_back(valNode);
     node->line = cur_.line;
     node->column = cur_.column;
     skipNewlinesAndIndents();
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseVersionDirective ----
@@ -301,8 +203,8 @@ void ParserImpl::parseVersionDirective() {
     advance();
     double currentVersion = getPmakeVersion();
     if (fileVersion_ > currentVersion) {
-        error(QString("This project requires PMake %1. Current parser supports PMake %2.")
-              .arg(fileVersion_).arg(currentVersion), false);
+        error(std::format("This project requires PMake {}. Current parser supports PMake {}.",
+                          fileVersion_, currentVersion), false);
         return;
     }
     versionDeclared_ = true;

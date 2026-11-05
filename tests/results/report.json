@@ -1,0 +1,739 @@
+{
+  "timestamp": "2026-11-05T18:45:52",
+  "pmake": "E:\\pikmode\\PikMode_Release\\PS_Build\\pmake.exe",
+  "total": 81,
+  "passed": 81,
+  "known_bugs": 0,
+  "regressions": 0,
+  "results": [
+    {
+      "name": "alias_multi",
+      "status": "PASS",
+      "elapsed": 5.031249284744263,
+      "failures": [],
+      "description": "alias с 3 targets (comma-separated)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\alias_multi.log"
+    },
+    {
+      "name": "append_flags",
+      "status": "PASS",
+      "elapsed": 0.21875309944152832,
+      "failures": [],
+      "description": "+= конкатенация через пробел",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\append_flags.log"
+    },
+    {
+      "name": "basic",
+      "status": "PASS",
+      "elapsed": 0.18750452995300293,
+      "failures": [],
+      "description": "Минимум: одно правило, один build, alias",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\basic.log"
+    },
+    {
+      "name": "builtin_glob",
+      "status": "PASS",
+      "elapsed": 0.1718740463256836,
+      "failures": [],
+      "description": "glob() находит файлы",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\builtin_glob.log"
+    },
+    {
+      "name": "cache_delete",
+      "status": "PASS",
+      "elapsed": 1.671884536743164,
+      "failures": [],
+      "description": "Кэш — ускоритель, не источник истины: удаление не форсит rebuild, изменение source — форсит",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\cache_delete.log"
+    },
+    {
+      "name": "clean",
+      "status": "PASS",
+      "elapsed": 0.2187483310699463,
+      "failures": [],
+      "description": "pmake clean удаляет outputs",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\clean.log"
+    },
+    {
+      "name": "command_shell",
+      "status": "PASS",
+      "elapsed": 0.9062533378601074,
+      "failures": [],
+      "description": "shell && через {SHELL_PREFIX} — три echo, все три файла созданы",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\command_shell.log"
+    },
+    {
+      "name": "depfile_basic",
+      "status": "PASS",
+      "elapsed": 0.5000112056732178,
+      "failures": [],
+      "description": "depfile: touch заголовка → пересборка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\depfile_basic.log"
+    },
+    {
+      "name": "depfile_unrelated",
+      "status": "PASS",
+      "elapsed": 0.17187929153442383,
+      "failures": [],
+      "description": "depfile: touch нерелевантного → НЕ пересборка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\depfile_unrelated.log"
+    },
+    {
+      "name": "dry_run",
+      "status": "PASS",
+      "elapsed": 0.2031254768371582,
+      "failures": [],
+      "description": "-n не создаёт файлы",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\dry_run.log"
+    },
+    {
+      "name": "error_bad_syntax",
+      "status": "PASS",
+      "elapsed": 0.03125143051147461,
+      "failures": [],
+      "description": "синтаксическая ошибка → exit 1",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\error_bad_syntax.log"
+    },
+    {
+      "name": "error_cycle",
+      "status": "PASS",
+      "elapsed": 0.0312504768371582,
+      "failures": [],
+      "description": "цикл в графе → ошибка, не зависание",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\error_cycle.log"
+    },
+    {
+      "name": "error_missing_rule",
+      "status": "PASS",
+      "elapsed": 0.03125,
+      "failures": [],
+      "description": "ссылка на несуществующее правило → ошибка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\error_missing_rule.log"
+    },
+    {
+      "name": "foreach",
+      "status": "PASS",
+      "elapsed": 0.5000045299530029,
+      "failures": [],
+      "description": "foreach: 3 build из списка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\foreach.log"
+    },
+    {
+      "name": "function_call",
+      "status": "PASS",
+      "elapsed": 1.140625,
+      "failures": [],
+      "description": "user-function изменяет переменную",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\function_call.log"
+    },
+    {
+      "name": "if_true",
+      "status": "PASS",
+      "elapsed": 0.15625214576721191,
+      "failures": [],
+      "description": "if true → ветка then",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\if_true.log"
+    },
+    {
+      "name": "include_basic",
+      "status": "PASS",
+      "elapsed": 0.2500009536743164,
+      "failures": [],
+      "description": "include простого файла",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\include_basic.log"
+    },
+    {
+      "name": "include_cycle",
+      "status": "PASS",
+      "elapsed": 0.0624995231628418,
+      "failures": [],
+      "description": "include cycle должен вернуть ошибку, не крашить",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\include_cycle.log"
+    },
+    {
+      "name": "include_relative",
+      "status": "PASS",
+      "elapsed": 0.3124995231628418,
+      "failures": [],
+      "description": "include с относительным путём от родителя",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\include_relative.log"
+    },
+    {
+      "name": "incr_chain",
+      "status": "PASS",
+      "elapsed": 0.8593852519989014,
+      "failures": [],
+      "description": "a.in → a.out → b.out → c.out; touch a.in → вся цепочка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\incr_chain.log"
+    },
+    {
+      "name": "incr_delete_output",
+      "status": "PASS",
+      "elapsed": 0.3281278610229492,
+      "failures": [],
+      "description": "Удаление output → пересборка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\incr_delete_output.log"
+    },
+    {
+      "name": "incr_source",
+      "status": "PASS",
+      "elapsed": 0.39063215255737305,
+      "failures": [],
+      "description": "Изменение src.c → out.c пересобирается с новым содержимым",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\incr_source.log"
+    },
+    {
+      "name": "parallel_race",
+      "status": "PASS",
+      "elapsed": 2.3906238079071045,
+      "failures": [],
+      "description": "30 задач параллельно -j 8 — проверка гонок",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\parallel_race.log"
+    },
+    {
+      "name": "parallel_speed",
+      "status": "PASS",
+      "elapsed": 0.8012046813964844,
+      "failures": [],
+      "description": "8 задач × 200ms sleep, -j 8 → ускорение (sanity)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\parallel_speed.log"
+    },
+    {
+      "name": "real_build_file_comment",
+      "status": "PASS",
+      "elapsed": 0.4843871593475342,
+      "failures": [],
+      "description": "комментарий в build.pmake не форсит rebuild (команда не изменилась)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_build_file_comment.log"
+    },
+    {
+      "name": "real_cache_saved_before_build",
+      "status": "PASS",
+      "elapsed": 0.2187514305114746,
+      "failures": [],
+      "description": "fail: кэш до сборки",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_cache_saved_before_build.log"
+    },
+    {
+      "name": "real_cmake_full_pattern",
+      "status": "PASS",
+      "elapsed": 1.438915729522705,
+      "failures": [],
+      "description": "CMake: autogen (order-only) не propagates; main.c → main.o + app",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_cmake_full_pattern.log"
+    },
+    {
+      "name": "real_command_change",
+      "status": "PASS",
+      "elapsed": 0.4062540531158447,
+      "failures": [],
+      "description": "command hash: -O2 → -O3 → rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_command_change.log"
+    },
+    {
+      "name": "real_command_hash_chain_3",
+      "status": "PASS",
+      "elapsed": 0.7031323909759521,
+      "failures": [],
+      "description": "command hash chain: change flag на c → только c rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_command_hash_chain_3.log"
+    },
+    {
+      "name": "real_command_var_change",
+      "status": "PASS",
+      "elapsed": 0.3750030994415283,
+      "failures": [],
+      "description": "command hash: flags -O2 → -O3",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_command_var_change.log"
+    },
+    {
+      "name": "real_depfile_lost",
+      "status": "PASS",
+      "elapsed": 0.39063167572021484,
+      "failures": [],
+      "description": "depfile lost → force rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_depfile_lost.log"
+    },
+    {
+      "name": "real_depfile_persists",
+      "status": "PASS",
+      "elapsed": 0.359377384185791,
+      "failures": [],
+      "description": "depfile persists",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_depfile_persists.log"
+    },
+    {
+      "name": "real_error_recovery",
+      "status": "PASS",
+      "elapsed": 1.0528948307037354,
+      "failures": [],
+      "description": "fail → fix → только b.o + app",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_error_recovery.log"
+    },
+    {
+      "name": "real_generator_mtime",
+      "status": "PASS",
+      "elapsed": 0.5156388282775879,
+      "failures": [],
+      "description": "generator mtime: touch src → gen пересобирается (P0 fix)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_generator_mtime.log"
+    },
+    {
+      "name": "real_generator_skip",
+      "status": "PASS",
+      "elapsed": 0.4062535762786865,
+      "failures": [],
+      "description": "generator: exists → skip; missing → rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_generator_skip.log"
+    },
+    {
+      "name": "real_help",
+      "status": "PASS",
+      "elapsed": 0.01562356948852539,
+      "failures": [],
+      "description": "pmake --help → exit 0 + usage",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_help.log"
+    },
+    {
+      "name": "real_implicit_basic",
+      "status": "PASS",
+      "elapsed": 0.37500953674316406,
+      "failures": [],
+      "description": "implicit: touch hdr → out rebuild (concat = new mtime)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_implicit_basic.log"
+    },
+    {
+      "name": "real_incr_chain_5",
+      "status": "PASS",
+      "elapsed": 1.8281304836273193,
+      "failures": [],
+      "description": "5 уровней",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_chain_5.log"
+    },
+    {
+      "name": "real_incr_cpp_header",
+      "status": "PASS",
+      "elapsed": 1.2812583446502686,
+      "failures": [],
+      "description": "C++: .h → оба .o + app; main.c → main.o + app",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_cpp_header.log"
+    },
+    {
+      "name": "real_incr_deep_10",
+      "status": "PASS",
+      "elapsed": 3.2343807220458984,
+      "failures": [],
+      "description": "10-уровневая цепочка",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_deep_10.log"
+    },
+    {
+      "name": "real_incr_diamond",
+      "status": "PASS",
+      "elapsed": 1.140629768371582,
+      "failures": [],
+      "description": "Diamond граф",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_diamond.log"
+    },
+    {
+      "name": "real_incr_partial_delete",
+      "status": "PASS",
+      "elapsed": 1.4687557220458984,
+      "failures": [],
+      "description": "10 → удалили 3 → только 3 пересобираются",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_partial_delete.log"
+    },
+    {
+      "name": "real_incr_two_branches",
+      "status": "PASS",
+      "elapsed": 1.156261682510376,
+      "failures": [],
+      "description": "Две ветки",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_incr_two_branches.log"
+    },
+    {
+      "name": "real_multi_output",
+      "status": "PASS",
+      "elapsed": 0.46875762939453125,
+      "failures": [],
+      "description": "multi-output: один таск генерит 3 файла — taskCount=1",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_multi_output.log"
+    },
+    {
+      "name": "real_new_target",
+      "status": "PASS",
+      "elapsed": 0.40625548362731934,
+      "failures": [],
+      "description": "добавили build в файл → старые up-to-date, только новый пересобирается",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_new_target.log"
+    },
+    {
+      "name": "real_no_build_file",
+      "status": "PASS",
+      "elapsed": 0.015625953674316406,
+      "failures": [],
+      "description": "нет build.pmake → exit 1 + осмысленный stderr",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_no_build_file.log"
+    },
+    {
+      "name": "real_order_only_and_implicit",
+      "status": "PASS",
+      "elapsed": 0.687509298324585,
+      "failures": [],
+      "description": "implicit + order-only: | propagates, || не propagates",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_and_implicit.log"
+    },
+    {
+      "name": "real_order_only_basic",
+      "status": "PASS",
+      "elapsed": 0.5625083446502686,
+      "failures": [],
+      "description": "order-only: touch stamp.in → stamp rebuild, out skip",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_basic.log"
+    },
+    {
+      "name": "real_order_only_chain",
+      "status": "PASS",
+      "elapsed": 0.8125097751617432,
+      "failures": [],
+      "description": "order-only chain: touch s1 → только s1 rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_chain.log"
+    },
+    {
+      "name": "real_order_only_generator",
+      "status": "PASS",
+      "elapsed": 0.5781335830688477,
+      "failures": [],
+      "description": "order-only + generator: delete stamp → stamp rebuild, out skip",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_generator.log"
+    },
+    {
+      "name": "real_order_only_missing",
+      "status": "PASS",
+      "elapsed": 0.2656230926513672,
+      "failures": [],
+      "description": "missing order-only: leaf игнорируется (ninja = error)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_missing.log"
+    },
+    {
+      "name": "real_order_only_multi",
+      "status": "PASS",
+      "elapsed": 0.9142961502075195,
+      "failures": [],
+      "description": "multi order-only: out || s1 s2 — ждёт обоих",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_multi.log"
+    },
+    {
+      "name": "real_order_only_restat",
+      "status": "PASS",
+      "elapsed": 0.9375100135803223,
+      "failures": [],
+      "description": "order-only + restat: order-only не propagates dirty (taskCount=1)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_restat.log"
+    },
+    {
+      "name": "real_order_only_waits",
+      "status": "PASS",
+      "elapsed": 0.3281242847442627,
+      "failures": [],
+      "description": "order-only: out ждёт stamp (порядок задач)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_order_only_waits.log"
+    },
+    {
+      "name": "real_parallel_correctness",
+      "status": "PASS",
+      "elapsed": 1.4687530994415283,
+      "failures": [],
+      "description": "15 задач -j 8",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_parallel_correctness.log"
+    },
+    {
+      "name": "real_parallel_diamond_j8",
+      "status": "PASS",
+      "elapsed": 0.6093788146972656,
+      "failures": [],
+      "description": "Diamond -j 8",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_parallel_diamond_j8.log"
+    },
+    {
+      "name": "real_parallel_partial_fail",
+      "status": "PASS",
+      "elapsed": 0.796875,
+      "failures": [],
+      "description": "-j 8 fail: dry показывает 1..7 незавершённых",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_parallel_partial_fail.log"
+    },
+    {
+      "name": "real_partial_then_dry_run",
+      "status": "PASS",
+      "elapsed": 0.3125004768371582,
+      "failures": [],
+      "description": "fail: -n показывает b + c",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_partial_then_dry_run.log"
+    },
+    {
+      "name": "real_paths_spaces",
+      "status": "PASS",
+      "elapsed": 0.20312714576721191,
+      "failures": [],
+      "description": "пробелы в именах файлов (Windows cmd-кавычки)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_paths_spaces.log"
+    },
+    {
+      "name": "real_paths_unicode",
+      "status": "PASS",
+      "elapsed": 0.2187495231628418,
+      "failures": [],
+      "description": "Unicode в именах файлов",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_paths_unicode.log"
+    },
+    {
+      "name": "real_phony_order_basic",
+      "status": "PASS",
+      "elapsed": 0.729769229888916,
+      "failures": [],
+      "description": "phony (input-зависимость): порядок через BFS reverse_deps",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_phony_order_basic.log"
+    },
+    {
+      "name": "real_phony_order_cmake",
+      "status": "PASS",
+      "elapsed": 0.7691421508789062,
+      "failures": [],
+      "description": "CMake-паттерн: phony || autogen → out || phony",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_phony_order_cmake.log"
+    },
+    {
+      "name": "real_phony_order_noop",
+      "status": "PASS",
+      "elapsed": 0.5156290531158447,
+      "failures": [],
+      "description": "phony + order-only: noop не ломается, dirty не propagates",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_phony_order_noop.log"
+    },
+    {
+      "name": "real_phony_order_transitive",
+      "status": "PASS",
+      "elapsed": 0.645169734954834,
+      "failures": [],
+      "description": "phony chain (input): out || phony2 → {step2, phony1 → step1}",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_phony_order_transitive.log"
+    },
+    {
+      "name": "real_pool_console_serial",
+      "status": "PASS",
+      "elapsed": 1.6194262504577637,
+      "failures": [],
+      "description": "pool=console сериализует даже при -j8",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_pool_console_serial.log"
+    },
+    {
+      "name": "real_pool_console_with_order",
+      "status": "PASS",
+      "elapsed": 0.9242792129516602,
+      "failures": [],
+      "description": "pool=console + order-only: сериализация сохраняется",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_pool_console_with_order.log"
+    },
+    {
+      "name": "real_restat_chain_3",
+      "status": "PASS",
+      "elapsed": 0.656254768371582,
+      "failures": [],
+      "description": "restat chain 3: touch src → только m1",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_chain_3.log"
+    },
+    {
+      "name": "real_restat_content_change",
+      "status": "PASS",
+      "elapsed": 0.6562573909759521,
+      "failures": [],
+      "description": "restat: контент изменился → оба пересобираются (mtime меняется)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_content_change.log"
+    },
+    {
+      "name": "real_restat_deep_5",
+      "status": "PASS",
+      "elapsed": 1.0156280994415283,
+      "failures": [],
+      "description": "restat chain 5: touch src → только c0 (рекурсивный skip)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_deep_5.log"
+    },
+    {
+      "name": "real_restat_mixed",
+      "status": "PASS",
+      "elapsed": 0.500006914138794,
+      "failures": [],
+      "description": "A(restat) → B(no restat): A skip → B skip по mtime",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_mixed.log"
+    },
+    {
+      "name": "real_restat_multi_output",
+      "status": "PASS",
+      "elapsed": 0.5625083446502686,
+      "failures": [],
+      "description": "restat + multi-output: mtime не изменился → downstream skip",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_multi_output.log"
+    },
+    {
+      "name": "real_restat_no_flag",
+      "status": "PASS",
+      "elapsed": 0.6718802452087402,
+      "failures": [],
+      "description": "restat=false: mtime не изменился, но downstream всё равно rebuild",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_no_flag.log"
+    },
+    {
+      "name": "real_restat_skip",
+      "status": "PASS",
+      "elapsed": 1.5468785762786865,
+      "failures": [],
+      "description": "restat: touch src → final пропускается (copy_preserve не меняет mtime)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_skip.log"
+    },
+    {
+      "name": "real_restat_with_depfile",
+      "status": "PASS",
+      "elapsed": 0.6704230308532715,
+      "failures": [],
+      "description": "restat + depfile (cc_make_dep всегда touch — restat не срабатывает, поведение документируем)",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_restat_with_depfile.log"
+    },
+    {
+      "name": "real_rspfile_basic",
+      "status": "PASS",
+      "elapsed": 0.25000691413879395,
+      "failures": [],
+      "description": "rspfile: пишется перед командой и удаляется после",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_rspfile_basic.log"
+    },
+    {
+      "name": "real_sanity_unknown_target",
+      "status": "PASS",
+      "elapsed": 0.015627622604370117,
+      "failures": [],
+      "description": "pmake nonexistent_target → exit 1",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_sanity_unknown_target.log"
+    },
+    {
+      "name": "real_version",
+      "status": "PASS",
+      "elapsed": 0.015625,
+      "failures": [],
+      "description": "pmake -V → exit 0 + номер версии",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_version.log"
+    },
+    {
+      "name": "real_wide_fanout",
+      "status": "PASS",
+      "elapsed": 4.39063024520874,
+      "failures": [],
+      "description": "1 → 20 fanout",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\real_wide_fanout.log"
+    },
+    {
+      "name": "restat",
+      "status": "PASS",
+      "elapsed": 0.3281264305114746,
+      "failures": [],
+      "description": "restat=true: файл touch'ится, но контент тот же → final не пересобирается",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\restat.log"
+    },
+    {
+      "name": "switch",
+      "status": "PASS",
+      "elapsed": 0.17187714576721191,
+      "failures": [],
+      "description": "switch/case/default из документации",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\switch.log"
+    },
+    {
+      "name": "two_builds",
+      "status": "PASS",
+      "elapsed": 0.2500040531158447,
+      "failures": [],
+      "description": "Два независимых build",
+      "bug": "",
+      "log": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\tests\\results\\two_builds.log"
+    }
+  ]
+}

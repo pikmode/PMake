@@ -1,0 +1,36 @@
+{
+  "description": "pmake clean удаляет outputs",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "build_first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ]
+      }
+    },
+    {
+      "name": "clean_cmd",
+      "args": [
+        "clean",
+        "-f",
+        "build.pmake"
+      ],
+      "expect": {
+        "exit": 0,
+        "filesNot": [
+          "out.txt"
+        ]
+      }
+    }
+  ]
+}

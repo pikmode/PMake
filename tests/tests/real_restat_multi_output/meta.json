@@ -1,0 +1,36 @@
+{
+  "description": "restat + multi-output: mtime не изменился → downstream skip",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    },
+    {
+      "name": "touch_src",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "src.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

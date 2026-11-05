@@ -1,0 +1,8 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule copy   { command = "${python} copy.py ${in} ${out}" }
+rule with_flag { command = "${python} echo_to.py ${out} FLAG_V1" }
+build "a.out" : copy "src.in"
+build "b.out" : copy "a.out"
+build "c.out" : with_flag "b.out"
+alias all : "c.out"

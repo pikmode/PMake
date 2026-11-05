@@ -1,47 +1,84 @@
 #include "parser/parser_impl.h"
 #include "core/builtins.h"
-#include <QRegularExpression>
-#include <QStack>
+
+#include <format>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <print>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace pmake::parser {
 
-static QString getRawString(AstNode* node) {
-    if (!node) return QString();
+static std::string getRawString(AstNode* node) {
+    if (!node) return {};
     switch (node->type) {
         case AstNode::STRING_LITERAL:
-            return node->value.toString();
+            return node->value.to_string();
         case AstNode::VARIABLE_REF:
             return "${" + node->name + "}";
         case AstNode::CONCAT: {
-            QString result;
+            std::string result;
             for (auto child : node->children)
                 result += getRawString(child);
             return result;
         }
         case AstNode::BOOL_LITERAL:
-            return node->value.toBool() ? "true" : "false";
+            return node->value.to_bool() ? "true" : "false";
         case AstNode::NUMBER_LITERAL:
-            return QString::number(node->value.toDouble());
+            return std::format("{}", node->value.as_number());
         case AstNode::NULL_LITERAL:
-            return QString();
+            return {};
         default:
-            return QString();
+            return {};
     }
+}
+
+static std::string expandVariables(std::string_view str,
+                                   const std::function<std::string(std::string_view)>& resolver) {
+    std::string result;
+    result.reserve(str.size());
+    std::size_t i = 0;
+    while (i < str.size()) {
+        if (str[i] == '$' && i + 1 < str.size() && str[i + 1] == '{') {
+            std::size_t end = str.find('}', i + 2);
+            if (end != std::string_view::npos) {
+                std::string_view varName = str.substr(i + 2, end - (i + 2));
+                result += resolver(varName);
+                i = end + 1;
+                continue;
+            }
+        }
+        result.push_back(str[i]);
+        ++i;
+    }
+    return result;
+}
+
+static std::vector<std::string> split_ws(std::string_view s) {
+    std::vector<std::string> out;
+    std::size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) ++i;
+        std::size_t start = i;
+        while (i < s.size() && s[i] != ' ' && s[i] != '\t') ++i;
+        if (i > start) out.emplace_back(s.substr(start, i - start));
+    }
+    return out;
 }
 
 void ParserImpl::evaluateAst(AstNode* root) {
     if (!root) return;
 
-    struct Frame {
-        AstNode* node;
-        int index;
-    };
+    struct Frame { AstNode* node; int index; };
+    std::vector<Frame> stack;
+    stack.push_back({root, 0});
 
-    QStack<Frame> stack;
-    stack.push({root, 0});
-
-    while (!stack.isEmpty()) {
-        Frame& frame = stack.top();
+    while (!stack.empty()) {
+        Frame& frame = stack.back();
         AstNode* node = frame.node;
 
         if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
@@ -59,31 +96,30 @@ void ParserImpl::evaluateAst(AstNode* root) {
 
                 case AstNode::FUNCTION_CALL:
                     evaluateExpression(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
-
                 case AstNode::IF:
                     evaluateIf(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
                 case AstNode::FOREACH:
                     evaluateForeach(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
                 case AstNode::SWITCH:
                     evaluateSwitch(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
                 case AstNode::WHILE:
                     evaluateWhile(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
                 case AstNode::NAMESPACE:
                     evaluateNamespace(node);
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
                 case AstNode::FUNCTION_DEF:
-                    frame.index = node->children.size();
+                    frame.index = static_cast<int>(node->children.size());
                     break;
 
                 case AstNode::ALIAS: evaluateAlias(node); break;
@@ -95,40 +131,34 @@ void ParserImpl::evaluateAst(AstNode* root) {
             }
         }
 
-        if (frame.index < node->children.size()) {
+        if (frame.index < static_cast<int>(node->children.size())) {
             AstNode* child = node->children[frame.index++];
-            if (child) stack.push({child, 0});
+            if (child) stack.push_back({child, 0});
         } else {
-            stack.pop();
+            stack.pop_back();
         }
     }
 }
 
 void ParserImpl::evaluateAssignment(AstNode* assign) {
-    if (assign->children.isEmpty()) return;
-    QString newPart = evaluateExpression(assign->children[0]).toString();
+    if (assign->children.empty()) return;
+    std::string newPart = evaluateExpression(assign->children[0]).to_string();
     if (assign->isAppend) {
-        QString current;
-        if (!scopeStack_.isEmpty()) {
-            auto opt = scopeStack_.top()->get(assign->name);
+        std::string current;
+        if (!scopeStack_.empty()) {
+            auto opt = scopeStack_.back()->get(assign->name);
             if (opt.has_value()) current = *opt;
         }
-        if (current.isEmpty()) {
+        if (current.empty()) {
             auto opt = state_.getGlobal(assign->name);
             if (opt.has_value()) current = *opt;
         }
-        QString result = current.isEmpty() ? newPart : current + " " + newPart;
-        if (!scopeStack_.isEmpty()) {
-            scopeStack_.top()->set(assign->name, result);
-        } else {
-            state_.setGlobal(assign->name, result);
-        }
+        std::string result = current.empty() ? newPart : current + " " + newPart;
+        if (!scopeStack_.empty()) scopeStack_.back()->set(assign->name, result);
+        else                       state_.setGlobal(assign->name, result);
     } else {
-        if (!scopeStack_.isEmpty()) {
-            scopeStack_.top()->set(assign->name, newPart);
-        } else {
-            state_.setGlobal(assign->name, newPart);
-        }
+        if (!scopeStack_.empty()) scopeStack_.back()->set(assign->name, newPart);
+        else                       state_.setGlobal(assign->name, newPart);
     }
 }
 
@@ -138,16 +168,16 @@ void ParserImpl::evaluateRule(AstNode* rule) {
 
     auto evalBool = [this](AstNode* child) -> bool {
         if (!child) return false;
-        QVariant v = evaluateExpression(child);
-        if (v.metaType().id() == QMetaType::Bool) return v.toBool();
-        QString s = getRawString(child);
+        Value v = evaluateExpression(child);
+        if (v.is_bool()) return v.as_bool();
+        std::string s = getRawString(child);
         return (s == "true" || s == "1" || s == "yes" || s == "on");
     };
 
     for (auto child : rule->children) {
         if (child->type != AstNode::ASSIGNMENT) continue;
-        const QString& key = child->name;
-        if (child->children.isEmpty()) continue;
+        const std::string& key = child->name;
+        if (child->children.empty()) continue;
         AstNode* valNode = child->children[0];
 
         if (key == "command")               coreRule.command = getRawString(valNode);
@@ -159,70 +189,61 @@ void ParserImpl::evaluateRule(AstNode* rule) {
         else if (key == "generator")        coreRule.generator = evalBool(valNode);
         else if (key == "restat")           coreRule.restat = evalBool(valNode);
         else if (key == "pool") {
-            QString raw = getRawString(valNode);
-            if (raw.startsWith("${") && raw.endsWith("}"))
-                raw = raw.mid(2, raw.length() - 3);
+            std::string raw = getRawString(valNode);
+            if (raw.size() >= 3 && raw.starts_with("${") && raw.ends_with("}"))
+                raw = raw.substr(2, raw.size() - 3);
             coreRule.pool = (raw == "console" || raw == "1" || raw == "true");
         }
     }
     state_.addRule(coreRule);
 }
 
-// Хелпер: добавить inputs из AST-узла в target-вектор с учётом
-// STRING_LITERAL / VARIABLE_REF / CONCAT. Используется трижды —
-// для inputs, implicit, order_only.
 void ParserImpl::evaluateBuild(AstNode* build) {
     core::Build coreBuild;
 
-    // ---- outputs ----
     if (build->children.size() >= 1) {
         AstNode* outNode = build->children[0];
         if (outNode->type == AstNode::CONCAT) {
             for (auto part : outNode->children) {
-                QString out = evaluateExpression(part).toString();
-                if (!out.isEmpty()) coreBuild.outputs.append(out);
+                std::string out = evaluateExpression(part).to_string();
+                if (!out.empty()) coreBuild.outputs.push_back(std::move(out));
             }
         } else {
-            QString out = evaluateExpression(outNode).toString();
-            if (!out.isEmpty()) coreBuild.outputs.append(out);
+            std::string out = evaluateExpression(outNode).to_string();
+            if (!out.empty()) coreBuild.outputs.push_back(std::move(out));
         }
     }
 
-    // Хелпер: добавить один AST-узел как input(ы) в target.
-    // STRING_LITERAL без ${} — атом (пробелы — часть имени).
-    // STRING_LITERAL с ${} — раскрыть + split.
-    // VARIABLE_REF / CONCAT / FUNCTION_CALL — раскрыть + split.
-    auto addInput = [this](AstNode* part, QVector<QString>& target) {
+    auto addInput = [this](AstNode* part, std::vector<std::string>& target) {
         if (!part) return;
         switch (part->type) {
             case AstNode::STRING_LITERAL: {
-                const QString& raw = part->value.toString();
-                if (raw.contains("${")) {
-                    QString expanded = evaluateExpression(part).toString();
-                    for (const QString& p : expanded.split(' ', Qt::SkipEmptyParts))
-                        if (!p.isEmpty()) target.append(p);
-                } else if (!raw.isEmpty()) {
-                    target.append(raw);
+                const std::string& raw = part->value.to_string();
+                if (raw.find("${") != std::string::npos) {
+                    std::string expanded = evaluateExpression(part).to_string();
+                    for (auto& p : split_ws(expanded))
+                        if (!p.empty()) target.push_back(std::move(p));
+                } else if (!raw.empty()) {
+                    target.push_back(raw);
                 }
                 return;
             }
             case AstNode::VARIABLE_REF: {
-                QString val = evaluateExpression(part).toString();
-                for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
-                    if (!p.isEmpty()) target.append(p);
+                std::string val = evaluateExpression(part).to_string();
+                for (auto& p : split_ws(val))
+                    if (!p.empty()) target.push_back(std::move(p));
                 return;
             }
             default: {
-                QString val = evaluateExpression(part).toString();
-                for (const QString& p : val.split(' ', Qt::SkipEmptyParts))
-                    if (!p.isEmpty()) target.append(p);
+                std::string val = evaluateExpression(part).to_string();
+                for (auto& p : split_ws(val))
+                    if (!p.empty()) target.push_back(std::move(p));
                 return;
             }
         }
     };
 
-    // Хелпер: обработать CONCAT или одиночный узел — добавить в target.
-    auto addInputsFromNode = [&addInput](AstNode* inNode, QVector<QString>& target) {
+    auto addInputsFromNode = [&addInput](AstNode* inNode, std::vector<std::string>& target) {
         if (!inNode) return;
         if (inNode->type == AstNode::CONCAT) {
             for (auto part : inNode->children) addInput(part, target);
@@ -231,25 +252,20 @@ void ParserImpl::evaluateBuild(AstNode* build) {
         }
     };
 
-    // ---- inputs (обычные) ----
     if (build->children.size() >= 2) {
         addInputsFromNode(build->children[1], coreBuild.inputs);
     }
-
-    // ---- implicit inputs (| "hdr.h") ----
     if (build->implicitInputs) {
         addInputsFromNode(build->implicitInputs, coreBuild.implicit);
     }
-
-    // ---- order-only inputs (|| "stamp") ----
     if (build->orderOnlyInputs) {
         addInputsFromNode(build->orderOnlyInputs, coreBuild.order_only);
     }
 
     coreBuild.rule_name = build->name;
-    coreBuild.scope = QSharedPointer<core::Scope>::create();
-    for (auto it = build->vars.begin(); it != build->vars.end(); ++it) {
-        coreBuild.scope->set(it.key(), it.value());
+    coreBuild.scope = std::make_shared<core::Scope>();
+    for (const auto& [k, v] : build->vars) {
+        coreBuild.scope->set(k, v);
     }
     state_.addBuild(coreBuild);
 }
@@ -259,7 +275,7 @@ void ParserImpl::evaluateConfig(AstNode* config) {
     block.name = config->name;
     for (auto child : config->children) {
         if (child->type == AstNode::ASSIGNMENT) {
-            block.vars[child->name] = evaluateExpression(child->children[0]).toString();
+            block.vars[child->name] = evaluateExpression(child->children[0]).to_string();
         }
     }
     state_.addConfig(block);
@@ -270,31 +286,31 @@ void ParserImpl::evaluatePlatform(AstNode* platform) {
     block.name = platform->name;
     for (auto child : platform->children) {
         if (child->type == AstNode::ASSIGNMENT) {
-            block.vars[child->name] = evaluateExpression(child->children[0]).toString();
+            block.vars[child->name] = evaluateExpression(child->children[0]).to_string();
         }
     }
     state_.addPlatform(block);
 }
 
 void ParserImpl::evaluateIf(AstNode* ifNode) {
-    if (ifNode->children.isEmpty()) return;
-    bool condition = evaluateExpression(ifNode->children[0]).toBool();
+    if (ifNode->children.empty()) return;
+    bool condition = evaluateExpression(ifNode->children[0]).to_bool();
     if (condition) {
         if (ifNode->children.size() >= 2) {
             evaluateAst(ifNode->children[1]);
         }
     } else {
-        for (int i = 2; i < ifNode->children.size(); ++i) {
+        for (std::size_t i = 2; i < ifNode->children.size(); ++i) {
             auto child = ifNode->children[i];
             if (child->type == AstNode::ELSEIF) {
                 if (child->children.size() < 2) continue;
-                bool elseIfCond = evaluateExpression(child->children[0]).toBool();
+                bool elseIfCond = evaluateExpression(child->children[0]).to_bool();
                 if (elseIfCond) {
                     evaluateAst(child->children[1]);
                     break;
                 }
             } else if (child->type == AstNode::ELSE) {
-                if (!child->children.isEmpty()) {
+                if (!child->children.empty()) {
                     evaluateAst(child->children[0]);
                 }
                 break;
@@ -304,27 +320,26 @@ void ParserImpl::evaluateIf(AstNode* ifNode) {
 }
 
 void ParserImpl::evaluateForeach(AstNode* foreachNode) {
-    if (foreachNode->children.isEmpty()) return;
-    QVariant listVal = evaluateExpression(foreachNode->children[0]);
-    QVariantList list;
-    if (listVal.metaType().id() == QMetaType::QVariantList) {
-        list = listVal.toList();
+    if (foreachNode->children.empty()) return;
+    Value listVal = evaluateExpression(foreachNode->children[0]);
+    std::vector<std::string> items;
+    if (listVal.is_list()) {
+        for (const auto& v : *listVal.as_list()) {
+            items.push_back(v.to_string());
+        }
     } else {
-        QStringList parts = listVal.toString().split(' ', Qt::SkipEmptyParts);
-        for (const QString& p : parts) list.append(p);
+        items = split_ws(listVal.to_string());
     }
-    if (list.size() > MAX_FOREACH_ITERATIONS) {
-        error(QString("Foreach list size %1 exceeds max %2").arg(list.size()).arg(MAX_FOREACH_ITERATIONS), true);
+    if (static_cast<int>(items.size()) > MAX_FOREACH_ITERATIONS) {
+        error(std::format("Foreach list size {} exceeds max {}",
+                          items.size(), MAX_FOREACH_ITERATIONS), true);
         return;
     }
     int iteration = 0;
-    for (const QVariant& item : list) {
+    for (const auto& item : items) {
         if (++iteration > MAX_FOREACH_ITERATIONS) break;
-        if (!scopeStack_.isEmpty()) {
-            scopeStack_.top()->set(foreachNode->name, item.toString());
-        } else {
-            state_.setGlobal(foreachNode->name, item.toString());
-        }
+        if (!scopeStack_.empty()) scopeStack_.back()->set(foreachNode->name, item);
+        else                       state_.setGlobal(foreachNode->name, item);
         if (foreachNode->children.size() >= 2) {
             evaluateAst(foreachNode->children[1]);
         }
@@ -338,33 +353,33 @@ void ParserImpl::evaluateAlias(AstNode* alias) {
     for (auto child : alias->children) {
         if (child->type == AstNode::CONCAT) {
             for (auto part : child->children) {
-                QString target = evaluateExpression(part).toString();
-                if (!target.isEmpty()) build.inputs.append(target);
-                else LOG_WARN(QString("Empty target in alias '%1'").arg(alias->name));
+                std::string target = evaluateExpression(part).to_string();
+                if (!target.empty()) build.inputs.push_back(std::move(target));
+                else                 std::println(std::cerr, "Empty target in alias '{}'", alias->name);
             }
         } else {
-            QString target = evaluateExpression(child).toString();
-            if (!target.isEmpty()) build.inputs.append(target);
-            else LOG_WARN(QString("Empty target in alias '%1'").arg(alias->name));
+            std::string target = evaluateExpression(child).to_string();
+            if (!target.empty()) build.inputs.push_back(std::move(target));
+            else                 std::println(std::cerr, "Empty target in alias '{}'", alias->name);
         }
     }
     state_.addBuild(build);
 }
 
-void ParserImpl::evaluateInclude(AstNode* include) { Q_UNUSED(include); }
+void ParserImpl::evaluateInclude(AstNode* include) { (void)include; }
 
 void ParserImpl::evaluateSwitch(AstNode* switchNode) {
     if (switchNode->children.size() < 2) return;
-    QVariant value = evaluateExpression(switchNode->children[0]);
+    Value value = evaluateExpression(switchNode->children[0]);
     AstNode* casesBlock = switchNode->children[1];
     if (!casesBlock) return;
 
     bool matched = false;
     for (AstNode* child : casesBlock->children) {
         if (child->type == AstNode::CASE) {
-            if (child->children.isEmpty()) continue;
-            QVariant caseValue = evaluateExpression(child->children[0]);
-            if (caseValue.toString() == value.toString()) {
+            if (child->children.empty()) continue;
+            Value caseValue = evaluateExpression(child->children[0]);
+            if (caseValue.to_string() == value.to_string()) {
                 if (child->children.size() >= 2) {
                     evaluateAst(child->children[1]);
                 }
@@ -373,7 +388,7 @@ void ParserImpl::evaluateSwitch(AstNode* switchNode) {
             }
         } else if (child->type == AstNode::DEFAULT) {
             if (!matched) {
-                if (!child->children.isEmpty()) {
+                if (!child->children.empty()) {
                     evaluateAst(child->children[0]);
                 }
                 break;
@@ -387,7 +402,7 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
     AstNode* condition = whileNode->children[0];
     AstNode* body = whileNode->children[1];
     int iteration = 0;
-    while (evaluateExpression(condition).toBool()) {
+    while (evaluateExpression(condition).to_bool()) {
         if (++iteration > 1000) {
             error("While loop exceeded 1000 iterations", true);
             break;
@@ -396,169 +411,162 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
     }
 }
 
-void ParserImpl::evaluateImport(AstNode* importNode) { Q_UNUSED(importNode); }
+void ParserImpl::evaluateImport(AstNode* importNode) { (void)importNode; }
 
 void ParserImpl::evaluateNamespace(AstNode* namespaceNode) {
-    if (namespaceNode->children.isEmpty()) return;
+    if (namespaceNode->children.empty()) return;
     core::Scope scope;
-    scopeStack_.push(&scope);
+    scopeStack_.push_back(&scope);
     evaluateAst(namespaceNode->children[0]);
-    scopeStack_.pop();
+    scopeStack_.pop_back();
 }
 
 void ParserImpl::evaluateConst(AstNode* constNode) {
-    if (constNode->children.isEmpty()) return;
-    QString value = evaluateExpression(constNode->children[0]).toString();
+    if (constNode->children.empty()) return;
+    std::string value = evaluateExpression(constNode->children[0]).to_string();
     state_.setGlobal(constNode->name, value);
 }
 
 void ParserImpl::evaluateEnum(AstNode* enumNode) {
-    QStringList values;
+    std::string values;
     for (auto child : enumNode->children) {
-        values.append(child->value.toString());
+        if (!values.empty()) values += ',';
+        values += child->value.to_string();
     }
-    state_.setGlobal(enumNode->name, values.join(','));
+    state_.setGlobal(enumNode->name, values);
 }
 
-QString ParserImpl::resolveVariable(const QString& name, QSet<QString>& visiting) {
-    if (visiting.contains(name)) {
-        error(QString("Circular variable reference detected: %1").arg(name), true);
-        return QString();
+std::string ParserImpl::resolveVariable(std::string_view name,
+                                        std::unordered_set<std::string>& visiting) {
+    std::string nameStr(name);
+    if (visiting.contains(nameStr)) {
+        error(std::format("Circular variable reference detected: {}", name), true);
+        return {};
     }
-    visiting.insert(name);
-    QString value;
-    if (!scopeStack_.isEmpty()) {
-        auto opt = scopeStack_.top()->get(name);
+    visiting.insert(nameStr);
+    std::string value;
+    if (!scopeStack_.empty()) {
+        auto opt = scopeStack_.back()->get(nameStr);
         if (opt.has_value()) value = *opt;
     }
-    if (value.isEmpty()) {
-        auto opt = state_.getGlobal(name);
+    if (value.empty()) {
+        auto opt = state_.getGlobal(nameStr);
         if (opt.has_value()) value = *opt;
     }
-    visiting.remove(name);
+    visiting.erase(nameStr);
     return value;
 }
 
-QVariant ParserImpl::evaluateExpression(AstNode* expr) {
-    if (!expr) return QVariant();
+Value ParserImpl::evaluateExpression(AstNode* expr) {
+    if (!expr) return Value();
     switch (expr->type) {
         case AstNode::STRING_LITERAL: {
-            QString str = expr->value.toString();
-            QRegularExpression re("\\$\\{([^}]+)\\}");
-            QRegularExpressionMatchIterator it = re.globalMatch(str);
-            int offset = 0;
-            QString result;
-            while (it.hasNext()) {
-                auto match = it.next();
-                result += str.mid(offset, match.capturedStart() - offset);
-                QString varName = match.captured(1);
-                QSet<QString> visiting;
-                QString val = resolveVariable(varName, visiting);
-                result += val;
-                offset = match.capturedEnd();
-            }
-            result += str.mid(offset);
-            return result;
+            std::string str = expr->value.to_string();
+            return Value(expandVariables(str, [this](std::string_view varName) -> std::string {
+                std::unordered_set<std::string> visiting;
+                return resolveVariable(varName, visiting);
+            }));
         }
         case AstNode::NUMBER_LITERAL:
-            return expr->value.toDouble();
+            return Value(expr->value.as_number());
         case AstNode::BOOL_LITERAL:
-            return expr->value.toBool();
+            return Value(expr->value.to_bool());
         case AstNode::NULL_LITERAL:
-            return QVariant();
+            return Value();
         case AstNode::VARIABLE_REF: {
-            QSet<QString> visiting;
-            return resolveVariable(expr->name, visiting);
+            std::unordered_set<std::string> visiting;
+            return Value(resolveVariable(expr->name, visiting));
         }
         case AstNode::FUNCTION_CALL: {
-            QVector<QVariant> args;
+            std::vector<Value> args;
             args.reserve(expr->children.size());
             for (auto arg : expr->children) {
-                args.append(evaluateExpression(arg));
+                args.push_back(evaluateExpression(arg));
             }
             return callBuiltin(expr->name, args);
         }
         case AstNode::CONCAT: {
-            QString result;
+            std::string result;
             for (auto child : expr->children) {
-                result += evaluateExpression(child).toString();
+                result += evaluateExpression(child).to_string();
             }
-            return result;
+            return Value(std::move(result));
         }
         case AstNode::BINARY_OP: {
-            QVariant left = evaluateExpression(expr->left);
-            QVariant right = evaluateExpression(expr->right);
-            bool leftOk, rightOk;
-            int leftNum = left.toInt(&leftOk);
-            int rightNum = right.toInt(&rightOk);
-            if (leftOk && rightOk) {
+            Value left = evaluateExpression(expr->left);
+            Value right = evaluateExpression(expr->right);
+            if (left.is_number() && right.is_number()) {
+                double l = left.as_number();
+                double r = right.as_number();
                 switch (expr->op) {
-                    case TOK_PLUS:  return QVariant(leftNum + rightNum);
-                    case TOK_MINUS: return QVariant(leftNum - rightNum);
-                    case TOK_STAR:  return QVariant(leftNum * rightNum);
-                    case TOK_SLASH: return QVariant(rightNum != 0 ? leftNum / rightNum : 0);
-                    case TOK_EQ:    return QVariant(leftNum == rightNum);
-                    case TOK_NEQ:   return QVariant(leftNum != rightNum);
-                    case TOK_LT:    return QVariant(leftNum < rightNum);
-                    case TOK_GT:    return QVariant(leftNum > rightNum);
-                    case TOK_LE:    return QVariant(leftNum <= rightNum);
-                    case TOK_GE:    return QVariant(leftNum >= rightNum);
+                    case TOK_PLUS:  return Value(l + r);
+                    case TOK_MINUS: return Value(l - r);
+                    case TOK_STAR:  return Value(l * r);
+                    case TOK_SLASH: return Value(r != 0.0 ? l / r : 0.0);
+                    case TOK_EQ:    return Value(l == r);
+                    case TOK_NEQ:   return Value(l != r);
+                    case TOK_LT:    return Value(l < r);
+                    case TOK_GT:    return Value(l > r);
+                    case TOK_LE:    return Value(l <= r);
+                    case TOK_GE:    return Value(l >= r);
                     default: break;
                 }
             } else {
-                QString leftStr = left.toString();
-                QString rightStr = right.toString();
+                std::string l = left.to_string();
+                std::string r = right.to_string();
                 switch (expr->op) {
-                    case TOK_PLUS:  return QVariant(leftStr + rightStr);
-                    case TOK_EQ:    return QVariant(leftStr == rightStr);
-                    case TOK_NEQ:   return QVariant(leftStr != rightStr);
-                    case TOK_LT:    return QVariant(leftStr < rightStr);
-                    case TOK_GT:    return QVariant(leftStr > rightStr);
-                    case TOK_LE:    return QVariant(leftStr <= rightStr);
-                    case TOK_GE:    return QVariant(leftStr >= rightStr);
-                    case TOK_AND:   return QVariant(left.toBool() && right.toBool());
-                    case TOK_OR:    return QVariant(left.toBool() || right.toBool());
+                    case TOK_PLUS:  return Value(l + r);
+                    case TOK_EQ:    return Value(l == r);
+                    case TOK_NEQ:   return Value(l != r);
+                    case TOK_LT:    return Value(l < r);
+                    case TOK_GT:    return Value(l > r);
+                    case TOK_LE:    return Value(l <= r);
+                    case TOK_GE:    return Value(l >= r);
+                    case TOK_AND:   return Value(left.to_bool() && right.to_bool());
+                    case TOK_OR:    return Value(left.to_bool() || right.to_bool());
                     default: break;
                 }
             }
-            return QVariant();
+            return Value();
         }
         case AstNode::UNARY_OP: {
-            QVariant operand = evaluateExpression(expr->left);
-            if (expr->op == TOK_NOT)
-                return QVariant(!operand.toBool());
-            else if (expr->op == TOK_MINUS) {
-                bool ok;
-                int num = operand.toInt(&ok);
-                if (ok) return QVariant(-num);
-                return QVariant();
+            Value operand = evaluateExpression(expr->left);
+            if (expr->op == TOK_NOT) return Value(!operand.to_bool());
+            if (expr->op == TOK_MINUS) {
+                if (operand.is_number()) return Value(-operand.as_number());
+                return Value();
             }
             return operand;
         }
         case AstNode::LIST: {
-            QVariantList list;
+            ValueList list;
             for (auto child : expr->children) {
-                list.append(evaluateExpression(child));
+                list.push_back(evaluateExpression(child));
             }
-            return QVariant(list);
+            return Value(std::move(list));
         }
         default:
-            return QVariant();
+            return Value();
     }
 }
 
-QVariant ParserImpl::callBuiltin(const QString& name, const QVector<QVariant>& args) {
-    if (state_.getFunction(name)) {
+Value ParserImpl::callBuiltin(std::string_view name, const std::vector<Value>& args) {
+    std::string nameStr(name);
+    if (state_.getFunction(nameStr)) {
         if (++ParserImpl::functionCallDepth > 100) {
             error("Function call depth exceeds 100", true);
             --ParserImpl::functionCallDepth;
-            return QVariant();
+            return Value();
         }
-        auto result = state_.callUserFunction(name, args, scopeStack_.isEmpty() ? nullptr : scopeStack_.top());
+        Value result = state_.callUserFunction(
+            nameStr, args,
+            scopeStack_.empty() ? nullptr : scopeStack_.back());
         --ParserImpl::functionCallDepth;
         return result;
     }
-    return core::Builtins::call(name, args, &state_, scopeStack_.isEmpty() ? nullptr : scopeStack_.top());
+    return core::Builtins::call(
+        nameStr, args, &state_,
+        scopeStack_.empty() ? nullptr : scopeStack_.back());
 }
 
 } // namespace pmake::parser

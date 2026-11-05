@@ -1,0 +1,3 @@
+pmake_required_version = 1.0
+build "out.txt" :       # забыли имя правила
+alias all : "out.txt"

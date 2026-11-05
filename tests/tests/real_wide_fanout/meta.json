@@ -1,0 +1,36 @@
+{
+  "description": "1 → 20 fanout",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 20
+      }
+    },
+    {
+      "name": "touch_src",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "src.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 20
+      }
+    }
+  ]
+}

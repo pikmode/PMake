@@ -1,0 +1,24 @@
+{
+  "description": "pmake --help → exit 0 + usage",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "help",
+      "args": [
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutMatches": [
+          "(?i)usage|option"
+        ]
+      }
+    }
+  ]
+}

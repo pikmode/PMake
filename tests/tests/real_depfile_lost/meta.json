@@ -1,0 +1,42 @@
+{
+  "description": "depfile lost → force rebuild",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "lost_d_touch_h",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "delete": [
+            "Project-cache.pmake",
+            "main.o.d"
+          ]
+        },
+        {
+          "touch": [
+            "common.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

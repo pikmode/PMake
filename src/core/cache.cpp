@@ -1,293 +1,407 @@
 #include "core/cache.h"
-#include "util/filesystem.h"
-#include "util/logging.h"
 #include "deps/deps_log.h"
-#include <QFile>
-#include <QDataStream>
-#include <QFileInfo>
-#include <QDir>
+
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <print>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pmake::core {
 
+namespace {
+constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
+constexpr std::uint32_t kVersion = 7u;
+} // namespace
+
 Cache::Cache() = default;
 
-void Cache::store(const State& state, const QString& /*mainFile*/) {
-    data_.version = 6;
+// ============================================================
+// store
+// ============================================================
+void Cache::store(const State& state, std::string_view /*mainFile*/) {
+    data_.version = kVersion;
 
     data_.globalVars = state.globals();
-    data_.rules = state.rules().values();
+    data_.rules.clear();
+    data_.rules.reserve(state.rules().size());
+    for (const auto& [name, rule] : state.rules()) data_.rules.push_back(rule);
+
     data_.builds = state.builds();
     data_.pools = state.pools();
     data_.defaultTargets = state.defaultTargets();
     data_.includedFilesList = state.includedFiles();
 
     data_.buildLocalVars.clear();
+    data_.buildLocalVars.reserve(state.builds().size());
     for (const Build& build : state.builds()) {
-        QHash<QString, QString> locals;
+        std::unordered_map<std::string, std::string> locals;
         if (build.scope) locals = build.scope->locals();
-        data_.buildLocalVars.append(locals);
+        data_.buildLocalVars.push_back(std::move(locals));
     }
 
     data_.fileStates = state.fileStates();
-    data_.commandHashes = state.commandHashes();   // NEW
+    data_.commandHashes = state.commandHashes();
 }
 
-bool Cache::save(const QString& path) const {
-    QFile file(path);
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    if (!file.open(QIODevice::WriteOnly)) {
-        LOG_ERROR("Cannot open cache file for writing: " + path);
+// ============================================================
+// save / load
+// ============================================================
+bool Cache::save(std::string_view path) const {
+    std::filesystem::path p{std::string(path)};
+    std::error_code ec;
+    if (p.has_parent_path()) {
+        std::filesystem::create_directories(p.parent_path(), ec);
+    }
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    if (!f) {
+        std::println(std::cerr, "Cannot open cache file for writing: {}", path);
         return false;
     }
-    QDataStream out(&file);
-    out.setVersion(QDataStream::Qt_6_0);
-    serialize(out);
-    if (out.status() != QDataStream::Ok) {
-        LOG_ERROR("Cache write failed");
+    if (!write(f)) {
+        std::println(std::cerr, "Cache write failed");
         return false;
     }
     return true;
 }
 
-void Cache::serialize(QDataStream& out) const {
-    out << quint32(0x504D4B45); // "PMKE"
-    out << quint32(data_.version);
-
-    // --- global vars ---
-    out << quint32(data_.globalVars.size());
-    for (auto it = data_.globalVars.begin(); it != data_.globalVars.end(); ++it) {
-        out << it.key() << it.value();
-    }
-
-    // --- rules ---
-    out << quint32(data_.rules.size());
-    for (const Rule& rule : data_.rules) {
-        out << rule.name << rule.command << rule.depfile << rule.deps
-            << rule.generator << rule.restat << rule.rspfile << rule.rspfile_content
-            << rule.pool << rule.description;
-    }
-
-    // --- builds ---
-    out << quint32(data_.builds.size());
-    for (int i = 0; i < data_.builds.size(); ++i) {
-        const Build& build = data_.builds[i];
-        out << build.outputs << build.inputs << build.implicit << build.order_only
-            << build.rule_name;
-        const QHash<QString, QString>& locals = data_.buildLocalVars[i];
-        out << quint32(locals.size());
-        for (auto it = locals.begin(); it != locals.end(); ++it) {
-            out << it.key() << it.value();
-        }
-    }
-
-    // --- pools ---
-    out << quint32(data_.pools.size());
-    for (auto it = data_.pools.begin(); it != data_.pools.end(); ++it) {
-        out << it.key() << it.value().depth;
-    }
-
-    // --- default targets ---
-    out << data_.defaultTargets;
-
-    // --- included files list ---
-    out << data_.includedFilesList;
-
-    // --- file states ---
-    out << quint32(data_.fileStates.size());
-    for (auto it = data_.fileStates.begin(); it != data_.fileStates.end(); ++it) {
-        out << it.key() << it.value().mtime << it.value().size << it.value().hash;
-    }
-
-    // --- command hashes (NEW) ---
-    out << quint32(data_.commandHashes.size());
-    for (auto it = data_.commandHashes.begin(); it != data_.commandHashes.end(); ++it) {
-        out << it.key() << it.value();
-    }
-
-    // --- DepsLog (из singleton) ---
-    const auto& entries = deps::DepsLog::instance().entries();
-    out << quint32(entries.size());
-    for (auto it = entries.begin(); it != entries.end(); ++it) {
-        const deps::DepsEntry& entry = it.value();
-        out << entry.output;
-        out << quint32(entry.inputs.size());
-        for (const QString& in : entry.inputs) {
-            out << in;
-        }
-        out << entry.mtime;
-    }
-}
-
-bool Cache::load(const QString& path) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return false;
-    QDataStream in(&file);
-    in.setVersion(QDataStream::Qt_6_0);
-    quint32 magic;
-    in >> magic;
-    if (magic != 0x504D4B45) return false;
-
-    deserialize(in);
-
-    if (data_.version != 6) {
-        LOG_WARN("Cache version mismatch, ignoring");
+bool Cache::load(std::string_view path) {
+    std::ifstream f(std::filesystem::path(std::string(path)), std::ios::binary);
+    if (!f) return false;
+    if (!read(f)) {
         loaded_ = false;
         return false;
     }
-    if (in.status() != QDataStream::Ok) {
-        LOG_WARN("Cache read error, ignoring");
-        loaded_ = false;
-        return false;
-    }
-
     loaded_ = true;
     return true;
 }
 
-void Cache::deserialize(QDataStream& in) {
-    quint32 version;
-    in >> version;
+// ============================================================
+// write
+// ============================================================
+bool Cache::write(std::ostream& out) const {
+    write_u32(out, kMagic);
+    write_u32(out, kVersion);
+
+    // global vars
+    write_u32(out, static_cast<std::uint32_t>(data_.globalVars.size()));
+    for (const auto& [k, v] : data_.globalVars) {
+        write_str(out, k);
+        write_str(out, v);
+    }
+
+    // rules
+    write_u32(out, static_cast<std::uint32_t>(data_.rules.size()));
+    for (const Rule& r : data_.rules) {
+        write_str(out, r.name);
+        write_str(out, r.command);
+        write_str(out, r.description);
+        write_str(out, r.depfile);
+        write_str(out, r.deps);
+        write_str(out, r.rspfile);
+        write_str(out, r.rspfile_content);
+        write_u8(out, r.generator ? 1 : 0);
+        write_u8(out, r.restat ? 1 : 0);
+        write_u8(out, r.pool ? 1 : 0);
+    }
+
+    // builds + locals
+    write_u32(out, static_cast<std::uint32_t>(data_.builds.size()));
+    for (std::size_t i = 0; i < data_.builds.size(); ++i) {
+        const Build& b = data_.builds[i];
+        write_strs(out, b.outputs);
+        write_strs(out, b.inputs);
+        write_strs(out, b.implicit);
+        write_strs(out, b.order_only);
+        write_str(out, b.rule_name);
+
+        const auto& locals = data_.buildLocalVars[i];
+        write_u32(out, static_cast<std::uint32_t>(locals.size()));
+        for (const auto& [k, v] : locals) {
+            write_str(out, k);
+            write_str(out, v);
+        }
+    }
+
+    // pools
+    write_u32(out, static_cast<std::uint32_t>(data_.pools.size()));
+    for (const auto& [name, pool] : data_.pools) {
+        write_str(out, name);
+        write_u32(out, static_cast<std::uint32_t>(pool.depth));
+    }
+
+    // default targets + included files
+    write_strs(out, data_.defaultTargets);
+    write_strs(out, data_.includedFilesList);
+
+    // file states
+    write_u32(out, static_cast<std::uint32_t>(data_.fileStates.size()));
+    for (const auto& [path, fs] : data_.fileStates) {
+        write_str(out, path);
+        write_i64(out, fs.mtime);
+        write_i64(out, fs.size);
+        write_str(out, fs.hash);
+    }
+
+    // command hashes
+    write_u32(out, static_cast<std::uint32_t>(data_.commandHashes.size()));
+    for (const auto& [output, hash] : data_.commandHashes) {
+        write_str(out, output);
+        write_str(out, hash);
+    }
+
+    // DepsLog (singleton)
+    const auto& depsEntries = deps::DepsLog::instance().entries();
+    write_u32(out, static_cast<std::uint32_t>(depsEntries.size()));
+    for (const auto& [key, entry] : depsEntries) {
+        write_str(out, entry.output);
+        write_u32(out, static_cast<std::uint32_t>(entry.inputs.size()));
+        for (const auto& in : entry.inputs) {
+            write_str(out, in);
+        }
+        write_i64(out, entry.mtime);
+    }
+
+    return out.good();
+}
+
+// ============================================================
+// read
+// ============================================================
+bool Cache::read(std::istream& in) {
+    std::uint32_t magic = 0, version = 0;
+    if (!read_u32(in, magic) || magic != kMagic) {
+        std::println(std::cerr, "Cache: bad magic");
+        return false;
+    }
+    if (!read_u32(in, version)) return false;
     data_.version = version;
-    if (version != 6) {
-        LOG_WARN(QString("Unsupported cache version %1, ignoring").arg(version));
-        return;
+    if (version != kVersion) {
+        std::println(std::cerr, "Cache version mismatch ({} != {}), ignoring",
+                     version, kVersion);
+        return false;
     }
 
-    quint32 count;
+    std::uint32_t count = 0;
 
-    in >> count;
+    // global vars
+    if (!read_u32(in, count)) return false;
     data_.globalVars.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        QString key, val;
-        in >> key >> val;
-        data_.globalVars[key] = val;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::string k, v;
+        if (!read_str(in, k) || !read_str(in, v)) return false;
+        data_.globalVars[k] = v;
     }
 
-    in >> count;
+    // rules
+    if (!read_u32(in, count)) return false;
     data_.rules.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        Rule rule;
-        in >> rule.name >> rule.command >> rule.depfile >> rule.deps
-           >> rule.generator >> rule.restat >> rule.rspfile >> rule.rspfile_content
-           >> rule.pool >> rule.description;
-        data_.rules.append(rule);
+    data_.rules.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        Rule r;
+        std::uint8_t gen = 0, restat = 0, pool = 0;
+        if (!read_str(in, r.name)) return false;
+        if (!read_str(in, r.command)) return false;
+        if (!read_str(in, r.description)) return false;
+        if (!read_str(in, r.depfile)) return false;
+        if (!read_str(in, r.deps)) return false;
+        if (!read_str(in, r.rspfile)) return false;
+        if (!read_str(in, r.rspfile_content)) return false;
+        if (!read_u8(in, gen) || !read_u8(in, restat) || !read_u8(in, pool)) return false;
+        r.generator = (gen != 0);
+        r.restat    = (restat != 0);
+        r.pool      = (pool != 0);
+        data_.rules.push_back(std::move(r));
     }
 
-    in >> count;
+    // builds + locals
+    if (!read_u32(in, count)) return false;
     data_.builds.clear();
     data_.buildLocalVars.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        Build build;
-        in >> build.outputs >> build.inputs >> build.implicit >> build.order_only
-           >> build.rule_name;
-        quint32 localCount;
-        in >> localCount;
-        QHash<QString, QString> locals;
-        for (quint32 j = 0; j < localCount; ++j) {
-            QString key, val;
-            in >> key >> val;
-            locals[key] = val;
+    data_.builds.reserve(count);
+    data_.buildLocalVars.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        Build b;
+        if (!read_strs(in, b.outputs)) return false;
+        if (!read_strs(in, b.inputs)) return false;
+        if (!read_strs(in, b.implicit)) return false;
+        if (!read_strs(in, b.order_only)) return false;
+        if (!read_str(in, b.rule_name)) return false;
+
+        std::uint32_t localCount = 0;
+        if (!read_u32(in, localCount)) return false;
+        std::unordered_map<std::string, std::string> locals;
+        for (std::uint32_t j = 0; j < localCount; ++j) {
+            std::string k, v;
+            if (!read_str(in, k) || !read_str(in, v)) return false;
+            locals[k] = v;
         }
-        data_.builds.append(build);
-        data_.buildLocalVars.append(locals);
+        data_.builds.push_back(std::move(b));
+        data_.buildLocalVars.push_back(std::move(locals));
     }
 
-    in >> count;
+    // pools
+    if (!read_u32(in, count)) return false;
     data_.pools.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        QString name; int depth;
-        in >> name >> depth;
-        Pool pool; pool.name = name; pool.depth = depth;
-        data_.pools[name] = pool;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::string name;
+        std::uint32_t depth = 0;
+        if (!read_str(in, name)) return false;
+        if (!read_u32(in, depth)) return false;
+        data_.pools[name] = Pool{name, static_cast<int>(depth)};
     }
 
-    in >> data_.defaultTargets;
-    in >> data_.includedFilesList;
+    // default targets + included files
+    if (!read_strs(in, data_.defaultTargets)) return false;
+    if (!read_strs(in, data_.includedFilesList)) return false;
 
-    in >> count;
+    // file states
+    if (!read_u32(in, count)) return false;
     data_.fileStates.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        QString path;
-        qint64 mtime, size;
-        QString hash;
-        in >> path >> mtime >> size >> hash;
-        FileState fs; fs.mtime = mtime; fs.size = size; fs.hash = hash;
-        data_.fileStates[path] = fs;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::string path;
+        std::int64_t mtime = -1, size = 0;
+        std::string hash;
+        if (!read_str(in, path)) return false;
+        if (!read_i64(in, mtime)) return false;
+        if (!read_i64(in, size)) return false;
+        if (!read_str(in, hash)) return false;
+        FileState fs;
+        fs.mtime = mtime;
+        fs.size = size;
+        fs.hash = std::move(hash);
+        data_.fileStates[path] = std::move(fs);
     }
 
-    // --- command hashes (NEW) ---
-    in >> count;
+    // command hashes
+    if (!read_u32(in, count)) return false;
     data_.commandHashes.clear();
-    for (quint32 i = 0; i < count; ++i) {
-        QString output, hash;
-        in >> output >> hash;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::string output, hash;
+        if (!read_str(in, output) || !read_str(in, hash)) return false;
         data_.commandHashes[output] = hash;
     }
 
-    // --- DepsLog (singleton) ---
-    quint32 depsCount;
-    in >> depsCount;
-    deps::DepsLog& depsLog = deps::DepsLog::instance();
+    // DepsLog (singleton)
+    std::uint32_t depsCount = 0;
+    if (!read_u32(in, depsCount)) return false;
+    auto& depsLog = deps::DepsLog::instance();
     depsLog.clear();
-    auto& entries = depsLog.entries();
-    for (quint32 i = 0; i < depsCount; ++i) {
+    auto& depsMap = depsLog.entries();
+    for (std::uint32_t i = 0; i < depsCount; ++i) {
         deps::DepsEntry entry;
-        in >> entry.output;
-        quint32 inputCount;
-        in >> inputCount;
+        if (!read_str(in, entry.output)) return false;
+        std::uint32_t inputCount = 0;
+        if (!read_u32(in, inputCount)) return false;
         entry.inputs.clear();
         entry.inputs.reserve(inputCount);
-        for (quint32 j = 0; j < inputCount; ++j) {
-            QString input;
-            in >> input;
-            entry.inputs.append(input);
+        for (std::uint32_t j = 0; j < inputCount; ++j) {
+            std::string depPath;
+            if (!read_str(in, depPath)) return false;
+            entry.inputs.push_back(std::move(depPath));
         }
-        in >> entry.mtime;
+        if (!read_i64(in, entry.mtime)) return false;
         entry.isLoaded = true;
-        entries[entry.output] = entry;
+        depsMap[entry.output] = std::move(entry);
     }
+
+    return in.good();
 }
 
-bool Cache::isValid(const QString& /*mainFile*/) const {
+// ============================================================
+// isValid / restore
+// ============================================================
+bool Cache::isValid(std::string_view /*mainFile*/) const {
     return loaded_;
 }
 
 std::unique_ptr<State> Cache::restore() const {
     auto state = std::make_unique<State>();
 
-    for (auto it = data_.globalVars.begin(); it != data_.globalVars.end(); ++it) {
-        state->setGlobal(it.key(), it.value());
-    }
+    for (const auto& [k, v] : data_.globalVars) state->setGlobal(k, v);
+    for (const Rule& rule : data_.rules) state->addRule(rule);
 
-    for (const Rule& rule : data_.rules) {
-        state->addRule(rule);
-    }
-
-    for (int i = 0; i < data_.builds.size(); ++i) {
+    for (std::size_t i = 0; i < data_.builds.size(); ++i) {
         Build build = data_.builds[i];
-        auto scope = QSharedPointer<Scope>::create();
-        const QHash<QString, QString>& locals = data_.buildLocalVars[i];
-        for (auto it = locals.begin(); it != locals.end(); ++it) {
-            scope->set(it.key(), it.value());
-        }
+        auto scope = std::make_shared<Scope>();
+        for (const auto& [k, v] : data_.buildLocalVars[i]) scope->set(k, v);
         build.scope = scope;
         state->addBuild(build);
     }
 
-    for (const auto& pool : data_.pools) {
-        state->addPool(pool);
-    }
+    for (const auto& [name, pool] : data_.pools) state->addPool(pool);
 
     state->defaultTargets() = data_.defaultTargets;
-    state->includedFiles() = data_.includedFilesList;
+    state->includedFiles()  = data_.includedFilesList;
 
-    for (auto it = data_.fileStates.begin(); it != data_.fileStates.end(); ++it) {
-        state->setFileState(it.key(), it.value());
-    }
+    for (const auto& [path, fs] : data_.fileStates) state->setFileState(path, fs);
 
-    state->setCommandHashes(data_.commandHashes);   // NEW
+    state->setCommandHashes(data_.commandHashes);
 
     return state;
+}
+
+// ============================================================
+// binary helpers
+// ============================================================
+void Cache::write_u32(std::ostream& out, std::uint32_t v) {
+    out.write(reinterpret_cast<const char*>(&v), sizeof(v));
+}
+void Cache::write_u64(std::ostream& out, std::uint64_t v) {
+    out.write(reinterpret_cast<const char*>(&v), sizeof(v));
+}
+void Cache::write_i64(std::ostream& out, std::int64_t v) {
+    out.write(reinterpret_cast<const char*>(&v), sizeof(v));
+}
+void Cache::write_u8(std::ostream& out, std::uint8_t v) {
+    out.write(reinterpret_cast<const char*>(&v), sizeof(v));
+}
+void Cache::write_str(std::ostream& out, std::string_view s) {
+    write_u32(out, static_cast<std::uint32_t>(s.size()));
+    if (!s.empty()) out.write(s.data(), static_cast<std::streamsize>(s.size()));
+}
+void Cache::write_strs(std::ostream& out, const std::vector<std::string>& v) {
+    write_u32(out, static_cast<std::uint32_t>(v.size()));
+    for (const auto& s : v) write_str(out, s);
+}
+
+bool Cache::read_u32(std::istream& in, std::uint32_t& v) {
+    return static_cast<bool>(in.read(reinterpret_cast<char*>(&v), sizeof(v)));
+}
+bool Cache::read_u64(std::istream& in, std::uint64_t& v) {
+    return static_cast<bool>(in.read(reinterpret_cast<char*>(&v), sizeof(v)));
+}
+bool Cache::read_i64(std::istream& in, std::int64_t& v) {
+    return static_cast<bool>(in.read(reinterpret_cast<char*>(&v), sizeof(v)));
+}
+bool Cache::read_u8(std::istream& in, std::uint8_t& v) {
+    return static_cast<bool>(in.read(reinterpret_cast<char*>(&v), sizeof(v)));
+}
+bool Cache::read_str(std::istream& in, std::string& s) {
+    std::uint32_t n = 0;
+    if (!read_u32(in, n)) return false;
+    s.assign(n, '\0');
+    if (n > 0 && !in.read(s.data(), static_cast<std::streamsize>(n))) return false;
+    return true;
+}
+bool Cache::read_strs(std::istream& in, std::vector<std::string>& v) {
+    std::uint32_t n = 0;
+    if (!read_u32(in, n)) return false;
+    v.clear();
+    v.reserve(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        std::string s;
+        if (!read_str(in, s)) return false;
+        v.push_back(std::move(s));
+    }
+    return true;
 }
 
 } // namespace pmake::core

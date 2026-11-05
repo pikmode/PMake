@@ -1,0 +1,36 @@
+{
+  "description": "depfile persists",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "touch_hdr",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "hdr.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

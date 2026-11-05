@@ -1,0 +1,29 @@
+{
+  "description": "shell && через {SHELL_PREFIX} — три echo, все три файла созданы",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "a.txt",
+          "b.txt",
+          "out.txt"
+        ],
+        "filesWith": {
+          "a.txt": "A",
+          "b.txt": "B",
+          "out.txt": "C"
+        }
+      }
+    }
+  ]
+}

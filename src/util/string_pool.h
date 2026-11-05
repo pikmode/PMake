@@ -1,12 +1,13 @@
 #pragma once
 
-#include <QByteArray>
-#include <QHash>
-#include <QVector>
+#include <cstddef>
+#include <deque>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 namespace pmake::util {
 
-// Пул строк: хранит QByteArray один раз, возвращает индекс.
 class StringPool {
 public:
     static StringPool& instance() {
@@ -14,25 +15,23 @@ public:
         return pool;
     }
 
-    int intern(const QByteArray& str) {
-        auto it = map_.find(str);
-        if (it != map_.end())
-            return *it;
-        int id = strings_.size();
-        strings_.append(str);
-        map_.insert(str, id);
+    int intern(std::string_view str) {
+        auto it = map_.find(std::string(str));
+        if (it != map_.end()) return it->second;
+        int id = static_cast<int>(strings_.size());
+        strings_.emplace_back(str);
+        map_.emplace(std::string(str), id);
         return id;
     }
 
-    int intern(const char* str) {
-        return intern(QByteArray(str));
+    int intern(const char* str) { return intern(std::string_view(str)); }
+
+    std::string_view get(int id) const {
+        if (id < 0 || id >= static_cast<int>(strings_.size())) return {};
+        return strings_[static_cast<std::size_t>(id)];
     }
 
-    const QByteArray& get(int id) const {
-        return strings_.at(id);
-    }
-
-    int size() const { return strings_.size(); }
+    std::size_t size() const { return strings_.size(); }
 
     void clear() {
         strings_.clear();
@@ -41,8 +40,8 @@ public:
 
 private:
     StringPool() = default;
-    QVector<QByteArray> strings_;
-    QHash<QByteArray, int> map_;
+    std::deque<std::string> strings_;
+    std::unordered_map<std::string, int> map_;
 };
 
 } // namespace pmake::util

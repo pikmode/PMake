@@ -1,0 +1,51 @@
+{
+  "description": "generator mtime: touch src → gen пересобирается (P0 fix)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake",
+    "-v"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "gen.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "touch_src_should_rebuild",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "src.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

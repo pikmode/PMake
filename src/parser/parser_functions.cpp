@@ -1,8 +1,13 @@
-
 #include "parser/parser_impl.h"
-#include <QSet>
-#include <QFileInfo>
-#include <QDir>
+
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace pmake::parser {
 
@@ -23,8 +28,8 @@ static AstNode* cloneAst(AstNode* n) {
     c->op = n->op;
     c->params = n->params;
     c->outputCount = n->outputCount;
-    for (AstNode* ch : n->children) c->children.append(cloneAst(ch));
-    for (AstNode* a : n->attributes) c->attributes.append(cloneAst(a));
+    for (AstNode* ch : n->children) c->children.push_back(cloneAst(ch));
+    for (AstNode* a : n->attributes) c->attributes.push_back(cloneAst(a));
     c->left = cloneAst(n->left);
     c->right = cloneAst(n->right);
     c->body = cloneAst(n->body);
@@ -33,12 +38,25 @@ static AstNode* cloneAst(AstNode* n) {
     return c;
 }
 
+// Читает файл целиком. TODO: заменить на pikrt::fs::read_all.
+static std::optional<std::string> read_include_file(const std::string& path) {
+    std::ifstream f(std::filesystem::path(path), std::ios::binary);
+    if (!f) return std::nullopt;
+    f.seekg(0, std::ios::end);
+    std::streampos size = f.tellg();
+    if (size < 0) return std::nullopt;
+    f.seekg(0, std::ios::beg);
+    std::string data(static_cast<std::size_t>(size), '\0');
+    if (!f.read(data.data(), size)) return std::nullopt;
+    return data;
+}
+
 // ---- parseFunction ----
 void ParserImpl::parseFunction(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::FUNCTION_DEF;
     node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -47,10 +65,10 @@ void ParserImpl::parseFunction(AstNode* parent) {
     addDefinition(node->name, definedFunctions_);
 
     expect(TOK_LPAREN, "Expected '('");
-    QStringList params;
+    std::vector<std::string> params;
     while (cur_.type != TOK_RPAREN && cur_.type != TOK_EOF) {
         if (cur_.type == TOK_IDENT) {
-            params.append(str(cur_.strId));
+            params.emplace_back(str(cur_.strId));
             advance();
         } else {
             error("Expected parameter name", true);
@@ -76,12 +94,12 @@ void ParserImpl::parseFunction(AstNode* parent) {
     core::FunctionDef func;
     func.name = node->name;
     func.params = params;
-    func.body = cloneAst(bodyBlock);   // State получает клон — без double-free
+    func.body = cloneAst(bodyBlock);
     state_.addFunction(func);
 
     node->params = params;
     node->body = bodyBlock;
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseInclude ----
@@ -95,61 +113,60 @@ void ParserImpl::parseInclude(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::INCLUDE;
     auto pathNode = parseValue();
-    node->children.append(pathNode);
+    node->children.push_back(pathNode);
     if (cur_.type == TOK_NEWLINE) advance();
 
-    QString rawPath = astNodeToStringWithState(pathNode, &state_);
-    if (rawPath.isEmpty()) {
+    std::string rawPath = astNodeToStringWithState(pathNode, &state_);
+    if (rawPath.empty()) {
         error("Include path is empty", true);
         --ParserImpl::includeDepth;
         return;
     }
 
-    QFileInfo curInfo(filename_);
-    QString absPath = QDir::cleanPath(curInfo.absolutePath() + '/' + rawPath);
+    std::filesystem::path curPath(filename_);
+    std::string absPath = (curPath.parent_path() / rawPath).lexically_normal().string();
+    std::string canonical = normalizePath(absPath);
 
-    QString canonical = normalizePath(absPath);
-    checkIncludeCycle(canonical);   // ← теперь throw при цикле
+    checkIncludeCycle(canonical);
     processingStack_.insert(canonical);
 
-    QByteArray data;
-    if (!util::readFile(canonical, data)) {
-        error(QString("Cannot read include file: %1 (resolved: %2)")
-              .arg(rawPath).arg(canonical), true);
-        processingStack_.remove(canonical);
+    auto data = read_include_file(canonical);
+    if (!data) {
+        error(std::format("Cannot read include file: {} (resolved: {})",
+                          rawPath, canonical), true);
+        processingStack_.erase(canonical);
         --ParserImpl::includeDepth;
         return;
     }
 
-    ParserImpl subParser(data, canonical, config_, platform_);
+    ParserImpl subParser(*data, canonical, config_, platform_);
     subParser.processingStack_ = processingStack_;
     auto subState = subParser.parse();
     if (subState) {
-        for (const auto& rule : subState->rules()) state_.addRule(rule);
+        for (const auto& [name, rule] : subState->rules()) state_.addRule(rule);
         for (const auto& build : subState->builds()) state_.addBuild(build);
-        for (const auto& cfg : subState->configs()) state_.addConfig(cfg);
-        for (const auto& plat : subState->platforms()) state_.addPlatform(plat);
+        for (const auto& [name, cfg] : subState->configs()) state_.addConfig(cfg);
+        for (const auto& [name, plat] : subState->platforms()) state_.addPlatform(plat);
 
-        for (const auto& func : subState->functions()) {
+        for (const auto& [name, func] : subState->functions()) {
             core::FunctionDef copy = func;
             copy.body = cloneAst(func.body);
             state_.addFunction(copy);
         }
 
-        for (const auto& key : subState->globals().keys()) {
-            auto val = subState->getGlobal(key);
-            if (val.has_value()) state_.setGlobal(key, *val);
+        for (const auto& [key, val] : subState->globals()) {
+            state_.setGlobal(key, val);
         }
-        state_.defaultTargets().append(subState->defaultTargets());
-        state_.includedFiles().append(canonical);
+        state_.defaultTargets().insert(state_.defaultTargets().end(),
+            subState->defaultTargets().begin(), subState->defaultTargets().end());
+        state_.includedFiles().push_back(canonical);
     } else {
-        // recover=false — прерываем цепочку, чтобы ошибка не игнорировалась
-        error(QString("Failed to parse include: %1").arg(rawPath), false);
+        error(std::format("Failed to parse include: {}", rawPath), false);
     }
 
-    processingStack_.remove(canonical);
+    processingStack_.erase(canonical);
     --ParserImpl::includeDepth;
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseImport ----
@@ -166,60 +183,60 @@ void ParserImpl::parseImport(AstNode* parent) {
     node->column = cur_.column;
 
     auto pathNode = parseValue();
-    node->children.append(pathNode);
+    node->children.push_back(pathNode);
     if (cur_.type == TOK_NEWLINE) advance();
 
-    QString rawPath = astNodeToStringWithState(pathNode, &state_);
-    if (rawPath.isEmpty()) {
+    std::string rawPath = astNodeToStringWithState(pathNode, &state_);
+    if (rawPath.empty()) {
         error("Import path is empty", true);
         --ParserImpl::includeDepth;
         return;
     }
 
-    QFileInfo curInfo(filename_);
-    QString absPath = QDir::cleanPath(curInfo.absolutePath() + '/' + rawPath);
+    std::filesystem::path curPath(filename_);
+    std::string absPath = (curPath.parent_path() / rawPath).lexically_normal().string();
+    std::string canonical = normalizePath(absPath);
 
-    QString canonical = normalizePath(absPath);
     checkIncludeCycle(canonical);
     processingStack_.insert(canonical);
 
-    QByteArray data;
-    if (!util::readFile(canonical, data)) {
-        error(QString("Cannot read import file: %1 (resolved: %2)")
-              .arg(rawPath).arg(canonical), true);
-        processingStack_.remove(canonical);
+    auto data = read_include_file(canonical);
+    if (!data) {
+        error(std::format("Cannot read import file: {} (resolved: {})",
+                          rawPath, canonical), true);
+        processingStack_.erase(canonical);
         --ParserImpl::includeDepth;
         return;
     }
 
-    ParserImpl subParser(data, canonical, config_, platform_);
+    ParserImpl subParser(*data, canonical, config_, platform_);
     subParser.processingStack_ = processingStack_;
     auto subState = subParser.parse();
     if (subState) {
-        for (const auto& rule : subState->rules()) state_.addRule(rule);
+        for (const auto& [name, rule] : subState->rules()) state_.addRule(rule);
         for (const auto& build : subState->builds()) state_.addBuild(build);
-        for (const auto& cfg : subState->configs()) state_.addConfig(cfg);
-        for (const auto& plat : subState->platforms()) state_.addPlatform(plat);
+        for (const auto& [name, cfg] : subState->configs()) state_.addConfig(cfg);
+        for (const auto& [name, plat] : subState->platforms()) state_.addPlatform(plat);
 
-        for (const auto& func : subState->functions()) {
+        for (const auto& [name, func] : subState->functions()) {
             core::FunctionDef copy = func;
             copy.body = cloneAst(func.body);
             state_.addFunction(copy);
         }
 
-        for (const auto& key : subState->globals().keys()) {
-            auto val = subState->getGlobal(key);
-            if (val.has_value()) state_.setGlobal(key, *val);
+        for (const auto& [key, val] : subState->globals()) {
+            state_.setGlobal(key, val);
         }
-        state_.defaultTargets().append(subState->defaultTargets());
-        state_.includedFiles().append(canonical);
+        state_.defaultTargets().insert(state_.defaultTargets().end(),
+            subState->defaultTargets().begin(), subState->defaultTargets().end());
+        state_.includedFiles().push_back(canonical);
     } else {
-        error(QString("Failed to parse import: %1").arg(rawPath), false);
+        error(std::format("Failed to parse import: {}", rawPath), false);
     }
 
-    processingStack_.remove(canonical);
+    processingStack_.erase(canonical);
     --ParserImpl::includeDepth;
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseNamespace ----
@@ -227,7 +244,7 @@ void ParserImpl::parseNamespace(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::NAMESPACE;
     node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -246,7 +263,7 @@ void ParserImpl::parseNamespace(AstNode* parent) {
     pushBlock(bodyBlock);
     parseBlockDirect(bodyBlock);
     popBlock();
-    node->children.append(bodyBlock);
+    node->children.push_back(bodyBlock);
 
     skipNewlinesAndIndents();
     if (cur_.type == TOK_IDENT && str(cur_.strId) == "endnamespace") {
@@ -254,7 +271,7 @@ void ParserImpl::parseNamespace(AstNode* parent) {
         skipNewlinesAndIndents();
     }
 
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 // ---- parseConst ----
@@ -262,7 +279,7 @@ void ParserImpl::parseConst(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::CONST_DECL;
     node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -273,10 +290,10 @@ void ParserImpl::parseConst(AstNode* parent) {
     }
     advance();
     auto val = parseValueSequence(true);
-    node->children.append(val);
+    node->children.push_back(val);
     node->line = cur_.line;
     node->column = cur_.column;
-    parent->children.append(node);
+    parent->children.push_back(node);
     skipNewlinesAndIndents();
 }
 
@@ -285,7 +302,7 @@ void ParserImpl::parseEnum(AstNode* parent) {
     auto node = makeStringLiteral("");
     node->type = AstNode::ENUM_DECL;
     node->name = parseIdent();
-    if (node->name.isEmpty()) {
+    if (node->name.empty()) {
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
         return;
@@ -299,12 +316,12 @@ void ParserImpl::parseEnum(AstNode* parent) {
     }
     advance();
 
-    QVector<AstNode*> enumerators;
+    std::vector<AstNode*> enumerators;
     while (cur_.type != TOK_RBRACE && cur_.type != TOK_EOF) {
         if (cur_.type == TOK_IDENT) {
-            QString name = parseIdent();
+            std::string name = parseIdent();
             auto item = makeStringLiteral(name);
-            enumerators.append(item);
+            enumerators.push_back(item);
             if (cur_.type == TOK_COMMA) advance();
         } else {
             error("Expected enumerator name", true);
@@ -312,12 +329,12 @@ void ParserImpl::parseEnum(AstNode* parent) {
         }
     }
     expect(TOK_RBRACE, "Expected '}'");
-    node->children = enumerators;
+    node->children = std::move(enumerators);
     node->line = cur_.line;
     node->column = cur_.column;
 
     if (cur_.type == TOK_NEWLINE) advance();
-    parent->children.append(node);
+    parent->children.push_back(node);
 }
 
 } // namespace pmake::parser

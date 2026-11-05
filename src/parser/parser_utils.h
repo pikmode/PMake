@@ -1,6 +1,7 @@
 #pragma once
 
-#include <QString>
+#include <string>
+#include <string_view>
 
 namespace pmake::parser {
 
@@ -8,7 +9,7 @@ namespace pmake::parser {
 double getPmakeVersion();
 
 // Форматирование сообщения об ошибке
-QString formatError(const QString& filename, int line, int column,
-                    const QString& msg, const QString& token = QString());
+std::string formatError(std::string_view filename, int line, int column,
+                        std::string_view msg, std::string_view token = {});
 
 } // namespace pmake::parser

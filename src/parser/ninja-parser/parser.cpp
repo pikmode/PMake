@@ -3,41 +3,57 @@
 #include "parser/ninja-parser/lexer.h"
 #include "util/filesystem.h"
 #include "util/logging.h"
-#include <QFileInfo>
-#include <QStack>
-#include <QVector>
-#include <QSet>
-#include <QRegularExpression>
+
+#include <filesystem>
+#include <format>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <print>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace pmake::ninja {
 
 namespace {
-    QString unescapePath(const QString& path) {
-        QString result = path;
-        result.replace(QStringLiteral("$:"), QStringLiteral(":"));
-        result.replace(QStringLiteral("$ "), QStringLiteral(" "));
-        result.replace(QStringLiteral("$$"), QStringLiteral("$"));
+    std::string unescapePath(std::string_view path) {
+        std::string result(path);
+        auto replace_inplace = [&](std::string_view from, std::string_view to) {
+            std::size_t pos = 0;
+            while ((pos = result.find(from.data(), pos, from.size())) != std::string::npos) {
+                result.replace(pos, from.size(), to.data(), to.size());
+                pos += to.size();
+            }
+        };
+        replace_inplace("$:", ":");
+        replace_inplace("$ ", " ");
+        replace_inplace("$$", "$");
         return result;
     }
 }
 
 class ParserImpl {
 public:
-    ParserImpl(const QByteArray& data, const QString& filename)
+    ParserImpl(std::string_view data, std::string_view filename)
         : lexer_(data, filename), filename_(filename) {}
 
     std::unique_ptr<core::State> parse();
 
 private:
     Lexer lexer_;
-    QString filename_;
+    std::string filename_;
     core::State state_;
     util::StringPool& pool_ = util::StringPool::instance();
 
     Token cur_;
     bool isIncluded_ = false;
-    QSet<QString> processingStack_;
+    std::unordered_set<std::string> processingStack_;
 
     void advance() { cur_ = lexer_.nextToken(); }
 
@@ -49,7 +65,7 @@ private:
         return false;
     }
 
-    bool expect(TokenType t, const QString& msg) {
+    bool expect(TokenType t, std::string_view msg) {
         if (cur_.type == t) {
             advance();
             return true;
@@ -58,38 +74,41 @@ private:
         return false;
     }
 
-    void error(const QString& msg) {
-        LOG_ERROR(QString("Ninja Parser error at %1 line %2: %3").arg(filename_).arg(cur_.line).arg(msg));
+    [[noreturn]] void error(std::string_view msg) {
+        LOG_ERROR(std::format("Ninja Parser error at {} line {}: {}",
+                              filename_, cur_.line, msg));
         throw std::runtime_error("Parse error");
     }
 
-    QString str(int id) const {
-        if (id < 0 || id >= pool_.size()) {
-            LOG_ERROR(QString("Invalid string id: %1 (pool size: %2)").arg(id).arg(pool_.size()));
-            return QString();
+    std::string_view str(int id) const {
+        if (id < 0 || id >= static_cast<int>(pool_.size())) {
+            LOG_ERROR(std::format("Invalid string id: {} (pool size: {})",
+                                  id, pool_.size()));
+            return {};
         }
-        return QString::fromUtf8(pool_.get(id));
+        return pool_.get(id);
     }
 
     void parseTopLevel();
-    QString parseName();
-    QVector<QString> parseNameList();
+    std::string parseName();
+    std::vector<std::string> parseNameList();
     void parseVariable();
     void parseRule();
     void parseBuild();
     void parseDefault();
     void parseInclude(bool subninja);
-    void parsePool(const QString& poolName);
+    void parsePool(std::string_view poolName);
 
     bool isNameToken() const {
         return cur_.type == TOK_IDENT || cur_.type == TOK_STRING || cur_.type == TOK_VAR_REF;
     }
 
-    QString readValueWithContinuation() {
+    std::string readValueWithContinuation() {
         return lexer_.readValue(true);
     }
 
-    void parseIndentedBlock(int baseIndent, const std::function<void(const QString&, const QString&)>& handler) {
+    void parseIndentedBlock(int baseIndent,
+                            const std::function<void(const std::string&, const std::string&)>& handler) {
         while (true) {
             if (cur_.type != TOK_INDENT || cur_.indent != baseIndent)
                 break;
@@ -98,12 +117,12 @@ private:
                 error("expected variable name in indented block");
             }
             int keyId = cur_.strId;
-            QString key = str(keyId);
+            std::string key{str(keyId)};
             advance();
             if (cur_.type != TOK_EQUALS) {
                 error("expected '='");
             }
-            QString value = readValueWithContinuation();
+            std::string value = readValueWithContinuation();
             advance();
 
             handler(key, value);
@@ -124,8 +143,8 @@ private:
 // Реализация методов парсинга
 // ----------------------------------------------------------------------------
 
-QString ParserImpl::parseName() {
-    QString result;
+std::string ParserImpl::parseName() {
+    std::string result;
     bool first = true;
     while (true) {
         if (cur_.type == TOK_IDENT || cur_.type == TOK_STRING) {
@@ -135,12 +154,13 @@ QString ParserImpl::parseName() {
             first = false;
         } else if (cur_.type == TOK_VAR_REF) {
             if (!first && lexer_.hadWhitespace()) break;
-            QString varName = str(cur_.strId);
-            std::optional<QString> val = state_.getGlobal(varName);
+            std::string_view varName = str(cur_.strId);
+            std::optional<std::string> val = state_.getGlobal(varName);
             if (val.has_value()) {
                 result += *val;
             } else {
-                result += "$" + varName;
+                result += '$';
+                result += varName;
             }
             advance();
             first = false;
@@ -151,10 +171,10 @@ QString ParserImpl::parseName() {
     return unescapePath(result);
 }
 
-QVector<QString> ParserImpl::parseNameList() {
-    QVector<QString> names;
+std::vector<std::string> ParserImpl::parseNameList() {
+    std::vector<std::string> names;
     while (isNameToken()) {
-        names.append(parseName());
+        names.push_back(parseName());
     }
     return names;
 }
@@ -163,7 +183,7 @@ void ParserImpl::parseVariable() {
     int nameId = cur_.strId;
     advance();
     if (cur_.type != TOK_EQUALS) error("expected '='");
-    QString value = readValueWithContinuation();
+    std::string value = readValueWithContinuation();
     state_.setGlobal(str(nameId), value);
     advance();
 }
@@ -174,7 +194,7 @@ void ParserImpl::parseRule() {
     advance();
 
     core::Rule rule;
-    rule.name = str(ruleNameId);
+    rule.name = std::string(str(ruleNameId));
 
     if (cur_.type != TOK_NEWLINE) error("expected newline after rule name");
     advance();
@@ -182,7 +202,7 @@ void ParserImpl::parseRule() {
     if (cur_.type != TOK_INDENT || cur_.indent <= 0) error("expected indented block for rule");
     int baseIndent = cur_.indent;
 
-    parseIndentedBlock(baseIndent, [&](const QString& key, const QString& value) {
+    parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
         if (key == "command")      rule.command = value;
         else if (key == "depfile") rule.depfile = value;
         else if (key == "deps")    rule.deps = value;
@@ -193,7 +213,7 @@ void ParserImpl::parseRule() {
         else if (key == "pool")    rule.pool = (value == "console" || value == "1" || value == "true");
         else if (key == "description") rule.description = value;
         else {
-            LOG_WARN(QString("Unknown rule variable '%1' in rule '%2'").arg(key).arg(rule.name));
+            LOG_WARN(std::format("Unknown rule variable '{}' in rule '{}'", key, rule.name));
         }
     });
 
@@ -201,7 +221,7 @@ void ParserImpl::parseRule() {
 }
 
 void ParserImpl::parseBuild() {
-    QVector<QString> outputs = parseNameList();
+    std::vector<std::string> outputs = parseNameList();
 
     // FIX: implicit outputs (после первого |) игнорируются.
     // У нас в Build нет поля implicit_outputs, поэтому просто парсим и отбрасываем.
@@ -232,18 +252,18 @@ void ParserImpl::parseBuild() {
         error("expected ':' after outputs or dependencies");
     advance();
 
-    QString ruleName = parseName();
+    std::string ruleName = parseName();
 
-    QVector<QString> inputs;
-    QVector<QString> implicit_after;
-    QVector<QString> order_only_after;
+    std::vector<std::string> inputs;
+    std::vector<std::string> implicit_after;
+    std::vector<std::string> order_only_after;
 
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
         if (cur_.type == TOK_PIPE) {
             advance();
             while (cur_.type != TOK_PIPE2 && cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
                 if (isNameToken())
-                    implicit_after.append(parseName());
+                    implicit_after.push_back(parseName());
                 else
                     break;
             }
@@ -251,12 +271,12 @@ void ParserImpl::parseBuild() {
             advance();
             while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
                 if (isNameToken())
-                    order_only_after.append(parseName());
+                    order_only_after.push_back(parseName());
                 else
                     break;
             }
         } else if (isNameToken()) {
-            inputs.append(parseName());
+            inputs.push_back(parseName());
         } else {
             break;
         }
@@ -265,36 +285,36 @@ void ParserImpl::parseBuild() {
         advance();
 
     // implicit = только implicit_after (implicit INPUTS).
-    QVector<QString> implicit = implicit_after;
-    QVector<QString> order_only = order_only_after;
+    std::vector<std::string> implicit = std::move(implicit_after);
+    std::vector<std::string> order_only = std::move(order_only_after);
 
-    auto scope = QSharedPointer<core::Scope>::create();
+    auto scope = std::make_shared<core::Scope>();
     if (cur_.type == TOK_INDENT && cur_.indent > 0) {
         int baseIndent = cur_.indent;
-        parseIndentedBlock(baseIndent, [&](const QString& key, const QString& value) {
+        parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
             scope->set(key, value);
         });
     }
 
     core::Build build;
-    build.outputs = outputs;
-    build.inputs = inputs;
-    build.implicit = implicit;
-    build.order_only = order_only;
-    build.rule_name = ruleName;
+    build.outputs = std::move(outputs);
+    build.inputs = std::move(inputs);
+    build.implicit = std::move(implicit);
+    build.order_only = std::move(order_only);
+    build.rule_name = std::move(ruleName);
     build.scope = scope;
     state_.addBuild(std::move(build));
 }
 
 void ParserImpl::parseDefault() {
-    QVector<QString> targets = parseNameList();
-    state_.defaultTargets() = targets;
+    std::vector<std::string> targets = parseNameList();
+    state_.defaultTargets() = std::move(targets);
     if (cur_.type == TOK_NEWLINE) advance();
 }
 
 void ParserImpl::parseInclude(bool subninja) {
-    QString includeFile = parseName();
-    if (includeFile.isEmpty()) {
+    std::string includeFile = parseName();
+    if (includeFile.empty()) {
         LOG_WARN("Include with empty filename, skipping");
         while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
         if (cur_.type == TOK_NEWLINE) advance();
@@ -305,26 +325,28 @@ void ParserImpl::parseInclude(bool subninja) {
     includeFile = state_.expandVars(includeFile);
     includeFile = unescapePath(includeFile);
 
-    if (includeFile.isEmpty()) {
+    if (includeFile.empty()) {
         LOG_WARN("Include with empty filename after expansion, skipping");
         return;
     }
 
-    QFileInfo current(filename_);
-    QString absPath = current.absolutePath() + '/' + includeFile;
+    std::filesystem::path currentPath(filename_);
+    std::error_code ec;
+    std::filesystem::path absPathObj = std::filesystem::absolute(currentPath, ec).parent_path() / includeFile;
+    std::string absPath = absPathObj.string();
 
     if (processingStack_.contains(absPath)) {
-        LOG_ERROR(QString("Cyclic include detected: %1").arg(absPath));
+        LOG_ERROR(std::format("Cyclic include detected: {}", absPath));
         throw std::runtime_error("Cyclic include");
     }
     processingStack_.insert(absPath);
 
-    state_.includedFiles().append(absPath);
+    state_.includedFiles().push_back(absPath);
 
-    QByteArray data;
+    std::string data;
     if (!util::readFile(absPath, data)) {
-        LOG_ERROR(QString("Cannot open include file: %1").arg(absPath));
-        processingStack_.remove(absPath);
+        LOG_ERROR(std::format("Cannot open include file: {}", absPath));
+        processingStack_.erase(absPath);
         return;
     }
 
@@ -332,40 +354,41 @@ void ParserImpl::parseInclude(bool subninja) {
     subparser.processingStack_ = processingStack_;
 
     if (!subninja) {
-        for (auto it = state_.globals().begin(); it != state_.globals().end(); ++it) {
-            subparser.state_.setGlobal(it.key(), it.value());
+        for (const auto& [k, v] : state_.globals()) {
+            subparser.state_.setGlobal(k, v);
         }
     }
 
     subparser.isIncluded_ = true;
     auto subState = subparser.parse();
     if (subState) {
-        for (auto& rule : subState->rules()) state_.addRule(std::move(rule));
-        for (auto& build : subState->builds()) state_.addBuild(std::move(build));
-        for (const auto& pool : subState->pools()) state_.addPool(pool);
-        for (const QString& inc : subState->includedFiles()) {
-            state_.includedFiles().append(inc);
+        for (const auto& [name, rule] : subState->rules()) state_.addRule(rule);
+        for (const auto& build : subState->builds()) state_.addBuild(build);
+        for (const auto& [name, pool] : subState->pools()) state_.addPool(pool);
+        for (const auto& inc : subState->includedFiles()) {
+            state_.includedFiles().push_back(inc);
         }
-        for (const QString& target : subState->defaultTargets()) {
-            if (!state_.defaultTargets().contains(target))
-                state_.defaultTargets().append(target);
+        for (const auto& target : subState->defaultTargets()) {
+            const auto& dt = state_.defaultTargets();
+            if (std::find(dt.begin(), dt.end(), target) == dt.end())
+                state_.defaultTargets().push_back(target);
         }
 
         if (!subninja) {
-            for (auto it = subState->globals().begin(); it != subState->globals().end(); ++it) {
-                state_.setGlobal(it.key(), it.value());
+            for (const auto& [k, v] : subState->globals()) {
+                state_.setGlobal(k, v);
             }
         }
     } else {
         LOG_WARN("Sub-state parsing failed");
     }
 
-    processingStack_.remove(absPath);
+    processingStack_.erase(absPath);
 }
 
-void ParserImpl::parsePool(const QString& poolName) {
+void ParserImpl::parsePool(std::string_view poolName) {
     core::Pool pool;
-    pool.name = poolName;
+    pool.name = std::string(poolName);
     pool.depth = 1;
 
     if (cur_.type != TOK_NEWLINE) error("expected newline after pool name");
@@ -374,14 +397,17 @@ void ParserImpl::parsePool(const QString& poolName) {
     if (cur_.type != TOK_INDENT || cur_.indent <= 0) error("expected indented block for pool");
     int baseIndent = cur_.indent;
 
-    parseIndentedBlock(baseIndent, [&](const QString& key, const QString& value) {
+    parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
         if (key == "depth") {
-            bool ok;
-            int d = value.toInt(&ok);
-            if (ok && d > 0) pool.depth = d;
-            else LOG_WARN(QString("Invalid depth value '%1' for pool '%2'").arg(value).arg(poolName));
+            try {
+                int d = std::stoi(value);
+                if (d > 0) pool.depth = d;
+                else LOG_WARN(std::format("Invalid depth value '{}' for pool '{}'", value, poolName));
+            } catch (...) {
+                LOG_WARN(std::format("Invalid depth value '{}' for pool '{}'", value, poolName));
+            }
         } else {
-            LOG_WARN(QString("Unknown pool variable '%1' in pool '%2'").arg(key).arg(poolName));
+            LOG_WARN(std::format("Unknown pool variable '{}' in pool '{}'", key, poolName));
         }
     });
 
@@ -391,7 +417,7 @@ void ParserImpl::parsePool(const QString& poolName) {
 void ParserImpl::parseTopLevel() {
     while (cur_.type != TOK_EOF) {
         if (cur_.type == TOK_IDENT) {
-            QString word = str(cur_.strId);
+            std::string_view word = str(cur_.strId);
 
             if (word == "rule") {
                 advance();
@@ -421,11 +447,11 @@ void ParserImpl::parseTopLevel() {
             else if (word == "pool") {
                 advance();
                 if (cur_.type == TOK_IDENT) {
-                    QString poolName = str(cur_.strId);
+                    std::string poolName{str(cur_.strId)};
                     advance();
                     parsePool(poolName);
                 } else if (cur_.type == TOK_EQUALS) {
-                    QString value = readValueWithContinuation();
+                    std::string value = readValueWithContinuation();
                     state_.setGlobal(word, value);
                     advance();
                 } else {
@@ -435,12 +461,12 @@ void ParserImpl::parseTopLevel() {
             }
             else {
                 int id = cur_.strId;
-                QString varName = str(id);
+                std::string varName{str(id)};
                 advance();
                 if (cur_.type != TOK_EQUALS) {
-                    error(QString("expected '=' after variable '%1'").arg(varName));
+                    error(std::format("expected '=' after variable '{}'", varName));
                 }
-                QString value = readValueWithContinuation();
+                std::string value = readValueWithContinuation();
                 state_.setGlobal(varName, value);
                 advance();
                 continue;
@@ -453,7 +479,7 @@ void ParserImpl::parseTopLevel() {
             advance();
         }
         else {
-            error(QString("Unexpected token in top level: %1").arg(cur_.type));
+            error(std::format("Unexpected token in top level: {}", static_cast<int>(cur_.type)));
         }
     }
 }
@@ -463,7 +489,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
     try {
         parseTopLevel();
     } catch (const std::exception& e) {
-        LOG_ERROR(QString("Parsing failed: %1").arg(e.what()));
+        LOG_ERROR(std::format("Parsing failed: {}", e.what()));
         return nullptr;
     } catch (...) {
         LOG_ERROR("Unknown exception during parsing");
@@ -479,14 +505,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         }
     }
     if (needsPhony) {
-        bool hasPhony = false;
-        for (const auto& rule : state_.rules()) {
-            if (rule.name == "phony") {
-                hasPhony = true;
-                break;
-            }
-        }
-        if (!hasPhony) {
+        if (!state_.getRule("phony")) {
             core::Rule phonyRule;
             phonyRule.name = "phony";
             phonyRule.command = "";
@@ -522,10 +541,10 @@ std::unique_ptr<core::State> ParserImpl::parse() {
 // ============================================================================
 // Внешний интерфейс
 // ============================================================================
-std::unique_ptr<core::State> Parser::parse(const QString& filename) {
-    QByteArray data;
+std::unique_ptr<core::State> Parser::parse(std::string_view filename) {
+    std::string data;
     if (!util::readFile(filename, data)) {
-        LOG_ERROR(QString("Cannot read file: %1").arg(filename));
+        LOG_ERROR(std::format("Cannot read file: {}", filename));
         return nullptr;
     }
     ParserImpl impl(data, filename);

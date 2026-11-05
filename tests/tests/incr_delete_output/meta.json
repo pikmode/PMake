@@ -1,0 +1,42 @@
+{
+  "description": "Удаление output → пересборка",
+  "bug": "",
+  "fix_hint": "",
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "timeoutSec": 30,
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ]
+      }
+    },
+    {
+      "name": "delete_and_rebuild",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "delete": [
+            "out.txt"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ]
+      }
+    }
+  ]
+}
