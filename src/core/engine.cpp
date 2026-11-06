@@ -70,7 +70,6 @@ bool Engine::run(std::string_view target) {
         if (finished_) break;
     }
 
-    // join все воркеры
     for (auto& th : workers_) if (th.joinable()) th.join();
     workers_.clear();
 
@@ -154,32 +153,52 @@ void Engine::runInternal(const std::string& target) {
     pumpReady();
 }
 
+// ============================================================
+// P1: BATCH STAT для leaves.
+// Вместо N × statFileFast — один statBatch на все leaf-ноды.
+// ============================================================
 void Engine::initializeFileStates() {
     auto leaves = graph_.leafNodes();
+
+    // Собираем только те leaf'ы, для которых ещё нет FileState.
+    std::vector<std::string> to_stat;
+    to_stat.reserve(leaves.size());
     for (Node* leaf : leaves) {
         if (!state_.getFileState(leaf->name()).has_value()) {
-            std::int64_t mtime = -1, size = 0;
-            if (util::statFileFast(leaf->name(), mtime, size)) {
-                FileState fs;
-                fs.mtime = mtime;
-                fs.size = size;
-                state_.setFileState(leaf->name(), fs);
-                util::FileCache::instance().setMtime(leaf->name(), mtime);
-            }
+            to_stat.push_back(leaf->name());
         }
+    }
+    if (to_stat.empty()) return;
+
+    auto batch = util::statBatch(to_stat);
+    for (const auto& [path, info] : batch) {
+        if (!info.exists) continue;
+        FileState fs;
+        fs.mtime = info.mtime;
+        fs.size  = info.size;
+        state_.setFileState(path, fs);
+        util::FileCache::instance().setMtime(path, info.mtime);
     }
 }
 
+// ============================================================
+// P1: BATCH STAT для обновления состояний после сборки.
+// ============================================================
 void Engine::updateFileStates() {
     auto leaves = graph_.leafNodes();
-    for (Node* leaf : leaves) {
-        std::int64_t mtime = -1, size = 0;
-        util::statFileFast(leaf->name(), mtime, size);
+    if (leaves.empty()) return;
+
+    std::vector<std::string> paths;
+    paths.reserve(leaves.size());
+    for (Node* leaf : leaves) paths.push_back(leaf->name());
+
+    auto batch = util::statBatch(paths);
+    for (const auto& [path, info] : batch) {
         FileState fs;
-        fs.mtime = mtime;
-        fs.size = size;
-        state_.setFileState(leaf->name(), fs);
-        util::FileCache::instance().setMtime(leaf->name(), mtime);
+        fs.mtime = info.exists ? info.mtime : -1;
+        fs.size  = info.exists ? info.size  : 0;
+        state_.setFileState(path, fs);
+        util::FileCache::instance().setMtime(path, fs.mtime);
     }
 }
 

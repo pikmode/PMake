@@ -27,6 +27,25 @@ std::wstring utf8_to_utf16(std::string_view s) {
                         static_cast<int>(s.size()), w.data(), wlen);
     return w;
 }
+
+std::string utf16_to_utf8(const std::wstring& w) {
+    if (w.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.data(),
+                                  static_cast<int>(w.size()),
+                                  nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string s(static_cast<std::size_t>(len), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+                        s.data(), len, nullptr, nullptr);
+    return s;
+}
+
+std::int64_t filetime_to_unix_ms(const FILETIME& ft) {
+    ULARGE_INTEGER t;
+    t.LowPart  = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    return static_cast<std::int64_t>(t.QuadPart / 10000ULL) - 11644473600000LL;
+}
 #endif
 
 std::filesystem::path to_path(std::string_view p) {
@@ -35,6 +54,19 @@ std::filesystem::path to_path(std::string_view p) {
 #else
     return std::filesystem::path(std::string(p));
 #endif
+}
+
+// Разбивает "dir/sub/file.ext" на (dir/sub, file.ext).
+// Возвращает {parent, name}. Если parent пуст — значит файл в текущей папке.
+std::pair<std::string, std::string> split_path(std::string_view p) {
+    auto pos_slash = p.find_last_of("/\\");
+    if (pos_slash == std::string_view::npos) {
+        return {".", std::string(p)};
+    }
+    std::string parent(p.substr(0, pos_slash));
+    std::string name(p.substr(pos_slash + 1));
+    if (parent.empty()) parent = "/";
+    return {parent, name};
 }
 
 } // namespace
@@ -81,10 +113,7 @@ bool statFileFast(std::string_view path, std::int64_t& mtime, std::int64_t& size
     if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &attr)) {
         mtime = -1; size = 0; return false;
     }
-    ULARGE_INTEGER t;
-    t.LowPart  = attr.ftLastWriteTime.dwLowDateTime;
-    t.HighPart = attr.ftLastWriteTime.dwHighDateTime;
-    mtime = static_cast<std::int64_t>(t.QuadPart / 10000ULL) - 11644473600000LL;
+    mtime = filetime_to_unix_ms(attr.ftLastWriteTime);
     ULARGE_INTEGER s;
     s.LowPart  = attr.nFileSizeLow;
     s.HighPart = attr.nFileSizeHigh;
@@ -137,6 +166,78 @@ bool ensureDirectory(std::string_view path) {
     if (std::filesystem::exists(p, ec)) return true;
     std::filesystem::create_directories(p, ec);
     return !ec;
+}
+
+// ============================================================
+// statBatch — P1.
+// ============================================================
+std::unordered_map<std::string, FileInfo>
+statBatch(const std::vector<std::string>& paths) {
+    std::unordered_map<std::string, FileInfo> result;
+    if (paths.empty()) return result;
+
+#ifdef _WIN32
+    // 1. Группируем по директориям: { "obj/": ["obj/a.o", "obj/b.o"] }
+    std::unordered_map<std::string, std::vector<std::string>> by_dir;
+    for (const auto& p : paths) {
+        auto [dir, name] = split_path(p);
+        by_dir[dir].push_back(p);
+    }
+
+    // 2. Для каждой директории — ОДИН FindFirstFileW("*")
+    for (const auto& [dir, files] : by_dir) {
+        // Ищем один раз на директорию.
+        std::wstring wdir = utf8_to_utf16(dir);
+        if (wdir.empty()) continue;
+        if (wdir.back() != L'\\' && wdir.back() != L'/') wdir += L'\\';
+        std::wstring pattern = wdir + L"*";
+
+        WIN32_FIND_DATAW data{};
+        HANDLE hFind = FindFirstFileW(pattern.c_str(), &data);
+        if (hFind == INVALID_HANDLE_VALUE) {
+            // Директории нет — все файлы в ней "не существуют".
+            for (const auto& f : files) {
+                result[f] = FileInfo{};
+            }
+            continue;
+        }
+
+        // Сначала складываем всё, что нашли, по имени.
+        std::unordered_map<std::string, FileInfo> dir_cache;
+        do {
+            std::string name = utf16_to_utf8(data.cFileName);
+            if (name == "." || name == "..") continue;
+
+            FileInfo fi;
+            fi.exists = true;
+            fi.mtime  = filetime_to_unix_ms(data.ftLastWriteTime);
+            ULARGE_INTEGER s;
+            s.LowPart  = data.nFileSizeLow;
+            s.HighPart = data.nFileSizeHigh;
+            fi.size = static_cast<std::int64_t>(s.QuadPart);
+            dir_cache[name] = fi;
+        } while (FindNextFileW(hFind, &data));
+        FindClose(hFind);
+
+        // Проставляем каждому запрошенному файлу.
+        for (const auto& f : files) {
+            auto [d, name] = split_path(f);
+            auto it = dir_cache.find(name);
+            if (it != dir_cache.end()) result[f] = it->second;
+            else                       result[f] = FileInfo{};  // не существует
+        }
+    }
+#else
+    // POSIX — просто цикл stat(). На Linux getdents64 + statx
+    // всё равно даёт хорошую скорость, оптимизировать не нужно.
+    for (const auto& p : paths) {
+        FileInfo fi;
+        if (statFileFast(p, fi.mtime, fi.size)) fi.exists = true;
+        result[p] = fi;
+    }
+#endif
+
+    return result;
 }
 
 } // namespace pmake::util

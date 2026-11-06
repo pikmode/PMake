@@ -23,24 +23,17 @@
 #include "core/cache.h"
 #include "deps/deps_log.h"
 #include "deps/dep_parser.h"
+#include "internal/config.h" // <-- ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ
 
 using namespace pmake::core;
 
-// ============================================================
-// Единая точка правды для версии. Меняешь здесь — меняется
-// везде (--version, -V, потенциально --help, логи).
-// ============================================================
 namespace {
-constexpr const char* PMAKE_NAME    = "PMake";
-constexpr const char* PMAKE_VERSION = "1.0.0";
 
 void print_version() {
+    // Берем версию из config.h
     std::fprintf(stdout, "%s %s\n", PMAKE_NAME, PMAKE_VERSION);
     std::fflush(stdout);
 }
-} // namespace
-
-namespace {
 
 struct Options {
     bool version   = false;
@@ -154,8 +147,6 @@ int parse_args(int argc, char** argv, Options& opt) {
 int main(int argc, char** argv) {
     // ============================================================
     // --version / -V / --help / -h — САМЫЕ ПЕРВЫЕ, до любого парсинга.
-    // Это гарантирует, что даже при битом argv или сломанном parse_args
-    // версия всё равно выведется.
     // ============================================================
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-V") == 0 || std::strcmp(argv[i], "--version") == 0) {
@@ -353,6 +344,8 @@ int main(int argc, char** argv) {
     bool result = engine.run(opt.target);
 
     // ---------- cache save after build ----------
+    // ФИКС: Сохраняем кэш ТОЛЬКО если сборка прошла успешно (result == true)!
+    // Иначе при падении сохраняется "битое" состояние.
     if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
         cache.store(*state, buildFile);

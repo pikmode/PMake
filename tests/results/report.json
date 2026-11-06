@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-05T18:45:52",
+  "timestamp": "2026-11-06T15:33:19",
   "pmake": "E:\\pikmode\\PikMode_Release\\PS_Build\\pmake.exe",
   "total": 81,
   "passed": 81,
@@ -9,7 +9,7 @@
     {
       "name": "alias_multi",
       "status": "PASS",
-      "elapsed": 5.031249284744263,
+      "elapsed": 5.1249754428863525,
       "failures": [],
       "description": "alias с 3 targets (comma-separated)",
       "bug": "",
@@ -18,7 +18,7 @@
     {
       "name": "append_flags",
       "status": "PASS",
-      "elapsed": 0.21875309944152832,
+      "elapsed": 0.1874997615814209,
       "failures": [],
       "description": "+= конкатенация через пробел",
       "bug": "",
@@ -27,7 +27,7 @@
     {
       "name": "basic",
       "status": "PASS",
-      "elapsed": 0.18750452995300293,
+      "elapsed": 0.2187514305114746,
       "failures": [],
       "description": "Минимум: одно правило, один build, alias",
       "bug": "",
@@ -36,7 +36,7 @@
     {
       "name": "builtin_glob",
       "status": "PASS",
-      "elapsed": 0.1718740463256836,
+      "elapsed": 0.1875014305114746,
       "failures": [],
       "description": "glob() находит файлы",
       "bug": "",
@@ -45,7 +45,7 @@
     {
       "name": "cache_delete",
       "status": "PASS",
-      "elapsed": 1.671884536743164,
+      "elapsed": 1.375004768371582,
       "failures": [],
       "description": "Кэш — ускоритель, не источник истины: удаление не форсит rebuild, изменение source — форсит",
       "bug": "",
@@ -54,7 +54,7 @@
     {
       "name": "clean",
       "status": "PASS",
-      "elapsed": 0.2187483310699463,
+      "elapsed": 0.1718752384185791,
       "failures": [],
       "description": "pmake clean удаляет outputs",
       "bug": "",
@@ -63,7 +63,7 @@
     {
       "name": "command_shell",
       "status": "PASS",
-      "elapsed": 0.9062533378601074,
+      "elapsed": 0.4374966621398926,
       "failures": [],
       "description": "shell && через {SHELL_PREFIX} — три echo, все три файла созданы",
       "bug": "",
@@ -72,7 +72,7 @@
     {
       "name": "depfile_basic",
       "status": "PASS",
-      "elapsed": 0.5000112056732178,
+      "elapsed": 0.37500667572021484,
       "failures": [],
       "description": "depfile: touch заголовка → пересборка",
       "bug": "",
@@ -81,7 +81,7 @@
     {
       "name": "depfile_unrelated",
       "status": "PASS",
-      "elapsed": 0.17187929153442383,
+      "elapsed": 0.17187976837158203,
       "failures": [],
       "description": "depfile: touch нерелевантного → НЕ пересборка",
       "bug": "",
@@ -90,7 +90,7 @@
     {
       "name": "dry_run",
       "status": "PASS",
-      "elapsed": 0.2031254768371582,
+      "elapsed": 0.046874284744262695,
       "failures": [],
       "description": "-n не создаёт файлы",
       "bug": "",
@@ -99,7 +99,7 @@
     {
       "name": "error_bad_syntax",
       "status": "PASS",
-      "elapsed": 0.03125143051147461,
+      "elapsed": 0.04687213897705078,
       "failures": [],
       "description": "синтаксическая ошибка → exit 1",
       "bug": "",
@@ -108,7 +108,7 @@
     {
       "name": "error_cycle",
       "status": "PASS",
-      "elapsed": 0.0312504768371582,
+      "elapsed": 0.015628576278686523,
       "failures": [],
       "description": "цикл в графе → ошибка, не зависание",
       "bug": "",
@@ -117,7 +117,7 @@
     {
       "name": "error_missing_rule",
       "status": "PASS",
-      "elapsed": 0.03125,
+      "elapsed": 0.03124856948852539,
       "failures": [],
       "description": "ссылка на несуществующее правило → ошибка",
       "bug": "",
@@ -126,7 +126,7 @@
     {
       "name": "foreach",
       "status": "PASS",
-      "elapsed": 0.5000045299530029,
+      "elapsed": 0.3125,
       "failures": [],
       "description": "foreach: 3 build из списка",
       "bug": "",
@@ -135,7 +135,7 @@
     {
       "name": "function_call",
       "status": "PASS",
-      "elapsed": 1.140625,
+      "elapsed": 0.3593733310699463,
       "failures": [],
       "description": "user-function изменяет переменную",
       "bug": "",
@@ -144,7 +144,7 @@
     {
       "name": "if_true",
       "status": "PASS",
-      "elapsed": 0.15625214576721191,
+      "elapsed": 0.1875,
       "failures": [],
       "description": "if true → ветка then",
       "bug": "",
@@ -153,7 +153,7 @@
     {
       "name": "include_basic",
       "status": "PASS",
-      "elapsed": 0.2500009536743164,
+      "elapsed": 0.2187514305114746,
       "failures": [],
       "description": "include простого файла",
       "bug": "",
@@ -162,7 +162,7 @@
     {
       "name": "include_cycle",
       "status": "PASS",
-      "elapsed": 0.0624995231628418,
+      "elapsed": 0.062499046325683594,
       "failures": [],
       "description": "include cycle должен вернуть ошибку, не крашить",
       "bug": "",
@@ -171,7 +171,7 @@
     {
       "name": "include_relative",
       "status": "PASS",
-      "elapsed": 0.3124995231628418,
+      "elapsed": 0.2031252384185791,
       "failures": [],
       "description": "include с относительным путём от родителя",
       "bug": "",
@@ -180,7 +180,7 @@
     {
       "name": "incr_chain",
       "status": "PASS",
-      "elapsed": 0.8593852519989014,
+      "elapsed": 0.8281304836273193,
       "failures": [],
       "description": "a.in → a.out → b.out → c.out; touch a.in → вся цепочка",
       "bug": "",
@@ -189,7 +189,7 @@
     {
       "name": "incr_delete_output",
       "status": "PASS",
-      "elapsed": 0.3281278610229492,
+      "elapsed": 0.3437519073486328,
       "failures": [],
       "description": "Удаление output → пересборка",
       "bug": "",
@@ -198,7 +198,7 @@
     {
       "name": "incr_source",
       "status": "PASS",
-      "elapsed": 0.39063215255737305,
+      "elapsed": 0.34375882148742676,
       "failures": [],
       "description": "Изменение src.c → out.c пересобирается с новым содержимым",
       "bug": "",
@@ -207,7 +207,7 @@
     {
       "name": "parallel_race",
       "status": "PASS",
-      "elapsed": 2.3906238079071045,
+      "elapsed": 2.1249918937683105,
       "failures": [],
       "description": "30 задач параллельно -j 8 — проверка гонок",
       "bug": "",
@@ -216,7 +216,7 @@
     {
       "name": "parallel_speed",
       "status": "PASS",
-      "elapsed": 0.8012046813964844,
+      "elapsed": 0.7251081466674805,
       "failures": [],
       "description": "8 задач × 200ms sleep, -j 8 → ускорение (sanity)",
       "bug": "",
@@ -225,7 +225,7 @@
     {
       "name": "real_build_file_comment",
       "status": "PASS",
-      "elapsed": 0.4843871593475342,
+      "elapsed": 0.2968776226043701,
       "failures": [],
       "description": "комментарий в build.pmake не форсит rebuild (команда не изменилась)",
       "bug": "",
@@ -234,7 +234,7 @@
     {
       "name": "real_cache_saved_before_build",
       "status": "PASS",
-      "elapsed": 0.2187514305114746,
+      "elapsed": 0.1406230926513672,
       "failures": [],
       "description": "fail: кэш до сборки",
       "bug": "",
@@ -243,7 +243,7 @@
     {
       "name": "real_cmake_full_pattern",
       "status": "PASS",
-      "elapsed": 1.438915729522705,
+      "elapsed": 1.302781343460083,
       "failures": [],
       "description": "CMake: autogen (order-only) не propagates; main.c → main.o + app",
       "bug": "",
@@ -252,7 +252,7 @@
     {
       "name": "real_command_change",
       "status": "PASS",
-      "elapsed": 0.4062540531158447,
+      "elapsed": 0.4531245231628418,
       "failures": [],
       "description": "command hash: -O2 → -O3 → rebuild",
       "bug": "",
@@ -261,7 +261,7 @@
     {
       "name": "real_command_hash_chain_3",
       "status": "PASS",
-      "elapsed": 0.7031323909759521,
+      "elapsed": 0.6875052452087402,
       "failures": [],
       "description": "command hash chain: change flag на c → только c rebuild",
       "bug": "",
@@ -270,7 +270,7 @@
     {
       "name": "real_command_var_change",
       "status": "PASS",
-      "elapsed": 0.3750030994415283,
+      "elapsed": 0.32813024520874023,
       "failures": [],
       "description": "command hash: flags -O2 → -O3",
       "bug": "",
@@ -279,7 +279,7 @@
     {
       "name": "real_depfile_lost",
       "status": "PASS",
-      "elapsed": 0.39063167572021484,
+      "elapsed": 0.3750030994415283,
       "failures": [],
       "description": "depfile lost → force rebuild",
       "bug": "",
@@ -288,7 +288,7 @@
     {
       "name": "real_depfile_persists",
       "status": "PASS",
-      "elapsed": 0.359377384185791,
+      "elapsed": 0.3593785762786865,
       "failures": [],
       "description": "depfile persists",
       "bug": "",
@@ -297,7 +297,7 @@
     {
       "name": "real_error_recovery",
       "status": "PASS",
-      "elapsed": 1.0528948307037354,
+      "elapsed": 1.0075323581695557,
       "failures": [],
       "description": "fail → fix → только b.o + app",
       "bug": "",
@@ -306,7 +306,7 @@
     {
       "name": "real_generator_mtime",
       "status": "PASS",
-      "elapsed": 0.5156388282775879,
+      "elapsed": 0.45313286781311035,
       "failures": [],
       "description": "generator mtime: touch src → gen пересобирается (P0 fix)",
       "bug": "",
@@ -315,7 +315,7 @@
     {
       "name": "real_generator_skip",
       "status": "PASS",
-      "elapsed": 0.4062535762786865,
+      "elapsed": 0.34375977516174316,
       "failures": [],
       "description": "generator: exists → skip; missing → rebuild",
       "bug": "",
@@ -324,7 +324,7 @@
     {
       "name": "real_help",
       "status": "PASS",
-      "elapsed": 0.01562356948852539,
+      "elapsed": 0.015625715255737305,
       "failures": [],
       "description": "pmake --help → exit 0 + usage",
       "bug": "",
@@ -333,7 +333,7 @@
     {
       "name": "real_implicit_basic",
       "status": "PASS",
-      "elapsed": 0.37500953674316406,
+      "elapsed": 0.37500667572021484,
       "failures": [],
       "description": "implicit: touch hdr → out rebuild (concat = new mtime)",
       "bug": "",
@@ -342,7 +342,7 @@
     {
       "name": "real_incr_chain_5",
       "status": "PASS",
-      "elapsed": 1.8281304836273193,
+      "elapsed": 1.6093757152557373,
       "failures": [],
       "description": "5 уровней",
       "bug": "",
@@ -351,7 +351,7 @@
     {
       "name": "real_incr_cpp_header",
       "status": "PASS",
-      "elapsed": 1.2812583446502686,
+      "elapsed": 0.9843785762786865,
       "failures": [],
       "description": "C++: .h → оба .o + app; main.c → main.o + app",
       "bug": "",
@@ -360,7 +360,7 @@
     {
       "name": "real_incr_deep_10",
       "status": "PASS",
-      "elapsed": 3.2343807220458984,
+      "elapsed": 3.203118324279785,
       "failures": [],
       "description": "10-уровневая цепочка",
       "bug": "",
@@ -369,7 +369,7 @@
     {
       "name": "real_incr_diamond",
       "status": "PASS",
-      "elapsed": 1.140629768371582,
+      "elapsed": 1.1718811988830566,
       "failures": [],
       "description": "Diamond граф",
       "bug": "",
@@ -378,7 +378,7 @@
     {
       "name": "real_incr_partial_delete",
       "status": "PASS",
-      "elapsed": 1.4687557220458984,
+      "elapsed": 1.4531214237213135,
       "failures": [],
       "description": "10 → удалили 3 → только 3 пересобираются",
       "bug": "",
@@ -387,7 +387,7 @@
     {
       "name": "real_incr_two_branches",
       "status": "PASS",
-      "elapsed": 1.156261682510376,
+      "elapsed": 1.062504768371582,
       "failures": [],
       "description": "Две ветки",
       "bug": "",
@@ -396,7 +396,7 @@
     {
       "name": "real_multi_output",
       "status": "PASS",
-      "elapsed": 0.46875762939453125,
+      "elapsed": 0.3593871593475342,
       "failures": [],
       "description": "multi-output: один таск генерит 3 файла — taskCount=1",
       "bug": "",
@@ -405,7 +405,7 @@
     {
       "name": "real_new_target",
       "status": "PASS",
-      "elapsed": 0.40625548362731934,
+      "elapsed": 0.3906285762786865,
       "failures": [],
       "description": "добавили build в файл → старые up-to-date, только новый пересобирается",
       "bug": "",
@@ -414,7 +414,7 @@
     {
       "name": "real_no_build_file",
       "status": "PASS",
-      "elapsed": 0.015625953674316406,
+      "elapsed": 0.0,
       "failures": [],
       "description": "нет build.pmake → exit 1 + осмысленный stderr",
       "bug": "",
@@ -423,7 +423,7 @@
     {
       "name": "real_order_only_and_implicit",
       "status": "PASS",
-      "elapsed": 0.687509298324585,
+      "elapsed": 0.6406269073486328,
       "failures": [],
       "description": "implicit + order-only: | propagates, || не propagates",
       "bug": "",
@@ -432,7 +432,7 @@
     {
       "name": "real_order_only_basic",
       "status": "PASS",
-      "elapsed": 0.5625083446502686,
+      "elapsed": 0.5625076293945312,
       "failures": [],
       "description": "order-only: touch stamp.in → stamp rebuild, out skip",
       "bug": "",
@@ -441,7 +441,7 @@
     {
       "name": "real_order_only_chain",
       "status": "PASS",
-      "elapsed": 0.8125097751617432,
+      "elapsed": 0.7187559604644775,
       "failures": [],
       "description": "order-only chain: touch s1 → только s1 rebuild",
       "bug": "",
@@ -450,7 +450,7 @@
     {
       "name": "real_order_only_generator",
       "status": "PASS",
-      "elapsed": 0.5781335830688477,
+      "elapsed": 0.5156354904174805,
       "failures": [],
       "description": "order-only + generator: delete stamp → stamp rebuild, out skip",
       "bug": "",
@@ -459,7 +459,7 @@
     {
       "name": "real_order_only_missing",
       "status": "PASS",
-      "elapsed": 0.2656230926513672,
+      "elapsed": 0.203125,
       "failures": [],
       "description": "missing order-only: leaf игнорируется (ninja = error)",
       "bug": "",
@@ -468,7 +468,7 @@
     {
       "name": "real_order_only_multi",
       "status": "PASS",
-      "elapsed": 0.9142961502075195,
+      "elapsed": 0.7160580158233643,
       "failures": [],
       "description": "multi order-only: out || s1 s2 — ждёт обоих",
       "bug": "",
@@ -477,7 +477,7 @@
     {
       "name": "real_order_only_restat",
       "status": "PASS",
-      "elapsed": 0.9375100135803223,
+      "elapsed": 0.7031400203704834,
       "failures": [],
       "description": "order-only + restat: order-only не propagates dirty (taskCount=1)",
       "bug": "",
@@ -486,7 +486,7 @@
     {
       "name": "real_order_only_waits",
       "status": "PASS",
-      "elapsed": 0.3281242847442627,
+      "elapsed": 0.3437521457672119,
       "failures": [],
       "description": "order-only: out ждёт stamp (порядок задач)",
       "bug": "",
@@ -495,7 +495,7 @@
     {
       "name": "real_parallel_correctness",
       "status": "PASS",
-      "elapsed": 1.4687530994415283,
+      "elapsed": 1.4374990463256836,
       "failures": [],
       "description": "15 задач -j 8",
       "bug": "",
@@ -504,7 +504,7 @@
     {
       "name": "real_parallel_diamond_j8",
       "status": "PASS",
-      "elapsed": 0.6093788146972656,
+      "elapsed": 0.5937449932098389,
       "failures": [],
       "description": "Diamond -j 8",
       "bug": "",
@@ -513,7 +513,7 @@
     {
       "name": "real_parallel_partial_fail",
       "status": "PASS",
-      "elapsed": 0.796875,
+      "elapsed": 0.6718735694885254,
       "failures": [],
       "description": "-j 8 fail: dry показывает 1..7 незавершённых",
       "bug": "",
@@ -522,7 +522,7 @@
     {
       "name": "real_partial_then_dry_run",
       "status": "PASS",
-      "elapsed": 0.3125004768371582,
+      "elapsed": 0.3124992847442627,
       "failures": [],
       "description": "fail: -n показывает b + c",
       "bug": "",
@@ -531,7 +531,7 @@
     {
       "name": "real_paths_spaces",
       "status": "PASS",
-      "elapsed": 0.20312714576721191,
+      "elapsed": 0.2343759536743164,
       "failures": [],
       "description": "пробелы в именах файлов (Windows cmd-кавычки)",
       "bug": "",
@@ -540,7 +540,7 @@
     {
       "name": "real_paths_unicode",
       "status": "PASS",
-      "elapsed": 0.2187495231628418,
+      "elapsed": 0.2343757152557373,
       "failures": [],
       "description": "Unicode в именах файлов",
       "bug": "",
@@ -549,7 +549,7 @@
     {
       "name": "real_phony_order_basic",
       "status": "PASS",
-      "elapsed": 0.729769229888916,
+      "elapsed": 0.7443921566009521,
       "failures": [],
       "description": "phony (input-зависимость): порядок через BFS reverse_deps",
       "bug": "",
@@ -558,7 +558,7 @@
     {
       "name": "real_phony_order_cmake",
       "status": "PASS",
-      "elapsed": 0.7691421508789062,
+      "elapsed": 0.8911383152008057,
       "failures": [],
       "description": "CMake-паттерн: phony || autogen → out || phony",
       "bug": "",
@@ -567,7 +567,7 @@
     {
       "name": "real_phony_order_noop",
       "status": "PASS",
-      "elapsed": 0.5156290531158447,
+      "elapsed": 0.531261682510376,
       "failures": [],
       "description": "phony + order-only: noop не ломается, dirty не propagates",
       "bug": "",
@@ -576,7 +576,7 @@
     {
       "name": "real_phony_order_transitive",
       "status": "PASS",
-      "elapsed": 0.645169734954834,
+      "elapsed": 0.6431684494018555,
       "failures": [],
       "description": "phony chain (input): out || phony2 → {step2, phony1 → step1}",
       "bug": "",
@@ -585,7 +585,7 @@
     {
       "name": "real_pool_console_serial",
       "status": "PASS",
-      "elapsed": 1.6194262504577637,
+      "elapsed": 1.5542919635772705,
       "failures": [],
       "description": "pool=console сериализует даже при -j8",
       "bug": "",
@@ -594,7 +594,7 @@
     {
       "name": "real_pool_console_with_order",
       "status": "PASS",
-      "elapsed": 0.9242792129516602,
+      "elapsed": 0.9212615489959717,
       "failures": [],
       "description": "pool=console + order-only: сериализация сохраняется",
       "bug": "",
@@ -603,7 +603,7 @@
     {
       "name": "real_restat_chain_3",
       "status": "PASS",
-      "elapsed": 0.656254768371582,
+      "elapsed": 0.6562516689300537,
       "failures": [],
       "description": "restat chain 3: touch src → только m1",
       "bug": "",
@@ -612,7 +612,7 @@
     {
       "name": "real_restat_content_change",
       "status": "PASS",
-      "elapsed": 0.6562573909759521,
+      "elapsed": 0.6406285762786865,
       "failures": [],
       "description": "restat: контент изменился → оба пересобираются (mtime меняется)",
       "bug": "",
@@ -621,7 +621,7 @@
     {
       "name": "real_restat_deep_5",
       "status": "PASS",
-      "elapsed": 1.0156280994415283,
+      "elapsed": 0.9531283378601074,
       "failures": [],
       "description": "restat chain 5: touch src → только c0 (рекурсивный skip)",
       "bug": "",
@@ -630,7 +630,7 @@
     {
       "name": "real_restat_mixed",
       "status": "PASS",
-      "elapsed": 0.500006914138794,
+      "elapsed": 0.46875762939453125,
       "failures": [],
       "description": "A(restat) → B(no restat): A skip → B skip по mtime",
       "bug": "",
@@ -639,7 +639,7 @@
     {
       "name": "real_restat_multi_output",
       "status": "PASS",
-      "elapsed": 0.5625083446502686,
+      "elapsed": 0.5156292915344238,
       "failures": [],
       "description": "restat + multi-output: mtime не изменился → downstream skip",
       "bug": "",
@@ -648,7 +648,7 @@
     {
       "name": "real_restat_no_flag",
       "status": "PASS",
-      "elapsed": 0.6718802452087402,
+      "elapsed": 0.609379768371582,
       "failures": [],
       "description": "restat=false: mtime не изменился, но downstream всё равно rebuild",
       "bug": "",
@@ -657,7 +657,7 @@
     {
       "name": "real_restat_skip",
       "status": "PASS",
-      "elapsed": 1.5468785762786865,
+      "elapsed": 0.4531280994415283,
       "failures": [],
       "description": "restat: touch src → final пропускается (copy_preserve не меняет mtime)",
       "bug": "",
@@ -666,7 +666,7 @@
     {
       "name": "real_restat_with_depfile",
       "status": "PASS",
-      "elapsed": 0.6704230308532715,
+      "elapsed": 0.6250033378601074,
       "failures": [],
       "description": "restat + depfile (cc_make_dep всегда touch — restat не срабатывает, поведение документируем)",
       "bug": "",
@@ -675,7 +675,7 @@
     {
       "name": "real_rspfile_basic",
       "status": "PASS",
-      "elapsed": 0.25000691413879395,
+      "elapsed": 0.23437833786010742,
       "failures": [],
       "description": "rspfile: пишется перед командой и удаляется после",
       "bug": "",
@@ -684,7 +684,7 @@
     {
       "name": "real_sanity_unknown_target",
       "status": "PASS",
-      "elapsed": 0.015627622604370117,
+      "elapsed": 0.015625953674316406,
       "failures": [],
       "description": "pmake nonexistent_target → exit 1",
       "bug": "",
@@ -693,7 +693,7 @@
     {
       "name": "real_version",
       "status": "PASS",
-      "elapsed": 0.015625,
+      "elapsed": 0.031249523162841797,
       "failures": [],
       "description": "pmake -V → exit 0 + номер версии",
       "bug": "",
@@ -702,7 +702,7 @@
     {
       "name": "real_wide_fanout",
       "status": "PASS",
-      "elapsed": 4.39063024520874,
+      "elapsed": 4.249983310699463,
       "failures": [],
       "description": "1 → 20 fanout",
       "bug": "",
@@ -711,7 +711,7 @@
     {
       "name": "restat",
       "status": "PASS",
-      "elapsed": 0.3281264305114746,
+      "elapsed": 0.31250715255737305,
       "failures": [],
       "description": "restat=true: файл touch'ится, но контент тот же → final не пересобирается",
       "bug": "",
@@ -720,7 +720,7 @@
     {
       "name": "switch",
       "status": "PASS",
-      "elapsed": 0.17187714576721191,
+      "elapsed": 0.1718742847442627,
       "failures": [],
       "description": "switch/case/default из документации",
       "bug": "",
@@ -729,7 +729,7 @@
     {
       "name": "two_builds",
       "status": "PASS",
-      "elapsed": 0.2500040531158447,
+      "elapsed": 0.18750381469726562,
       "failures": [],
       "description": "Два независимых build",
       "bug": "",
