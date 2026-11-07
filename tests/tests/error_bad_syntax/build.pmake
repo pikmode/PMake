@@ -1,3 +1,3 @@
 pmake_required_version = 1.0
-build "out.txt" :       # забыли имя правила
+build "out.txt" :
 alias all : "out.txt"

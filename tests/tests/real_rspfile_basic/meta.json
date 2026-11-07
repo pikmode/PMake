@@ -1,11 +1,10 @@
 {
-  "description": "rspfile: пишется перед командой и удаляется после",
+  "description": "rspfile: пишется перед командой, удаляется после",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

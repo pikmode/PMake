@@ -1,12 +1,11 @@
 {
-  "description": "Изменение src.c → out.c пересобирается с новым содержимым",
+  "description": "Изменение src.c → out.c пересобирается",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",

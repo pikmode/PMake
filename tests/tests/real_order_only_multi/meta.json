@@ -1,11 +1,10 @@
 {
-  "description": "multi order-only: out || s1 s2 — ждёт обоих",
+  "description": "multi order-only",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

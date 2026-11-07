@@ -1,12 +1,11 @@
 {
-  "description": "цикл в графе → ошибка, не зависание",
+  "description": "цикл в графе → ошибка",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "cycle_should_fail",

@@ -1,11 +1,10 @@
 {
-  "description": "комментарий в build.pmake не форсит rebuild (команда не изменилась)",
+  "description": "комментарий не форсит rebuild",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {
@@ -23,7 +22,7 @@
         },
         {
           "modify": {
-            "build.pmake": "pmake_required_version = 1.0\n// just a comment, no semantic change\npython = \"E:/python/python.exe\"\nrule echo { command = \"${python} echo_to.py ${out} x\" }\nbuild \"out.txt\" : echo\nalias all : \"out.txt\"\n"
+            "build.pmake": "pmake_required_version = 1.0\n// just a comment\npython = \"E:/python/python.exe\"\nrule echo { command = \"${python} echo_to.py ${out} x\" }\nbuild \"out.txt\" : echo\nalias all : \"out.txt\"\n"
           }
         }
       ],

@@ -1,11 +1,10 @@
 {
-  "description": "-j 8 fail: dry показывает 1..7 незавершённых",
+  "description": "-j 8 fail",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

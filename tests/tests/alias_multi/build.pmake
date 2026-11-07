@@ -1,8 +1,6 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
-rule echo {
-    command = "${python} echo_to.py ${out} y"
-}
+python = "E:/python/python.exe"
+rule echo { command = "${python} echo_to.py ${out} y" }
 build "x.txt" : echo
 build "y.txt" : echo
 build "z.txt" : echo

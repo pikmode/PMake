@@ -1,11 +1,10 @@
 {
-  "description": "пробелы в именах файлов (Windows cmd-кавычки)",
+  "description": "пробелы в именах файлов",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

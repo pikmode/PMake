@@ -1,12 +1,11 @@
 {
-  "description": "alias с 3 targets (comma-separated)",
+  "description": "alias с 3 targets",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",

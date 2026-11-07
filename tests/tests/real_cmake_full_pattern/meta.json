@@ -1,11 +1,10 @@
 {
-  "description": "CMake: autogen (order-only) не propagates; main.c → main.o + app",
+  "description": "CMake full pattern",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

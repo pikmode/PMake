@@ -1,5 +1,6 @@
 #include "core/builtins.h"
 #include "core/state.h"
+#include "deps/dep_parser.h"        // NEW: для dep_inputs
 #include "util/filesystem.h"
 #include "util/hash.h"
 #include "util/string_utils.h"
@@ -19,7 +20,6 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Простой glob matcher: '*' и '?'. Аналог QDir::entryList с паттерном.
 bool glob_match(std::string_view pattern, std::string_view str) {
     std::size_t p = 0, s = 0;
     std::size_t star_p = std::string_view::npos, star_s = 0;
@@ -60,6 +60,27 @@ std::string absolute_path_str(const fs::path& p) {
 }
 
 } // namespace
+
+// ============================================================
+// NEW: dep_inputs(path) — парсит .d-файл через DepParser и возвращает
+// space-joined строку inputs (без target).
+//
+// Пример:
+//   inputs = dep_inputs("build/main.o.d")
+//   rule r { command = "cc ${inputs}" }
+//
+// Полезно и для тестов, и для дебага depfile'ов.
+// ============================================================
+static Value depInputsFunction(const std::vector<Value>& args) {
+    if (args.empty()) return Value();
+    auto inputs = deps::DepParser::parse(args[0].to_string());
+    std::string joined;
+    for (std::size_t i = 0; i < inputs.size(); ++i) {
+        if (i) joined += ' ';
+        joined += inputs[i];
+    }
+    return Value(std::move(joined));
+}
 
 static Value globFunction(const std::vector<Value>& args, State* state) {
     if (args.empty()) return Value();
@@ -258,6 +279,7 @@ Value Builtins::call(std::string_view name,
                      State* state,
                      Scope* scope) {
     (void)scope;
+    if (name == "dep_inputs")     return depInputsFunction(args);     // NEW
     if (name == "glob")           return globFunction(args, state);
     if (name == "replace_suffix") return replaceSuffixFunction(args);
     if (name == "join")           return joinFunction(args);

@@ -167,7 +167,9 @@ void ParserImpl::parseBuild(AstNode* parent) {
                     error("Expected '=' or '+='", true);
                     break;
                 }
-                auto val = parseValueSequence(false);
+                // CHANGED: stopAtIdentAssign=true — для однострочных
+                // build "out" : rule { a = "x" b = "y" }.
+                auto val = parseValueSequence(false, /*stopAtIdentAssign=*/true);
                 std::string value = astNodeToStringWithState(val, &state_);
                 if (isAppend) {
                     std::string current;

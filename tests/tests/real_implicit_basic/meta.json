@@ -1,11 +1,10 @@
 {
-  "description": "implicit: touch hdr → out rebuild (concat = new mtime)",
+  "description": "implicit: touch hdr → out rebuild",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

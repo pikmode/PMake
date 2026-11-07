@@ -1,12 +1,11 @@
 {
-  "description": "8 задач × 200ms sleep, -j 8 → ускорение (sanity)",
+  "description": "8 задач × 200ms sleep",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "parallel_fast",

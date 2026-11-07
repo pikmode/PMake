@@ -1,0 +1,8 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+p1 = "C:\test\path"
+p2 = "C:\temp\build"
+p3 = "C:\src\lib"
+rule echo { command = "${python} write_all.py ${out} ${p1} ${p2} ${p3}" }
+build "out.txt" : echo
+alias all : "out.txt"

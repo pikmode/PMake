@@ -1,7 +1,5 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
-rule copy {
-    command = "${python} copy.py ${in} ${out}"
-}
+python = "E:/python/python.exe"
+rule copy { command = "${python} copy.py ${in} ${out}" }
 build "out.c" : copy "src.c"
 alias all : "out.c"

@@ -1,11 +1,10 @@
 {
-  "description": "нет build.pmake → exit 1 + осмысленный stderr",
+  "description": "нет build.pmake",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

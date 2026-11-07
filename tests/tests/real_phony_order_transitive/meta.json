@@ -1,11 +1,10 @@
 {
-  "description": "phony chain (input): out || phony2 → {step2, phony1 → step1}",
+  "description": "phony chain (input)",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

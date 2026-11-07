@@ -1,9 +1,5 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
-rule mk {
-    command = "${python} make_dep.py ${out} hdr.h"
-    depfile = "${out}.d"
-    deps = "gcc"
-}
+python = "E:/python/python.exe"
+rule mk { command = "${python} make_dep.py ${out} hdr.h" depfile = "${out}.d" deps = "gcc" }
 build "out.o" : mk "hdr.h"
 alias all : "out.o"

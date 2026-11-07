@@ -42,6 +42,7 @@ ParserImpl::ParserImpl(std::string_view data, std::string_view filename,
     operationCounter = 0;
     includeDepth = 0;
     functionCallDepth = 0;
+    pendingFlow_ = 0;    // NEW (#5)
 }
 
 ParserImpl::~ParserImpl() {
@@ -356,6 +357,40 @@ std::string ParserImpl::astNodeToStringWithState(AstNode* node, const core::Stat
         default:
             return {};
     }
+}
+
+// ============================================================
+// NEW: peekIdentFollowedByAssign
+//
+// Заглядывает на один токен вперёд. Возвращает true, если:
+//   cur_      == TOK_IDENT
+//   следующий == TOK_EQUALS или TOK_PLUS_EQUALS
+//
+// То есть cur_ — это имя следующего атрибута в однострочном блоке:
+//   rule X { command = "..." restat = true }
+//                                  ^^^^^^^^^^^^ — вот это ловим.
+//
+// Полностью восстанавливает cur_, lexer state, column, hasError_, errors_.
+// ============================================================
+bool ParserImpl::peekIdentFollowedByAssign() {
+    if (cur_.type != TOK_IDENT) return false;
+
+    auto lexState        = lexer_.saveState();
+    Token savedCur       = cur_;
+    int savedColumn      = currentColumn_;
+    bool savedHasError   = hasError_;
+    std::size_t savedErr = errors_.size();
+
+    advance();
+    bool isAssign = (cur_.type == TOK_EQUALS || cur_.type == TOK_PLUS_EQUALS);
+
+    lexer_.restoreState(lexState);
+    cur_           = savedCur;
+    currentColumn_ = savedColumn;
+    hasError_      = savedHasError;
+    errors_.resize(savedErr);
+
+    return isAssign;
 }
 
 } // namespace pmake::parser

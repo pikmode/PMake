@@ -6,7 +6,9 @@ rule cc {
     deps = "gcc"
     restat = true
 }
-rule link { command = "${python} concat.py ${out} ${in}" }
+rule link {
+    command = "${python} concat.py ${out} ${in}"
+}
 build "main.o" : cc "main.c"
 build "app" : link "main.o"
 alias all : "app"

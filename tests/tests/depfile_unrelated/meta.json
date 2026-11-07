@@ -1,12 +1,11 @@
 {
-  "description": "depfile: touch нерелевантного → НЕ пересборка",
+  "description": "depfile: touch нерелевантного → НЕ пересборка (однострочный rule)",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",

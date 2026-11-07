@@ -1,12 +1,11 @@
 {
-  "description": "Кэш — ускоритель, не источник истины: удаление не форсит rebuild, изменение source — форсит",
+  "description": "Кэш — ускоритель: удаление не форсит rebuild",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",

@@ -1,5 +1,5 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
+python = "E:/python/python.exe"
 rule echo {
     command = "${python} echo_to.py ${out} hello"
     description = "ECHO ${out}"

@@ -1,0 +1,24 @@
+{
+  "description": "include видит переменные родителя в build output",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out_dir/result.txt"
+        ],
+        "filesWith": {
+          "out_dir/result.txt": "hello"
+        }
+      }
+    }
+  ]
+}

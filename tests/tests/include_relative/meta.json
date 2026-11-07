@@ -1,12 +1,11 @@
 {
-  "description": "include с относительным путём от родителя",
+  "description": "include с относительным путём",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",

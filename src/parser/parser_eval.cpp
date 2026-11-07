@@ -78,6 +78,12 @@ void ParserImpl::evaluateAst(AstNode* root) {
     stack.push_back({root, 0});
 
     while (!stack.empty()) {
+        // NEW (#5): если вложенный eval выставил break/continue —
+        // немедленно прекращаем обход текущего блока. Управление
+        // вернётся в evaluateForeach/evaluateWhile, который
+        // обработает флаг.
+        if (pendingFlow_ != 0) return;
+
         Frame& frame = stack.back();
         AstNode* node = frame.node;
 
@@ -121,6 +127,11 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::FUNCTION_DEF:
                     frame.index = static_cast<int>(node->children.size());
                     break;
+
+                // NEW (#5): выставляем флаг и bail-out'им на следующей
+                // итерации. Сбрасывается в evaluateForeach/evaluateWhile.
+                case AstNode::BREAK:    pendingFlow_ = 1; break;
+                case AstNode::CONTINUE: pendingFlow_ = 2; break;
 
                 case AstNode::ALIAS: evaluateAlias(node); break;
                 case AstNode::INCLUDE: evaluateInclude(node); break;
@@ -343,6 +354,9 @@ void ParserImpl::evaluateForeach(AstNode* foreachNode) {
         if (foreachNode->children.size() >= 2) {
             evaluateAst(foreachNode->children[1]);
         }
+        // NEW (#5): обрабатываем break/continue из тела.
+        if (pendingFlow_ == 1) { pendingFlow_ = 0; break; }
+        if (pendingFlow_ == 2) { pendingFlow_ = 0; continue; }
     }
 }
 
@@ -408,6 +422,9 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
             break;
         }
         evaluateAst(body);
+        // NEW (#5)
+        if (pendingFlow_ == 1) { pendingFlow_ = 0; break; }
+        if (pendingFlow_ == 2) { pendingFlow_ = 0; continue; }
     }
 }
 

@@ -1,11 +1,10 @@
 {
-  "description": "restat + depfile (cc_make_dep всегда touch — restat не срабатывает, поведение документируем)",
+  "description": "restat + depfile",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

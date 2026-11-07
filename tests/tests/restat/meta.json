@@ -1,12 +1,11 @@
 {
-  "description": "restat=true: файл touch'ится, но контент тот же → final не пересобирается",
+  "description": "restat=true: touch → content unchanged → final skip",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",
@@ -29,8 +28,7 @@
       "expect": {
         "exit": 0,
         "taskCount": 0
-      },
-      "comment": "restat=true + content unchanged → downstream не пересобирается"
+      }
     }
   ]
 }

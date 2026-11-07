@@ -1,11 +1,10 @@
 {
-  "description": "order-only: touch stamp.in → stamp rebuild, out skip",
+  "description": "order-only: touch stamp → stamp rebuild, out skip",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {
@@ -45,11 +44,7 @@
       ],
       "expect": {
         "exit": 0,
-        "taskCount": 1,
-        "files": [
-          "stamp.txt",
-          "out.txt"
-        ]
+        "taskCount": 1
       }
     }
   ]

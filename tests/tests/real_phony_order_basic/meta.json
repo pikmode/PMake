@@ -1,11 +1,10 @@
 {
-  "description": "phony (input-зависимость): порядок через BFS reverse_deps",
+  "description": "phony (input): порядок через BFS",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

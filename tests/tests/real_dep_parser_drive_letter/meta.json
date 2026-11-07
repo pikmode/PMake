@@ -1,0 +1,21 @@
+{
+  "description": "dep_parser: drive-letter пути в target и inputs",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesWith": {
+          "out.txt": "main.c C:\\src\\hdr.h"
+        }
+      }
+    }
+  ]
+}

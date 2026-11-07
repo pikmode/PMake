@@ -1,3 +1,0 @@
-pmake_required_version = 1.0
-build "out.txt" : nonexistent_rule
-alias all : "out.txt"

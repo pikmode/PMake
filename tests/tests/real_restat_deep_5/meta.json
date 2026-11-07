@@ -1,11 +1,10 @@
 {
-  "description": "restat chain 5: touch src → только c0 (рекурсивный skip)",
+  "description": "restat chain 5",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

@@ -1,11 +1,10 @@
 {
-  "description": "restat: контент изменился → оба пересобираются (mtime меняется)",
+  "description": "restat: контент изменился → оба пересобираются",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

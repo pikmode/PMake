@@ -1,15 +1,13 @@
-// D:\bin\python3.exe bench_vs_ninja.py --files 100 --jobs 1 --runs 5 --python "E:/python/python.exe"
 pmake_required_version = 1.0
 
-python     = "D:/bin/python3.exe"
-gen_script = "create_test_project.py"
-gen_flags  = "--force"
+python = "E:/python/python.exe"
 
 rule gen_tests {
-    command     = "${python} ${gen_script} ${gen_flags}"
-    description = "generating test suite"
+    command     = "${python} run.py --generate-only"
+    description = "generating test project"
     restat      = true
 }
 
-build "run.py" : gen_tests "${gen_script}"
-alias all : "run.py"
+build ".generated" : gen_tests "run.py" "src/__init__.py" "src/_common.py" "src/helpers.py" "src/tests_basic.py" "src/tests_incremental.py" "src/tests_restat.py" "src/tests_order_only.py" "src/tests_phony.py" "src/tests_depfile.py" "src/tests_command_hash.py" "src/tests_include.py" "src/tests_errors.py" "src/tests_parallel.py" "src/tests_paths.py" "src/tests_modules.py" "src/tests_builtins.py" "src/tests_pool.py" "src/tests_rspfile.py" "src/tests_generator.py" "src/tests_cmake.py" "src/tests_misc.py" "src/tests_hard.py" "src/generate.py" "src/runner.py"
+
+alias all : ".generated"

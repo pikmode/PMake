@@ -1,11 +1,10 @@
 {
-  "description": "multi-output: один таск генерит 3 файла — taskCount=1",
+  "description": "multi-output",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

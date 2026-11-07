@@ -1,0 +1,82 @@
+{
+  "description": "30 files, f_15 fails → fix",
+  "bug": "",
+  "timeoutSec": 120,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first_fail",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "1"
+      ],
+      "expect": {
+        "exit": 1,
+        "filesNot": [
+          "f_15.o",
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "fix_and_retry",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "modify": {
+            "f_15.c": "int v_15;\n"
+          }
+        }
+      ],
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "1"
+      ],
+      "expect": {
+        "exit": 0,
+        "files": [
+          "f_01.o",
+          "f_02.o",
+          "f_03.o",
+          "f_04.o",
+          "f_05.o",
+          "f_06.o",
+          "f_07.o",
+          "f_08.o",
+          "f_09.o",
+          "f_10.o",
+          "f_11.o",
+          "f_12.o",
+          "f_13.o",
+          "f_14.o",
+          "f_15.o",
+          "f_16.o",
+          "f_17.o",
+          "f_18.o",
+          "f_19.o",
+          "f_20.o",
+          "f_21.o",
+          "f_22.o",
+          "f_23.o",
+          "f_24.o",
+          "f_25.o",
+          "f_26.o",
+          "f_27.o",
+          "f_28.o",
+          "f_29.o",
+          "f_30.o",
+          "app"
+        ]
+      }
+    }
+  ]
+}

@@ -1,11 +1,10 @@
 {
-  "description": "pool=console сериализует даже при -j8",
+  "description": "pool=console сериализует при -j8",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

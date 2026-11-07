@@ -141,7 +141,19 @@ AstNode* ParserImpl::parseAtom() {
     }
 }
 
-AstNode* ParserImpl::parseValueSequence(bool stopOnNewline) {
+// ============================================================
+// CHANGED: parseValueSequence
+//
+// stopAtIdentAssign=true — останавливает sequence, как только следующий
+// непустой токен это "IDENT = " или "IDENT += ". Нужно для однострочных
+// rule/build блоков:
+//   rule X { command = "..." restat = true }
+//                                  ^^^^^^ — это уже следующий атрибут.
+//
+// Первая часть значения (например, "..." после command =) парсится как
+// обычно. Только когда parts уже непуст, а следующее — IDENT=, — стоп.
+// ============================================================
+AstNode* ParserImpl::parseValueSequence(bool stopOnNewline, bool stopAtIdentAssign) {
     std::vector<AstNode*> parts;
     int loopGuard = 0;
     while (true) {
@@ -155,6 +167,11 @@ AstNode* ParserImpl::parseValueSequence(bool stopOnNewline) {
             break;
         if (stopOnNewline && cur_.type == TOK_INDENT)
             break;
+
+        // NEW: граница следующего атрибута в однострочном блоке.
+        if (stopAtIdentAssign && !parts.empty() && peekIdentFollowedByAssign()) {
+            break;
+        }
 
         AstNode* part = parseExpressionPrecedence(0, 0);
         if (!part) {

@@ -1,11 +1,10 @@
 {
-  "description": "order-only + generator: delete stamp → stamp rebuild, out skip",
+  "description": "order-only + generator",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

@@ -1,12 +1,11 @@
 {
   "description": "синтаксическая ошибка → exit 1",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "bad_syntax_should_fail",

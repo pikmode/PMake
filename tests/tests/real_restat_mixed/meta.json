@@ -1,11 +1,10 @@
 {
-  "description": "A(restat) → B(no restat): A skip → B skip по mtime",
+  "description": "A(restat) → B(no restat)",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

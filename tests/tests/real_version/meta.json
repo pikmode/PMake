@@ -1,11 +1,10 @@
 {
-  "description": "pmake -V → exit 0 + номер версии",
+  "description": "pmake -V",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

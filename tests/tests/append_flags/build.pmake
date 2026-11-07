@@ -1,10 +1,8 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
+python = "E:/python/python.exe"
 flags = "A"
 flags += "B"
 flags += "C"
-rule echo {
-    command = "${python} write_all.py ${out} ${flags}"
-}
+rule echo { command = "${python} write_all.py ${out} ${flags}" }
 build "out.txt" : echo
 alias all : "out.txt"

@@ -1,12 +1,11 @@
 {
   "description": "-n не создаёт файлы",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "dry",

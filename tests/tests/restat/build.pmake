@@ -1,8 +1,7 @@
 pmake_required_version = 1.0
-python = "D:/bin/python3.exe"
+python = "E:/python/python.exe"
 rule touch_always {
     command = "${python} restat.py ${out}"
-    description = "RESTAT ${out}"
     restat = true
 }
 rule copy {

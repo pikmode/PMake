@@ -1,11 +1,10 @@
 {
-  "description": "добавили build в файл → старые up-to-date, только новый пересобирается",
+  "description": "добавили build → только новый пересобирается",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

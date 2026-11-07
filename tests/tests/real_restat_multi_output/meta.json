@@ -1,11 +1,10 @@
 {
-  "description": "restat + multi-output: mtime не изменился → downstream skip",
+  "description": "restat + multi-output",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

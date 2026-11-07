@@ -1,11 +1,10 @@
 {
-  "description": "restat chain 3: touch src → только m1",
+  "description": "restat chain 3",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

@@ -85,7 +85,14 @@ bool Node::isDirty() {
             if (m > maxOut) maxOut = m;
         }
         auto checkGenDep = [&](Node* dep) -> bool {
-            if (dep->isLeaf()) return util::getFileMtime(dep->name()) > maxOut;
+            if (dep->isLeaf()) {
+                std::int64_t m = util::getFileMtime(dep->name());
+                // NEW (#7): missing input форсит rebuild generator-правила.
+                // Раньше "m > maxOut" при m == -1 давал false, и удалённый
+                // input не замечался. Теперь — пересборка.
+                if (m == -1) return true;
+                return m > maxOut;
+            }
             if (dep->wasBuilt()) return true;
             const Build* db = dep->getBuild();
             if (!db) return false;
@@ -119,6 +126,16 @@ bool Node::isDirty() {
     auto checkNode = [&](Node* dep) -> bool {
         if (dep->isLeaf()) {
             std::int64_t m = util::getFileMtime(dep->name());
+            // NEW (#7): missing input → форсим rebuild.
+            // -1 означает "файла нет" (соглашение util::getFileMtime).
+            // Раньше "-1 > maxOut" = false, и pmake молча продолжал
+            // с устаревшим output при удалённом input. Теперь — rebuild,
+            // и если команда не справится без input — exit 1.
+            //
+            // Важно: order-only deps сюда не попадают (checkNode вызывается
+            // только для deps_ и implicit_deps_), поэтому real_order_only_missing
+            // не ломается — missing order-only по-прежнему легален.
+            if (m == -1) return true;
             if (m > maxOut) return true;
         } else {
             if (dep->wasBuilt()) return true;

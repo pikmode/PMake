@@ -1,11 +1,7 @@
 pmake_required_version = 1.0
 python = "E:/python/python.exe"
-rule slow_touch {
-    command = "${python} sleep_and_touch.py 400 ${out}"
-}
-rule check_stamp {
-    command = "${python} check_stamp.py autogen_stamp ${in} ${out}"
-}
+rule slow_touch { command = "${python} sleep_and_touch.py 400 ${out}" }
+rule check_stamp { command = "${python} check_stamp.py autogen_stamp ${in} ${out}" }
 build "autogen_stamp" : slow_touch
 build "cmake_obj_deps" : phony || "autogen_stamp"
 build "out.txt" : check_stamp "out.in" || "cmake_obj_deps"

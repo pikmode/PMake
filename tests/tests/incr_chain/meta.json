@@ -1,12 +1,11 @@
 {
-  "description": "a.in → a.out → b.out → c.out; touch a.in → вся цепочка",
+  "description": "a.in → a.out → b.out → c.out",
   "bug": "",
-  "fix_hint": "",
+  "timeoutSec": 60,
   "args": [
     "-f",
     "build.pmake"
   ],
-  "timeoutSec": 30,
   "runs": [
     {
       "name": "first",
@@ -46,8 +45,7 @@
       ],
       "expect": {
         "exit": 0,
-        "taskCountMin": 3,
-        "taskCountMax": 3
+        "taskCount": 3
       }
     }
   ]

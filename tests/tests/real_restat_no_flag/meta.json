@@ -1,11 +1,10 @@
 {
-  "description": "restat=false: mtime не изменился, но downstream всё равно rebuild",
+  "description": "restat=false: downstream всё равно rebuild",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

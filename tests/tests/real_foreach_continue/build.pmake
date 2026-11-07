@@ -1,0 +1,11 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+items = "a b c d"
+result = ""
+foreach x in ${items} {
+    if x == "b" { continue }
+    result += ${x}
+}
+rule write { command = "${python} write_all.py ${out} ${result}" }
+build "out.txt" : write
+alias all : "out.txt"

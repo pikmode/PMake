@@ -1,6 +1,6 @@
 pmake_required_version = 1.0
 python = "E:/python/python.exe"
-rule ok   { command = "${python} echo_to.py ${out} OK" }
+rule ok { command = "${python} echo_to.py ${out} OK" }
 rule fail { command = "${python} fail.py" }
 build "p_1.txt" : ok
 build "p_2.txt" : ok

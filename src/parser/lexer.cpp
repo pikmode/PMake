@@ -158,10 +158,18 @@ Token Lexer::readString() {
             switch (c) {
                 case 'n':  result.push_back('\n'); break;
                 case 'r':  result.push_back('\r'); break;
-                case 't':  result.push_back('\t'); break;
                 case '\\': result.push_back('\\'); break;
                 case '"':  result.push_back('"');  break;
-                default:   result.push_back(c);    break;
+                // CHANGED: 't' убран из escape-таблицы.
+                // Причина: Windows-пути вида "C:\temp" больше не превращаются
+                // в "C:<TAB>emp". Если нужен настоящий TAB — используйте
+                // реальный символ табуляции в исходнике.
+                default:
+                    // Неизвестный escape — сохраняем ОБА символа как есть.
+                    // Это защищает "C:\path", "C:\Program Files" и т.п.
+                    result.push_back('\\');
+                    result.push_back(c);
+                    break;
             }
             escaped = false;
         } else if (c == '\\') {
@@ -240,8 +248,6 @@ Token Lexer::readSymbol() {
             return {TOK_INVALID, -1, line_, column_, 0};
         case '|':
             if (peek() == '|') { get(); return {TOK_OR, -1, line_, column_, 0}; }
-            // FIX: одиночный | теперь TOK_PIPE (для implicit inputs в build).
-            // Раньше был TOK_INVALID.
             return {TOK_PIPE, -1, line_, column_, 0};
         case ':': return {TOK_COLON, -1, line_, column_, 0};
         case '}': return {TOK_RBRACE, -1, line_, column_, 0};

@@ -1,11 +1,10 @@
 {
-  "description": "order-only + restat: order-only не propagates dirty (taskCount=1)",
+  "description": "order-only + restat",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

@@ -1,11 +1,10 @@
 {
-  "description": "order-only chain: touch s1 → только s1 rebuild",
+  "description": "order-only chain",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

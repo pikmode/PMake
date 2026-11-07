@@ -1,11 +1,10 @@
 {
-  "description": "pmake --help → exit 0 + usage",
+  "description": "pmake --help",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

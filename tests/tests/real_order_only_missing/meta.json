@@ -1,11 +1,10 @@
 {
-  "description": "missing order-only: leaf игнорируется (ninja = error)",
+  "description": "missing order-only: leaf игнорируется",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

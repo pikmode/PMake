@@ -1,11 +1,10 @@
 {
-  "description": "restat: touch src → final пропускается (copy_preserve не меняет mtime)",
+  "description": "restat: touch src → final пропускается",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

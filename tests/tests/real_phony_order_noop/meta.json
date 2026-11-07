@@ -1,11 +1,10 @@
 {
-  "description": "phony + order-only: noop не ломается, dirty не propagates",
+  "description": "phony + order-only: noop не ломается",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

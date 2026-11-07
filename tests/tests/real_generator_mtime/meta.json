@@ -1,11 +1,10 @@
 {
-  "description": "generator mtime: touch src → gen пересобирается (P0 fix)",
+  "description": "generator mtime",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

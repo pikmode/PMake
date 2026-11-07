@@ -17,7 +17,7 @@ namespace pmake::parser {
 
 using pmake::core::AstNode;
 using pmake::core::Value;
-using pmake::core::ValueList;    // ← ДОБАВЛЕНО
+using pmake::core::ValueList;    
 
 class ParserImpl {
 public:
@@ -31,14 +31,14 @@ public:
     static int includeDepth;
     static int functionCallDepth;
 
-    static constexpr int MAX_RULES = 10000;
-    static constexpr int MAX_BUILDS = 10000;
-    static constexpr int MAX_AST_NODES = 50000;
-    static constexpr int MAX_FOREACH_ITERATIONS = 10000;
-    static constexpr int MAX_INCLUDE_DEPTH = 50;
-    static constexpr int MAX_EXPR_DEPTH = 100;
-    static constexpr int MAX_STATEMENT_DEPTH = 100;
-    static constexpr int MAX_OPERATIONS = 1000000;
+    static constexpr int MAX_RULES = 1000000;
+    static constexpr int MAX_BUILDS = 1000000;
+    static constexpr int MAX_AST_NODES = 5000000;
+    static constexpr int MAX_FOREACH_ITERATIONS = 1000000;
+    static constexpr int MAX_INCLUDE_DEPTH = 500;
+    static constexpr int MAX_EXPR_DEPTH = 1000;
+    static constexpr int MAX_STATEMENT_DEPTH = 1000;
+    static constexpr int MAX_OPERATIONS = 10000000;
 
 private:
     Lexer lexer_;
@@ -66,6 +66,15 @@ private:
     Token cur_;
     int currentColumn_ = 0;
 
+    // NEW (#5): control flow state.
+    //   0 = normal, 1 = break, 2 = continue.
+    // Устанавливается в evaluateAst при встрече BREAK/CONTINUE,
+    // сбрасывается в evaluateForeach / evaluateWhile.
+    // Также служит bail-out'ом: evaluateAst в начале каждой итерации
+    // проверяет флаг и, если он != 0, немедленно возвращает управление —
+    // так останавливается обработка оставшихся братьев текущего блока.
+    int pendingFlow_ = 0;
+
     void advance();
     bool match(TokenType t);
     bool expect(TokenType t, std::string_view msg);
@@ -78,12 +87,19 @@ private:
     void pushBlock(AstNode* node);
     void popBlock();
 
-    AstNode* parseExpressionPrecedence(int minPrec = 0, int depth = 0);
+    // CHANGED: добавлен stopAtIdentAssign — останавливает value-sequence,
+    // когда следующий токен "IDENT = " или "IDENT += " (начало нового
+    // атрибута в однострочном блоке rule/build).
+    AstNode* parseValueSequence(bool stopOnNewline = true,
+                                bool stopAtIdentAssign = false);
     int getPrecedence(TokenType t);
+    AstNode* parseExpressionPrecedence(int minPrec = 0, int depth = 0);
     AstNode* parseAtom();
-    AstNode* parseValueSequence(bool stopOnNewline = true);
     std::vector<AstNode*> parseValueList();
     AstNode* parseValue();
+
+    // NEW: peek — текущий IDENT и следующий токен '=' или '+='.
+    bool peekIdentFollowedByAssign();
 
     void parseVersionDirective();
     std::string parseIdent();

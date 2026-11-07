@@ -85,7 +85,9 @@ AstNode* ParserImpl::parseAttributeBlock() {
                     error("Expected '=' or '+='", true);
                     break;
                 }
-                auto val = parseValueSequence(false);
+                // CHANGED: stopAtIdentAssign=true — корректно режет
+                // однострочные блоки rule/build.
+                auto val = parseValueSequence(false, /*stopAtIdentAssign=*/true);
                 auto assign = makeStringLiteral("");
                 assign->type = AstNode::ASSIGNMENT;
                 assign->name = key;
@@ -132,7 +134,8 @@ AstNode* ParserImpl::parseAttributeBlock() {
                     error("Expected '=' or '+='", true);
                     break;
                 }
-                auto val = parseValueSequence(false);
+                // CHANGED: stopAtIdentAssign=true — то же, для indent-блоков.
+                auto val = parseValueSequence(false, /*stopAtIdentAssign=*/true);
                 auto assign = makeStringLiteral("");
                 assign->type = AstNode::ASSIGNMENT;
                 assign->name = key;

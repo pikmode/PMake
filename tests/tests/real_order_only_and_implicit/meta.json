@@ -1,11 +1,10 @@
 {
-  "description": "implicit + order-only: | propagates, || не propagates",
+  "description": "implicit + order-only",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

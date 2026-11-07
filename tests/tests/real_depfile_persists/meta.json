@@ -1,11 +1,10 @@
 {
-  "description": "depfile persists",
+  "description": "depfile persists (однострочный rule)",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {

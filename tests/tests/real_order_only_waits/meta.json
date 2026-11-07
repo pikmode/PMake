@@ -1,11 +1,10 @@
 {
-  "description": "order-only: out ждёт stamp (порядок задач)",
+  "description": "order-only: out ждёт stamp",
   "bug": "",
   "timeoutSec": 60,
   "args": [
     "-f",
-    "build.pmake",
-    "-v"
+    "build.pmake"
   ],
   "runs": [
     {
