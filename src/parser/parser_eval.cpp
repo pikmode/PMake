@@ -209,19 +209,72 @@ void ParserImpl::evaluateRule(AstNode* rule) {
     state_.addRule(coreRule);
 }
 
+// ============================================================
+// CHANGED (#8): outputs различают quoted literal и unquoted variable.
+//
+//   build "out file.txt" : mk        → STRING_LITERAL, пробел сохраняется
+//   build ${outs}        : mk        → VARIABLE_REF, split_ws после expand
+//   build "${outs}"      : mk        → STRING_LITERAL, тоже split_ws
+//                                       (внутри кавычек ${...} всё равно
+//                                        разворачивается при evaluate)
+//
+// Асимметрия с inputs (там split_ws всегда) сохраняется: для outputs
+// quoted literal должен оставаться одним именем файла с пробелом внутри,
+// иначе real_paths_spaces ломается.
+// ============================================================
 void ParserImpl::evaluateBuild(AstNode* build) {
     core::Build coreBuild;
+
+    auto addOutput = [this](AstNode* part, std::vector<std::string>& target) {
+        if (!part) return;
+        switch (part->type) {
+            case AstNode::VARIABLE_REF: {
+                // build ${outs} : mk — unquoted variable, split_ws.
+                Value v = evaluateExpression(part);
+                if (v.is_list()) {
+                    for (const auto& item : *v.as_list()) {
+                        std::string s = item.to_string();
+                        if (!s.empty()) target.push_back(std::move(s));
+                    }
+                } else {
+                    for (auto& p : split_ws(v.to_string())) {
+                        if (!p.empty()) target.push_back(std::move(p));
+                    }
+                }
+                return;
+            }
+            case AstNode::STRING_LITERAL: {
+                // build "out file.txt" : mk — quoted literal, пробел
+                // внутри сохраняется как часть имени файла.
+                // Но если внутри литерала есть ${...} — сначала
+                // раскрываем, и потом тоже split_ws, чтобы
+                // build "${outs}" работал как shell: кавычки снимаются,
+                // переменная разворачивается, слово-сплит применяется.
+                const std::string& raw = part->value.to_string();
+                std::string expanded = evaluateExpression(part).to_string();
+                if (raw.find("${") != std::string::npos) {
+                    for (auto& p : split_ws(expanded)) {
+                        if (!p.empty()) target.push_back(std::move(p));
+                    }
+                } else if (!expanded.empty()) {
+                    target.push_back(std::move(expanded));
+                }
+                return;
+            }
+            default: {
+                std::string s = evaluateExpression(part).to_string();
+                if (!s.empty()) target.push_back(std::move(s));
+                return;
+            }
+        }
+    };
 
     if (build->children.size() >= 1) {
         AstNode* outNode = build->children[0];
         if (outNode->type == AstNode::CONCAT) {
-            for (auto part : outNode->children) {
-                std::string out = evaluateExpression(part).to_string();
-                if (!out.empty()) coreBuild.outputs.push_back(std::move(out));
-            }
+            for (auto part : outNode->children) addOutput(part, coreBuild.outputs);
         } else {
-            std::string out = evaluateExpression(outNode).to_string();
-            if (!out.empty()) coreBuild.outputs.push_back(std::move(out));
+            addOutput(outNode, coreBuild.outputs);
         }
     }
 
