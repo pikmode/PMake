@@ -53,15 +53,15 @@ jobs:
 
       - name: Build pmake (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          New-Item -ItemType Directory -Force -Path build-ci | Out-Null
-          $sources = Get-ChildItem -Path src -Recurse -Filter *.cpp | ForEach-Object { $_.FullName }
-          if ($sources.Count -eq 0) { throw "No .cpp files found" }
-          & g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ `
-                $sources -o build-ci/pmake.exe `
-                -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool `
-                -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
+          mkdir -p build-ci
+          g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src \
+              src/main.cpp src/core/*.cpp src/parser/*.cpp src/parser/ninja-parser/*.cpp \
+              src/executor/*.cpp src/deps/*.cpp src/util/*.cpp src/ui/*.cpp \
+              -o build-ci/pmake.exe \
+              -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool \
+              -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
           if ($LASTEXITCODE -ne 0) { throw "g++ failed: $LASTEXITCODE" }
 
       - name: Build pmake (Linux)
