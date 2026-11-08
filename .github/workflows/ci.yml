@@ -47,7 +47,7 @@ jobs:
               src/executor/*.cpp src/deps/*.cpp src/util/*.cpp src/ui/*.cpp \
               -o build-ci/pmake.exe \
               -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool \
-              -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
+              -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lstdc++exp
 
       # --- LINUX BUILD ---
       - name: Build pmake (Linux)
