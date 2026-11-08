@@ -133,7 +133,8 @@ void Engine::runInternal(const std::string& target) {
 
     auto dirtyNodes = collectDirtyNodes(order);
     if (dirtyNodes.empty()) {
-        std::println(std::cerr, "All targets up to date");
+        // CHANGED: "All targets up to date" печатает ConsoleUI по taskIndex_==0.
+        // Здесь ничего не выводим — избегаем дубля с buildFinished.
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
         if (buildFinished_) buildFinished_(true, dur);
@@ -142,7 +143,7 @@ void Engine::runInternal(const std::string& target) {
 
     buildPlan(dirtyNodes);
     if (totalTasks_ == 0) {
-        std::println(std::cerr, "Nothing to build");
+        // CHANGED: тот же noop-путь, что и выше — ConsoleUI решит по taskIndex_.
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
         if (buildFinished_) buildFinished_(true, dur);
@@ -155,12 +156,10 @@ void Engine::runInternal(const std::string& target) {
 
 // ============================================================
 // P1: BATCH STAT для leaves.
-// Вместо N × statFileFast — один statBatch на все leaf-ноды.
 // ============================================================
 void Engine::initializeFileStates() {
     auto leaves = graph_.leafNodes();
 
-    // Собираем только те leaf'ы, для которых ещё нет FileState.
     std::vector<std::string> to_stat;
     to_stat.reserve(leaves.size());
     for (Node* leaf : leaves) {

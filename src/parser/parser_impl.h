@@ -27,6 +27,10 @@ public:
 
     std::unique_ptr<core::State> parse();
 
+    // NEW (#4): доступ к state_ для evaluateIncludeImpl —
+    // нужно прочитать functions из sub-парсера и скопировать в parent.
+    const core::State& state() const { return state_; }
+
     static int operationCounter;
     static int includeDepth;
     static int functionCallDepth;
@@ -68,12 +72,13 @@ private:
 
     // NEW (#5): control flow state.
     //   0 = normal, 1 = break, 2 = continue.
-    // Устанавливается в evaluateAst при встрече BREAK/CONTINUE,
-    // сбрасывается в evaluateForeach / evaluateWhile.
-    // Также служит bail-out'ом: evaluateAst в начале каждой итерации
-    // проверяет флаг и, если он != 0, немедленно возвращает управление —
-    // так останавливается обработка оставшихся братьев текущего блока.
     int pendingFlow_ = 0;
+
+    // NEW (#4): путь текущего eval-файла для резолва вложенных include.
+    // Обновляется в evaluateIncludeImpl (save/restore), чтобы
+    // include "nested.pmake" внутри sub.pmake резолвился относительно
+    // sub.pmake, а не корневого build.pmake.
+    std::string currentEvalFilename_;
 
     void advance();
     bool match(TokenType t);
@@ -87,9 +92,6 @@ private:
     void pushBlock(AstNode* node);
     void popBlock();
 
-    // CHANGED: добавлен stopAtIdentAssign — останавливает value-sequence,
-    // когда следующий токен "IDENT = " или "IDENT += " (начало нового
-    // атрибута в однострочном блоке rule/build).
     AstNode* parseValueSequence(bool stopOnNewline = true,
                                 bool stopAtIdentAssign = false);
     int getPrecedence(TokenType t);
@@ -98,7 +100,6 @@ private:
     std::vector<AstNode*> parseValueList();
     AstNode* parseValue();
 
-    // NEW: peek — текущий IDENT и следующий токен '=' или '+='.
     bool peekIdentFollowedByAssign();
 
     void parseVersionDirective();
@@ -127,6 +128,10 @@ private:
     void parseDefault(AstNode* parent);
     AstNode* parseAttributeBlock();
     void parseBlockDirect(AstNode* block);
+
+    // NEW (#4): только парсинг, без eval. Используется в evaluateIncludeImpl
+    // для построения AST sub-файла. Root остаётся в this->root_.
+    void parseAstOnly();
 
     AstNode* makeStringLiteral(std::string_view value);
     AstNode* makeNumberLiteral(double value);
@@ -164,6 +169,10 @@ private:
     void evaluateNamespace(AstNode* namespaceNode);
     void evaluateConst(AstNode* constNode);
     void evaluateEnum(AstNode* enumNode);
+
+    // NEW (#4): общая реализация для include/import — read + parseAstOnly +
+    // eval в parent state_. kind = "include" или "import" (для сообщений).
+    void evaluateIncludeImpl(AstNode* node, std::string_view kind);
 
     std::string resolveVariable(std::string_view name,
                                 std::unordered_set<std::string>& visiting);

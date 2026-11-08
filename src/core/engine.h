@@ -28,7 +28,13 @@ public:
     using NodeBuiltFn      = std::function<void(const std::string&, int, double)>;
     using BuildFinishedFn  = std::function<void(bool, double)>;
     using BuildErrorFn     = std::function<void(const std::string&)>;
-    using TaskStartedFn    = std::function<void(const std::string&, int)>;
+
+    // CHANGED: display теперь = description (fallback output).
+    // description убран из сигнатуры — он уже внутри display,
+    // и в verbose не нужно дублировать.
+    using TaskStartedFn    = std::function<void(const std::string& display, int total,
+                                                 const std::string& command,
+                                                 const std::string& workdir)>;
     using TaskFinishedFn   = std::function<void(const std::string&, bool, double, const std::string&)>;
 
     Engine(State& state, int maxJobs, bool dryRun = false);

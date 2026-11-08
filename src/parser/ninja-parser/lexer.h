@@ -31,6 +31,23 @@ public:
     std::string_view filename() const { return filename_; }
     bool hadWhitespace() const { return hadWhitespace_; }
 
+    // PERF: save/restore для fast-path в parseName (peek-ahead на 1 токен).
+    struct LexerState {
+        const char* pos;
+        int line;
+        bool atLineStart;
+        bool hadWhitespace;
+    };
+    LexerState saveState() const {
+        return {pos_, line_, atLineStart_, hadWhitespace_};
+    }
+    void restoreState(const LexerState& s) {
+        pos_ = s.pos;
+        line_ = s.line;
+        atLineStart_ = s.atLineStart;
+        hadWhitespace_ = s.hadWhitespace;
+    }
+
 private:
     const char* data_;
     const char* pos_;

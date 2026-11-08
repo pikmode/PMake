@@ -22,7 +22,13 @@
 namespace pmake::ninja {
 
 namespace {
+    // PERF: early return если нет $. CMake-generated build.ninja
+    // почти не содержит $, значит 99% вызовов возвращаются сразу.
+    // Раньше всегда делали 3 прохода replace_inplace.
     std::string unescapePath(std::string_view path) {
+        if (path.find('$') == std::string_view::npos) {
+            return std::string(path);
+        }
         std::string result(path);
         auto replace_inplace = [&](std::string_view from, std::string_view to) {
             std::size_t pos = 0;
@@ -107,8 +113,9 @@ private:
         return lexer_.readValue(true);
     }
 
+    // PERF: handler принимает std::string&& — move вместо copy.
     void parseIndentedBlock(int baseIndent,
-                            const std::function<void(const std::string&, const std::string&)>& handler) {
+                            const std::function<void(std::string&&, std::string&&)>& handler) {
         while (true) {
             if (cur_.type != TOK_INDENT || cur_.indent != baseIndent)
                 break;
@@ -125,7 +132,7 @@ private:
             std::string value = readValueWithContinuation();
             advance();
 
-            handler(key, value);
+            handler(std::move(key), std::move(value));
 
             if (cur_.type == TOK_NEWLINE) advance();
             else break;
@@ -143,7 +150,53 @@ private:
 // Реализация методов парсинга
 // ----------------------------------------------------------------------------
 
+// ============================================================
+// parseName — PERF: fast path для одиночного IDENT/STRING без $.
+//
+// 99% name в CMake-generated build.ninja — это одиночный IDENT
+// (obj/main.o, src/main.cpp) без $ и без continuation.
+// Fast path: сохраняем lexer state, advance на 1 токен, проверяем
+// разделитель, и если да — возвращаем просто string_view.
+//
+// Slow path: continuation (несколько токенов без whitespace) или
+// VAR_REF (${var}) — оригинальная логика.
+// ============================================================
 std::string ParserImpl::parseName() {
+    // ---- PERF: fast path ----
+    if (cur_.type == TOK_IDENT || cur_.type == TOK_STRING) {
+        std::string_view s = str(cur_.strId);
+        if (s.find('$') == std::string_view::npos) {
+            auto ls = lexer_.saveState();
+            Token saved = cur_;
+            int savedHadWs = lexer_.hadWhitespace();
+
+            advance();
+            bool isSeparator =
+                cur_.type == TOK_NEWLINE || cur_.type == TOK_EOF ||
+                cur_.type == TOK_COLON   || cur_.type == TOK_PIPE ||
+                cur_.type == TOK_PIPE2   || cur_.type == TOK_INDENT ||
+                cur_.type == TOK_EQUALS;
+
+            // Continuation (без whitespace, но есть следующий name) — НЕ fast path.
+            bool isContinuation = !isSeparator && !savedHadWs && lexer_.hadWhitespace() == false &&
+                                  isNameToken();
+
+            if (isSeparator) {
+                return std::string(s);
+            }
+            // Если был whitespace — это два разных name, fast path OK.
+            if (savedHadWs && !isSeparator) {
+                return std::string(s);
+            }
+            (void)isContinuation;
+
+            // Не разделитель и без whitespace — continuation (склейка), откат.
+            lexer_.restoreState(ls);
+            cur_ = saved;
+        }
+    }
+
+    // ---- slow path — оригинал ----
     std::string result;
     bool first = true;
     while (true) {
@@ -172,7 +225,9 @@ std::string ParserImpl::parseName() {
 }
 
 std::vector<std::string> ParserImpl::parseNameList() {
+    // PERF: типично 1-5 outputs/inputs. Reserve 8, чтобы не реаллоцировать.
     std::vector<std::string> names;
+    names.reserve(8);
     while (isNameToken()) {
         names.push_back(parseName());
     }
@@ -202,16 +257,17 @@ void ParserImpl::parseRule() {
     if (cur_.type != TOK_INDENT || cur_.indent <= 0) error("expected indented block for rule");
     int baseIndent = cur_.indent;
 
-    parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
-        if (key == "command")      rule.command = value;
-        else if (key == "depfile") rule.depfile = value;
-        else if (key == "deps")    rule.deps = value;
-        else if (key == "generator") rule.generator = (value == "1" || value == "true");
-        else if (key == "restat")  rule.restat = (value == "1" || value == "true");
-        else if (key == "rspfile") rule.rspfile = value;
-        else if (key == "rspfile_content") rule.rspfile_content = value;
-        else if (key == "pool")    rule.pool = (value == "console" || value == "1" || value == "true");
-        else if (key == "description") rule.description = value;
+    // PERF: handler принимает std::string&& → std::move в поля rule.
+    parseIndentedBlock(baseIndent, [&](std::string&& key, std::string&& value) {
+        if (key == "command")               rule.command = std::move(value);
+        else if (key == "depfile")          rule.depfile = std::move(value);
+        else if (key == "deps")             rule.deps = std::move(value);
+        else if (key == "generator")        rule.generator = (value == "1" || value == "true");
+        else if (key == "restat")           rule.restat = (value == "1" || value == "true");
+        else if (key == "rspfile")          rule.rspfile = std::move(value);
+        else if (key == "rspfile_content")  rule.rspfile_content = std::move(value);
+        else if (key == "pool")             rule.pool = (value == "console" || value == "1" || value == "true");
+        else if (key == "description")      rule.description = std::move(value);
         else {
             LOG_WARN(std::format("Unknown rule variable '{}' in rule '{}'", key, rule.name));
         }
@@ -224,8 +280,6 @@ void ParserImpl::parseBuild() {
     std::vector<std::string> outputs = parseNameList();
 
     // FIX: implicit outputs (после первого |) игнорируются.
-    // У нас в Build нет поля implicit_outputs, поэтому просто парсим и отбрасываем.
-    // Для CMake это безопасно: там implicit дублирует explicit с абсолютным префиксом.
     if (cur_.type == TOK_PIPE) {
         advance();
         while (cur_.type != TOK_PIPE2 && cur_.type != TOK_COLON &&
@@ -257,6 +311,9 @@ void ParserImpl::parseBuild() {
     std::vector<std::string> inputs;
     std::vector<std::string> implicit_after;
     std::vector<std::string> order_only_after;
+    inputs.reserve(8);
+    implicit_after.reserve(4);
+    order_only_after.reserve(4);
 
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
         if (cur_.type == TOK_PIPE) {
@@ -284,14 +341,16 @@ void ParserImpl::parseBuild() {
     if (cur_.type == TOK_NEWLINE)
         advance();
 
-    // implicit = только implicit_after (implicit INPUTS).
-    std::vector<std::string> implicit = std::move(implicit_after);
-    std::vector<std::string> order_only = std::move(order_only_after);
-
-    auto scope = std::make_shared<core::Scope>();
+    // PERF: Scope создаём только если есть { ... } блок.
+    // Для 99% build без per-build переменных — shared_ptr не нужен.
+    std::shared_ptr<core::Scope> scope;
     if (cur_.type == TOK_INDENT && cur_.indent > 0) {
+        scope = std::make_shared<core::Scope>();
         int baseIndent = cur_.indent;
-        parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
+        // PERF: key/value передаём по value, но key копируется в Scope::set
+        // (в unordered_map). value можно move, но set принимает string_view.
+        // Оставляем как есть — экономия от move в Scope::set минимальна.
+        parseIndentedBlock(baseIndent, [&](std::string&& key, std::string&& value) {
             scope->set(key, value);
         });
     }
@@ -299,10 +358,10 @@ void ParserImpl::parseBuild() {
     core::Build build;
     build.outputs = std::move(outputs);
     build.inputs = std::move(inputs);
-    build.implicit = std::move(implicit);
-    build.order_only = std::move(order_only);
+    build.implicit = std::move(implicit_after);
+    build.order_only = std::move(order_only_after);
     build.rule_name = std::move(ruleName);
-    build.scope = scope;
+    build.scope = std::move(scope);
     state_.addBuild(std::move(build));
 }
 
@@ -397,7 +456,7 @@ void ParserImpl::parsePool(std::string_view poolName) {
     if (cur_.type != TOK_INDENT || cur_.indent <= 0) error("expected indented block for pool");
     int baseIndent = cur_.indent;
 
-    parseIndentedBlock(baseIndent, [&](const std::string& key, const std::string& value) {
+    parseIndentedBlock(baseIndent, [&](std::string&& key, std::string&& value) {
         if (key == "depth") {
             try {
                 int d = std::stoi(value);

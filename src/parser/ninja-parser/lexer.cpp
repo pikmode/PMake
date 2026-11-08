@@ -105,7 +105,6 @@ Token Lexer::readVariable() {
         int id = pool_->intern(var);
         return {TOK_VAR_REF, id, line_, 0};
     } else {
-        // $:  $$  $  — экранирование одиночного символа
         std::string lit(1, c);
         int id = pool_->intern(lit);
         return {TOK_STRING, id, line_, 0};
@@ -157,16 +156,38 @@ Token Lexer::nextToken() {
 }
 
 // ============================================================
-// readValue корректно обрабатывает ninja-эскейпы:
-//   $<newline>  → ничего (continuation)
-//   $<space>    → пробел
-//   $:          → :
-//   $$          → $
-//   $var, ${var} → оставить как есть (раскроется позже в expandVars)
-//   \X          → \X (literal, в ninja \ не escape)
+// readValue — PERF: добавлен fast path.
+//
+// Fast path: значение без `$` и без `"` — просто копирование буфера
+// + trim trailing whitespace. 99% command/depfile/description в
+// CMake-generated build.ninja попадают сюда.
+//
+// Slow path: оригинальная логика с обработкой escape-последовательностей.
 // ============================================================
 std::string Lexer::readValue(bool /*allowContinuation*/) {
     while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) pos_++;
+
+    // ---- PERF: fast path — нет $ и " ----
+    {
+        const char* scan = pos_;
+        bool hasSpecial = false;
+        while (scan < end_) {
+            char c = *scan;
+            if (c == '#' || c == '\n' || c == '\r') break;
+            if (c == '$' || c == '"') { hasSpecial = true; break; }
+            ++scan;
+        }
+        if (!hasSpecial) {
+            // scan указывает на конец значения (на \n / \r / # / eof)
+            const char* valueEnd = scan;
+            while (valueEnd > pos_ && (valueEnd[-1] == ' ' || valueEnd[-1] == '\t'))
+                --valueEnd;
+            std::string result(pos_, static_cast<std::size_t>(valueEnd - pos_));
+            pos_ = scan;   // оставляем \n / # для следующего nextToken()
+            return result;
+        }
+    }
+    // ---- slow path — оригинал ----
 
     std::string result;
     bool inQuotes = false;
@@ -183,10 +204,9 @@ std::string Lexer::readValue(bool /*allowContinuation*/) {
         if (c == '$' && pos_ + 1 < end_) {
             char n = *(pos_ + 1);
 
-            // Line continuation: $ + newline
             if (n == '\n' || n == '\r') {
-                get();                  // consume $
-                get();                  // consume \n (или \r\n — get() обрабатывает)
+                get();
+                get();
                 while (pos_ < end_ && (*pos_ == ' ' || *pos_ == '\t')) pos_++;
                 continue;
             }
@@ -195,7 +215,6 @@ std::string Lexer::readValue(bool /*allowContinuation*/) {
             if (n == ':') { result.push_back(':'); pos_ += 2; continue; }
             if (n == '$') { result.push_back('$'); pos_ += 2; continue; }
 
-            // $var или ${var} — оставить как есть (раскроется позже)
             result.push_back('$');
             pos_++;
             continue;

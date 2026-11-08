@@ -4,6 +4,7 @@
 #include "util/filesystem.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -16,6 +17,23 @@
 #include <vector>
 
 namespace pmake::core {
+
+// ============================================================
+// Резолв workdir для verbose (как в Node::build()/getWorkingDirectory).
+//   scope["workdir"] → state.global["workdir"] → cwd.
+// ============================================================
+static std::string resolveWorkdirForDisplay(const Build* build, const State* state) {
+    if (build && build->scope) {
+        auto wd = build->scope->get("workdir");
+        if (wd.has_value() && !wd->empty()) return *wd;
+    }
+    if (state) {
+        auto wd = state->getGlobal("workdir");
+        if (wd.has_value() && !wd->empty()) return *wd;
+    }
+    std::error_code ec;
+    return std::filesystem::current_path(ec).string();
+}
 
 void Engine::buildPlan(const std::vector<Node*>& dirtyNodesIn) {
     std::lock_guard<std::mutex> lk(planMutex_);
@@ -159,19 +177,48 @@ void Engine::startTask(SchedTask* t) {
         return;
     }
 
+    // ============================================================
+    // CHANGED: display = description (expand'нутый), fallback — output.
+    //
+    //   rule link { description = "link ${out}" ... }
+    //   → [1/3] link app         ← как в ninja
+    //
+    //   rule cc { command = "..." }  (без description)
+    //   → [1/3] main.o           ← fallback на output
+    //
+    // Раньше display ВСЕГДА был output, а description шёл отдельной
+    // строкой только в verbose. Теперь description виден всегда.
+    // ============================================================
     std::string display = (t->build && !t->build->outputs.empty())
                           ? t->build->outputs.front()
                           : t->runnerNode->name();
 
     const Rule* rule = t->runnerNode->rule();
-    if (rule && !rule->description.empty()) {
+    std::string commandExpanded, workdir;
+
+    if (rule) {
         auto specialVars = t->runnerNode->getSpecialVars();
-        display = state_.expandVarsWithSpecial(
-            rule->description,
+
+        if (!rule->description.empty()) {
+            display = state_.expandVarsWithSpecial(
+                rule->description,
+                t->build ? t->build->scope.get() : nullptr,
+                specialVars);
+        }
+
+        // Команда expand'нутая — готова к копипасту в терминал.
+        commandExpanded = state_.expandVarsWithSpecial(
+            rule->command,
             t->build ? t->build->scope.get() : nullptr,
             specialVars);
+        workdir = resolveWorkdirForDisplay(t->build, &state_);
     }
-    if (taskStarted_) taskStarted_(display, totalTasks_);
+
+    // CHANGED: сигнатура 4 параметра (display, total, command, workdir).
+    // description больше не передаётся — он уже в display.
+    if (taskStarted_) {
+        taskStarted_(display, totalTasks_, commandExpanded, workdir);
+    }
 
     Node* runner = t->runnerNode;
     workers_.emplace_back([this, runner]() { workerRoutine(runner); });
@@ -212,7 +259,8 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
 
         if (!ok) {
             t->state = TaskState::Failed;
-            errorMsg = std::format("Build failed for '{}' (exit {})", nodeName, exitCode);
+            // Короткий код — полное сообщение собирает ConsoleUI.
+            errorMsg = std::format("exit {}", exitCode);
             aborted_ = true;
         } else {
             t->state = TaskState::Done;
@@ -248,7 +296,8 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
             if (buildProgress_) buildProgress_(completedTasks_, totalTasks_);
         }
     } else {
-        std::println(std::cerr, "{}", errorMsg);
+        // НЕ дублируем в cerr. ConsoleUI напечатает [ERROR] name (exit N)
+        // в stdout, а raw stderr дочернего процесса уже напечатан в Node::build().
         if (taskFinished_) taskFinished_(nodeName, false, duration, errorMsg);
     }
 

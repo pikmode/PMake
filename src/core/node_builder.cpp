@@ -148,9 +148,17 @@ int Node::build() {
 
     executor::Result res = executor::Runner::runSync(cmd);
     if (res.exitCode != 0) {
-        std::println(std::cerr, "Build failed for '{}' (exit {})", name_, res.exitCode);
-        if (!res.stderrOutput.empty())
-            std::println(std::cerr, "STDERR: {}", res.stderrOutput);
+        // CHANGED: печатаем только raw stderr дочернего процесса — без
+        // "Build failed for 'X'". Форматирование [ERROR] делает ConsoleUI
+        // через onTaskFinished, чтобы не было трёх копий сообщения.
+        if (!res.stderrOutput.empty()) {
+            std::string err = res.stderrOutput;
+            // Обрезаем trailing newlines — println добавит свой.
+            while (!err.empty() && (err.back() == '\n' || err.back() == '\r')) {
+                err.pop_back();
+            }
+            if (!err.empty()) std::println(std::cerr, "{}", err);
+        }
         return res.exitCode;
     }
 

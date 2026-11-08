@@ -1,6 +1,8 @@
 #include "parser/parser_impl.h"
 #include "core/builtins.h"
+#include "util/filesystem.h"
 
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -78,10 +80,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
     stack.push_back({root, 0});
 
     while (!stack.empty()) {
-        // NEW (#5): если вложенный eval выставил break/continue —
-        // немедленно прекращаем обход текущего блока. Управление
-        // вернётся в evaluateForeach/evaluateWhile, который
-        // обработает флаг.
         if (pendingFlow_ != 0) return;
 
         Frame& frame = stack.back();
@@ -128,8 +126,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
                     frame.index = static_cast<int>(node->children.size());
                     break;
 
-                // NEW (#5): выставляем флаг и bail-out'им на следующей
-                // итерации. Сбрасывается в evaluateForeach/evaluateWhile.
                 case AstNode::BREAK:    pendingFlow_ = 1; break;
                 case AstNode::CONTINUE: pendingFlow_ = 2; break;
 
@@ -209,19 +205,6 @@ void ParserImpl::evaluateRule(AstNode* rule) {
     state_.addRule(coreRule);
 }
 
-// ============================================================
-// CHANGED (#8): outputs различают quoted literal и unquoted variable.
-//
-//   build "out file.txt" : mk        → STRING_LITERAL, пробел сохраняется
-//   build ${outs}        : mk        → VARIABLE_REF, split_ws после expand
-//   build "${outs}"      : mk        → STRING_LITERAL, тоже split_ws
-//                                       (внутри кавычек ${...} всё равно
-//                                        разворачивается при evaluate)
-//
-// Асимметрия с inputs (там split_ws всегда) сохраняется: для outputs
-// quoted literal должен оставаться одним именем файла с пробелом внутри,
-// иначе real_paths_spaces ломается.
-// ============================================================
 void ParserImpl::evaluateBuild(AstNode* build) {
     core::Build coreBuild;
 
@@ -229,7 +212,6 @@ void ParserImpl::evaluateBuild(AstNode* build) {
         if (!part) return;
         switch (part->type) {
             case AstNode::VARIABLE_REF: {
-                // build ${outs} : mk — unquoted variable, split_ws.
                 Value v = evaluateExpression(part);
                 if (v.is_list()) {
                     for (const auto& item : *v.as_list()) {
@@ -244,12 +226,6 @@ void ParserImpl::evaluateBuild(AstNode* build) {
                 return;
             }
             case AstNode::STRING_LITERAL: {
-                // build "out file.txt" : mk — quoted literal, пробел
-                // внутри сохраняется как часть имени файла.
-                // Но если внутри литерала есть ${...} — сначала
-                // раскрываем, и потом тоже split_ws, чтобы
-                // build "${outs}" работал как shell: кавычки снимаются,
-                // переменная разворачивается, слово-сплит применяется.
                 const std::string& raw = part->value.to_string();
                 std::string expanded = evaluateExpression(part).to_string();
                 if (raw.find("${") != std::string::npos) {
@@ -407,7 +383,6 @@ void ParserImpl::evaluateForeach(AstNode* foreachNode) {
         if (foreachNode->children.size() >= 2) {
             evaluateAst(foreachNode->children[1]);
         }
-        // NEW (#5): обрабатываем break/continue из тела.
         if (pendingFlow_ == 1) { pendingFlow_ = 0; break; }
         if (pendingFlow_ == 2) { pendingFlow_ = 0; continue; }
     }
@@ -433,7 +408,91 @@ void ParserImpl::evaluateAlias(AstNode* alias) {
     state_.addBuild(build);
 }
 
-void ParserImpl::evaluateInclude(AstNode* include) { (void)include; }
+// ============================================================
+// NEW (#4): evaluateInclude / evaluateImport через общую реализацию.
+//
+// На фазе eval — resolve path (переменные уже установлены) →
+// cycle check → read file → parseAstOnly sub → eval sub-AST
+// в parent state_ с временной подменой currentEvalFilename_.
+// ============================================================
+void ParserImpl::evaluateInclude(AstNode* include) {
+    evaluateIncludeImpl(include, "include");
+}
+
+void ParserImpl::evaluateImport(AstNode* importNode) {
+    evaluateIncludeImpl(importNode, "import");
+}
+
+void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
+    if (!node || node->children.empty()) return;
+
+    // 1. resolve path (теперь переменные установлены — если include внутри foreach/if)
+    std::string rawPath = evaluateExpression(node->children[0]).to_string();
+    if (rawPath.empty()) {
+        error(std::format("{} path is empty", kind), true);
+        return;
+    }
+
+    // 2. resolve относительно currentEvalFilename_ (а не корневого build.pmake)
+    std::filesystem::path curPath(currentEvalFilename_);
+    std::string absPath = (curPath.parent_path() / rawPath).lexically_normal().string();
+    std::string canonical = normalizePath(absPath);
+
+    // 3. cycle check
+    if (processingStack_.contains(canonical)) {
+        error(std::format("Include/import cycle detected: {}", canonical), false);
+        return;
+    }
+
+    if (++ParserImpl::includeDepth > MAX_INCLUDE_DEPTH) {
+        error("Include depth exceeds 500", true);
+        --ParserImpl::includeDepth;
+        return;
+    }
+
+    // 4. read file
+    std::string data;
+    if (!util::readFile(canonical, data)) {
+        error(std::format("Cannot read {} file: {} (resolved: {})",
+                          kind, rawPath, canonical), true);
+        --ParserImpl::includeDepth;
+        return;
+    }
+
+    // 5. parse only AST (без eval)
+    ParserImpl subParser(data, canonical, config_, platform_);
+    subParser.processingStack_ = processingStack_;
+    subParser.parseAstOnly();
+
+    // 6. копируем functions из sub в parent — ГЛУБОКАЯ копия через cloneAst,
+    // иначе double-free: sub и parent оба удалят func.body при деструкторе
+    for (const auto& [name, func] : subParser.state().functions()) {
+        core::FunctionDef copy = func;
+        copy.body = cloneAst(func.body);
+        state_.addFunction(copy);
+    }
+
+    // 7. eval sub-AST в parent state_, с временной подменой filename
+    processingStack_.insert(canonical);
+    std::string savedFilename = currentEvalFilename_;
+    currentEvalFilename_ = canonical;
+
+    try {
+        evaluateAst(subParser.root_);
+    } catch (...) {
+        currentEvalFilename_ = savedFilename;
+        processingStack_.erase(canonical);
+        --ParserImpl::includeDepth;
+        throw;
+    }
+
+    currentEvalFilename_ = savedFilename;
+    processingStack_.erase(canonical);
+    --ParserImpl::includeDepth;
+
+    // 8. трекаем include в state_ (для clean/отладки)
+    state_.includedFiles().push_back(canonical);
+}
 
 void ParserImpl::evaluateSwitch(AstNode* switchNode) {
     if (switchNode->children.size() < 2) return;
@@ -475,13 +534,10 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
             break;
         }
         evaluateAst(body);
-        // NEW (#5)
         if (pendingFlow_ == 1) { pendingFlow_ = 0; break; }
         if (pendingFlow_ == 2) { pendingFlow_ = 0; continue; }
     }
 }
-
-void ParserImpl::evaluateImport(AstNode* importNode) { (void)importNode; }
 
 void ParserImpl::evaluateNamespace(AstNode* namespaceNode) {
     if (namespaceNode->children.empty()) return;

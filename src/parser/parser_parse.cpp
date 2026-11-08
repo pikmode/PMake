@@ -80,4 +80,25 @@ std::unique_ptr<core::State> ParserImpl::parse() {
     return std::make_unique<core::State>(std::move(state_));
 }
 
+// ============================================================
+// NEW (#4): parseAstOnly
+//
+// Только строит AST в root_. Никакого eval. Используется в
+// evaluateIncludeImpl для sub-файлов: sub-файл парсится, но его
+// AST eval'ится в parent ParserImpl (чтобы видеть parent globals).
+//
+// Errors логируются, но не бросаются наверх — если sub-файл битый,
+// AST просто будет неполным. Это OK: main parse() уже соберёт errors
+// от основного файла.
+// ============================================================
+void ParserImpl::parseAstOnly() {
+    try {
+        parseTopLevel();
+    } catch (const std::exception& e) {
+        std::println(std::cerr, "Parsing failed: {}", e.what());
+    } catch (...) {
+        std::println(std::cerr, "Unknown exception during parsing");
+    }
+}
+
 } // namespace pmake::parser

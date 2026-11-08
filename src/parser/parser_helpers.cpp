@@ -22,7 +22,8 @@ int ParserImpl::functionCallDepth = 0;
 ParserImpl::ParserImpl(std::string_view data, std::string_view filename,
                        std::string_view config, std::string_view platform)
     : lexer_(data, filename), filename_(filename),
-      config_(config), platform_(platform) {
+      config_(config), platform_(platform),
+      currentEvalFilename_(filename) {    // NEW (#4)
     state_.setGlobal("config", config_);
     state_.setGlobal("platform", platform_);
     state_.setGlobal("os",
@@ -285,7 +286,6 @@ void ParserImpl::addDefinition(std::string_view name, std::unordered_set<std::st
     set.insert(std::string(name));
 }
 
-// ВАЖНО: recover=false — прерывает рекурсию include через throw.
 void ParserImpl::checkIncludeCycle(std::string_view path) {
     std::string canonical = normalizePath(path);
     if (processingStack_.contains(canonical)) {
@@ -309,7 +309,6 @@ void ParserImpl::checkFunctionArgs(std::string_view name, const std::vector<Valu
     }
 }
 
-// ---- parseIdent — ИЗМЕНЕНО: возвращает std::string ----
 std::string ParserImpl::parseIdent() {
     if (cur_.type != TOK_IDENT) {
         error("Expected identifier", true);
@@ -320,7 +319,6 @@ std::string ParserImpl::parseIdent() {
     return s;
 }
 
-// ---- Нормализация пути ----
 std::string ParserImpl::normalizePath(std::string_view path) {
     if (path.empty()) return {};
     std::filesystem::path p{std::string(path)};
@@ -332,7 +330,6 @@ std::string ParserImpl::normalizePath(std::string_view path) {
     return std::filesystem::absolute(p, ec).lexically_normal().string();
 }
 
-// ---- Вспомогательная функция ----
 std::string ParserImpl::astNodeToStringWithState(AstNode* node, const core::State* state) {
     if (!node) return {};
     switch (node->type) {
@@ -360,17 +357,7 @@ std::string ParserImpl::astNodeToStringWithState(AstNode* node, const core::Stat
 }
 
 // ============================================================
-// NEW: peekIdentFollowedByAssign
-//
-// Заглядывает на один токен вперёд. Возвращает true, если:
-//   cur_      == TOK_IDENT
-//   следующий == TOK_EQUALS или TOK_PLUS_EQUALS
-//
-// То есть cur_ — это имя следующего атрибута в однострочном блоке:
-//   rule X { command = "..." restat = true }
-//                                  ^^^^^^^^^^^^ — вот это ловим.
-//
-// Полностью восстанавливает cur_, lexer state, column, hasError_, errors_.
+// peekIdentFollowedByAssign — см. предыдущие итерации.
 // ============================================================
 bool ParserImpl::peekIdentFollowedByAssign() {
     if (cur_.type != TOK_IDENT) return false;

@@ -23,14 +23,13 @@
 #include "core/cache.h"
 #include "deps/deps_log.h"
 #include "deps/dep_parser.h"
-#include "internal/config.h" // <-- ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ
+#include "internal/config.h"
 
 using namespace pmake::core;
 
 namespace {
 
 void print_version() {
-    // Берем версию из config.h
     std::fprintf(stdout, "%s %s\n", PMAKE_NAME, PMAKE_VERSION);
     std::fflush(stdout);
 }
@@ -89,7 +88,6 @@ bool ends_with(std::string_view s, std::string_view suffix) {
     return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
 }
 
-// Возврат: -1 = выйти с 0 (version/help), 0 = ошибка (выйти с 1), 1 = продолжить
 int parse_args(int argc, char** argv, Options& opt) {
     std::vector<std::string> positional;
     for (int i = 1; i < argc; ++i) {
@@ -145,9 +143,6 @@ int parse_args(int argc, char** argv, Options& opt) {
 } // namespace
 
 int main(int argc, char** argv) {
-    // ============================================================
-    // --version / -V / --help / -h — САМЫЕ ПЕРВЫЕ, до любого парсинга.
-    // ============================================================
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-V") == 0 || std::strcmp(argv[i], "--version") == 0) {
             print_version();
@@ -329,10 +324,15 @@ int main(int argc, char** argv) {
 
     // ---------- engine + UI ----------
     pmake::core::Engine engine(*state, opt.jobs, opt.dryRun);
-    pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output);
+    pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose);
 
-    engine.onTaskStarted([&ui](const std::string& name, int total) {
+    // CHANGED: 4 параметра (display, total, command, workdir).
+    // display уже содержит description (если было), fallback — output.
+    engine.onTaskStarted([&ui, verbose = opt.verbose](
+            const std::string& name, int total,
+            const std::string& cmd, const std::string& wd) {
         ui.onTaskStarted(name, total);
+        if (verbose) ui.onTaskVerbose(cmd, wd);
     });
     engine.onTaskFinished([&ui](const std::string& name, bool ok, double dur, const std::string& err) {
         ui.onTaskFinished(name, ok, dur, err);
@@ -344,8 +344,6 @@ int main(int argc, char** argv) {
     bool result = engine.run(opt.target);
 
     // ---------- cache save after build ----------
-    // ФИКС: Сохраняем кэш ТОЛЬКО если сборка прошла успешно (result == true)!
-    // Иначе при падении сохраняется "битое" состояние.
     if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
         cache.store(*state, buildFile);
