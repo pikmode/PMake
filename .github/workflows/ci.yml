@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -39,14 +39,14 @@ jobs:
 
       - name: Build pmake (Windows)
         if: runner.os == 'Windows'
-        shell: cmd
+        shell: msys2 {0}
         run: |
-          mkdir build-ci
-          C:\msys64\mingw64\bin\g++.exe -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src ^
-              src\main.cpp src\core\*.cpp src\parser\*.cpp src\parser\ninja-parser\*.cpp ^
-              src\executor\*.cpp src\deps\*.cpp src\util\*.cpp src\ui\*.cpp ^
-              -o build-ci\pmake.exe ^
-              -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool ^
+          mkdir -p build-ci
+          g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src \
+              src/main.cpp src/core/*.cpp src/parser/*.cpp src/parser/ninja-parser/*.cpp \
+              src/executor/*.cpp src/deps/*.cpp src/util/*.cpp src/ui/*.cpp \
+              -o build-ci/pmake.exe \
+              -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool \
               -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
 
       # --- LINUX BUILD ---
