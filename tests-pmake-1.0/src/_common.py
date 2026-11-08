@@ -5,6 +5,7 @@ import platform
 
 import sys
 REAL_PYTHON = sys.executable.replace("\\", "/")
+
 IS_WINDOWS = platform.system() == "Windows"
 SHELL_PREFIX = "cmd /c" if IS_WINDOWS else "sh -c"
 
