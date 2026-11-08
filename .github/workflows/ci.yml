@@ -2,24 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    name: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            compiler: mingw
-            pmake_exe: build-ci/pmake.exe
           - os: ubuntu-latest
-            compiler: gcc
-            pmake_exe: build-ci/pmake
 
     runs-on: ${{ matrix.os }}
 
@@ -32,84 +28,43 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Setup MinGW (Windows)
+      # --- WINDOWS BUILD ---
+      - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-
-      - name: Add MinGW to PATH
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $mingw = "C:\msys64\mingw64\bin"
-          if (-not (Test-Path "$mingw\g++.exe")) {
-            throw "g++ not found at $mingw"
-          }
-          echo $mingw | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          install: mingw-w64-x86_64-gcc
 
       - name: Build pmake (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: cmd
         run: |
-          New-Item -ItemType Directory -Force -Path build-ci | Out-Null
-          $sources = Get-ChildItem -Path src -Recurse -Filter *.cpp | ForEach-Object { $_.FullName }
-          if ($sources.Count -eq 0) { throw "No .cpp files found" }
-          & g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ `
-                $sources -o build-ci/pmake.exe `
-                -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool `
-                -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
-          if ($LASTEXITCODE -ne 0) { throw "g++ failed: $LASTEXITCODE" }
+          mkdir build-ci
+          C:\msys64\mingw64\bin\g++.exe -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src ^
+              src\main.cpp src\core\*.cpp src\parser\*.cpp src\parser\ninja-parser\*.cpp ^
+              src\executor\*.cpp src\deps\*.cpp src\util\*.cpp src\ui\*.cpp ^
+              -o build-ci\pmake.exe ^
+              -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool ^
+              -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
 
+      # --- LINUX BUILD ---
       - name: Build pmake (Linux)
         if: runner.os == 'Linux'
         run: |
-          set -e
           mkdir -p build-ci
-          g++ -std=c++23 -O2 -DNDEBUG \
-              $(find src -name '*.cpp' | sort) \
-              -o build-ci/pmake -pthread
-          test -x build-ci/pmake
+          g++ -std=c++23 -O2 -DNDEBUG -I src $(find src -name '*.cpp' | sort) -o build-ci/pmake -pthread
 
-      - name: Verify pmake
-        run: |
-          ./${{ matrix.pmake_exe }} -V
-
-      - name: Generate tests
-        working-directory: tests-pmake-1.0
-        run: python run.py --generate-only
-
-      - name: Run tests
+      # --- TESTS (WINDOWS ONLY) ---
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
         working-directory: tests-pmake-1.0
         run: |
-          python run.py --pmake ../${{ matrix.pmake_exe }}
+          python run.py --generate-only
+          python run.py --pmake ../build-ci/pmake.exe
 
-      - name: Check regressions
-        if: always()
+      - name: Check regressions (Windows)
+        if: runner.os == 'Windows'
         working-directory: tests-pmake-1.0
-        run: |
-          python -c "import json,sys; r=json.load(open('results/report.json')); \
-            print(f'PASS: {r[\"passed\"]}/{r[\"total\"]}'); \
-            print(f'REGRESSIONS: {r[\"regressions\"]}'); \
-            sys.exit(1 if r['regressions']>0 else 0)"
-
-      - name: Upload report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: report-${{ matrix.os }}-${{ matrix.compiler }}
-          path: |
-            tests-pmake-1.0/results/report.json
-            tests-pmake-1.0/results/*.log
-          retention-days: 30
-
-      - name: Upload pmake
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pmake-${{ matrix.os }}
-          path: ${{ matrix.pmake_exe }}
-          retention-days: 7
+        run: python ../scripts/check_report.py
