@@ -28,18 +28,18 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 **Windows (MinGW):**
 
 ```bat
-g++ -std=c++23 -O2 -static -static-libgcc -static-libstdc++ ^
+g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src ^
     src\main.cpp src\core\*.cpp src\parser\*.cpp src\parser\ninja-parser\*.cpp ^
     src\executor\*.cpp src\deps\*.cpp src\util\*.cpp src\ui\*.cpp ^
     -o pmake.exe ^
     -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool ^
-    -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
+    -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lstdc++exp
 ```
 
 **Linux / macOS:**
 
 ```bash
-g++ -std=c++23 -O2 $(find src -name '*.cpp') -o pmake -pthread
+g++ -std=c++23 -O2 -DNDEBUG -I src $(find src -name '*.cpp' | sort) -o pmake -pthread
 ```
 
 ### Hello world
