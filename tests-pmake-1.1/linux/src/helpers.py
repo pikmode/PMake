@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+"""helpers.py — Python-хелперы для build.pmake правил."""
+
 HELPERS = {
     "touch.py": """
 import sys, pathlib
@@ -11,7 +13,7 @@ for arg in sys.argv[1:]:
 import sys, pathlib
 p = pathlib.Path(sys.argv[1])
 p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(sys.argv[2] + "\n", encoding="utf-8")
+p.write_text(sys.argv[2] + "\\n", encoding="utf-8")
 """,
     "copy.py": """
 import sys, shutil, pathlib
@@ -32,6 +34,19 @@ if dst.exists():
 else:
     dst.write_bytes(content)
 """,
+    "copy_preserve_multi.py": """
+import sys, pathlib, os
+src = pathlib.Path(sys.argv[1]); content = src.read_bytes()
+for out_s in sys.argv[2:]:
+    out = pathlib.Path(out_s)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        st = out.stat(); old = out.read_bytes()
+        if old == content:
+            out.write_bytes(content)
+            os.utime(out, ns=(st.st_atime_ns, st.st_mtime_ns)); continue
+    out.write_bytes(content)
+""",
     "cc_make_dep.py": """
 import sys, pathlib
 src, out = sys.argv[1], sys.argv[2]
@@ -39,7 +54,7 @@ hdr = sys.argv[3] if len(sys.argv) > 3 else ""
 pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
 pathlib.Path(out).touch()
 if hdr:
-    pathlib.Path(out + ".d").write_text(f"{out}: {src} {hdr}\n", encoding="utf-8")
+    pathlib.Path(out + ".d").write_text(f"{out}: {src} {hdr}\\n", encoding="utf-8")
 """,
     "cc_maybe_fail.py": """
 import sys, pathlib, time
@@ -49,7 +64,7 @@ if src.exists() and "FAIL" in src.read_text(encoding="utf-8"):
     print(f"intentional failure for {out}", file=sys.stderr); sys.exit(1)
 pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
 pathlib.Path(out).touch()
-pathlib.Path(out + ".d").write_text(f"{out}: {src.name} common.h\n", encoding="utf-8")
+pathlib.Path(out + ".d").write_text(f"{out}: {src.name} common.h\\n", encoding="utf-8")
 """,
     "concat.py": """
 import sys, pathlib
@@ -62,7 +77,7 @@ import sys, pathlib
 for out in sys.argv[1:]:
     p = pathlib.Path(out)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(f"from_multi_out_{p.name}\n", encoding="utf-8")
+    p.write_text(f"from_multi_out_{p.name}\\n", encoding="utf-8")
 """,
     "fail.py": """
 import sys
@@ -102,7 +117,7 @@ dst.write_text(s1.read_text(encoding="utf-8") + s2.read_text(encoding="utf-8"), 
 import sys, pathlib
 p = pathlib.Path(sys.argv[1])
 p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(" ".join(sys.argv[2:]) + "\n", encoding="utf-8")
+p.write_text(" ".join(sys.argv[2:]) + "\\n", encoding="utf-8")
 """,
     "make_dep.py": """
 import sys, pathlib
@@ -111,14 +126,14 @@ pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
 pathlib.Path(out).touch()
 header = sys.argv[2] if len(sys.argv) > 2 else ""
 if header:
-    pathlib.Path(out + ".d").write_text(f"{out}: {header}\n", encoding="utf-8")
+    pathlib.Path(out + ".d").write_text(f"{out}: {header}\\n", encoding="utf-8")
 """,
     "restat.py": """
 import sys, pathlib
 p = pathlib.Path(sys.argv[1])
 p.parent.mkdir(parents=True, exist_ok=True)
 p.touch()
-p.write_text("constant\n", encoding="utf-8")
+p.write_text("constant\\n", encoding="utf-8")
 """,
     "cat_rspfile.py": """
 import sys, pathlib
@@ -133,6 +148,6 @@ import sys, pathlib, time
 time.sleep(int(sys.argv[1]) / 1000.0)
 p = pathlib.Path(sys.argv[2])
 p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(sys.argv[3] + "\n", encoding="utf-8")
+p.write_text(sys.argv[3] + "\\n", encoding="utf-8")
 """,
 }

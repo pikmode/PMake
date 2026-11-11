@@ -2,7 +2,7 @@
 from ._common import test
 
 TESTS = [
-    test("real_config_default_release_linux", {
+    test("real_config_default_release", {
         "build.pmake": '''pmake_required_version = 1.0
 python = "@PYTHON@"
 config debug {

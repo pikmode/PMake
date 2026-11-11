@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 from ._common import test, IS_WINDOWS
 
-# Динамически определяем ожидаемое значение (если запустим на Windows, тест не упадет)
+# Ожидаемое значение в зависимости от ОС
 EXPECTED_FLAG = "IS_WINDOWS" if IS_WINDOWS else "IS_LINUX"
 
 TESTS = [
-    test("real_platform_linux_applied", {
+    test("real_platform_windows_applied", {
         "build.pmake": '''pmake_required_version = 1.0
 python = "@PYTHON@"
 platform windows {

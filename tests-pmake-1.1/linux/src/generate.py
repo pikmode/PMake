@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""generate.py — собирает все TESTS и пишет тестовый проект в CWD."""
 from __future__ import annotations
 import json
 import shutil
@@ -35,6 +36,7 @@ ALL_TESTS = (
     T_MODULES + T_BUILTINS + T_POOL + T_RSPFILE + T_GEN +
     T_CMAKE + T_MISC + T_HARD + T_PLATFORM + T_CONFIG + T_V110
 )
+
 
 def generate_project(root: Path) -> None:
     tests_dir = root / "tests"
