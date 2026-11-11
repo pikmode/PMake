@@ -17,11 +17,11 @@ jobs:
         include:
           - os: windows-latest
             pmake_exe: ../../build-ci/pmake.exe
-            test_dir: tests-pmake-1.0/windows
+            test_dir: tests-pmake-1.1/windows
             artifact_name: pmake-windows
           - os: ubuntu-latest
             pmake_exe: ../../build-ci/pmake
-            test_dir: tests-pmake-1.0/linux
+            test_dir: tests-pmake-1.1/linux
             artifact_name: pmake-linux
 
     runs-on: ${{ matrix.os }}
