@@ -44,17 +44,23 @@ Engine::~Engine() {
 bool Engine::run(std::string_view target) {
     if (graphBuildFailed_) {
         if (buildError_) buildError_("Graph build failed — see errors above");
-        if (buildFinished_) buildFinished_(false, 0.0);
+        if (buildFinished_) buildFinished_(false, 0.0, false);
         return false;
     }
 
     runInternal(std::string(target));
 
+    // NEW: timeout-based wait — проверяем cancelFlag_ каждые 100 мс.
     while (true) {
         std::unique_lock<std::mutex> lk(completionMutex_);
-        completionCv_.wait(lk, [&] {
-            return !completed_.empty() || finished_;
+        completionCv_.wait_for(lk, std::chrono::milliseconds(100), [&] {
+            return !completed_.empty() || finished_ ||
+                   (cancelFlag_ && cancelFlag_->load(std::memory_order_relaxed));
         });
+
+        if (!finished_ && cancelFlag_ && cancelFlag_->load(std::memory_order_relaxed)) {
+            requestInterrupt();
+        }
 
         if (finished_ && completed_.empty()) break;
 
@@ -77,6 +83,14 @@ bool Engine::run(std::string_view target) {
 }
 
 void Engine::runInternal(const std::string& target) {
+    // NEW: если Ctrl+C пришёл до старта — сразу выходим.
+    if (cancelFlag_ && cancelFlag_->load()) {
+        requestInterrupt();
+        finished_ = true;
+        if (buildFinished_) buildFinished_(false, 0.0, true);
+        return;
+    }
+
     if (buildStarted_) buildStarted_();
     initializeFileStates();
     buildStart_ = std::chrono::steady_clock::now();
@@ -85,6 +99,7 @@ void Engine::runInternal(const std::string& target) {
     runningTasks_ = 0;
     pendingTasks_ = 0;
     aborted_ = false;
+    interrupted_ = false;
     finished_ = false;
     success_ = true;
 
@@ -107,7 +122,7 @@ void Engine::runInternal(const std::string& target) {
             else {
                 if (buildError_) buildError_("No target specified and no builds");
                 finished_ = true;
-                if (buildFinished_) buildFinished_(false, 0.0);
+                if (buildFinished_) buildFinished_(false, 0.0, false);
                 return;
             }
         }
@@ -120,33 +135,30 @@ void Engine::runInternal(const std::string& target) {
         if (buildError_) buildError_(std::string("Graph error: ") + e.what());
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
-        if (buildFinished_) buildFinished_(false, dur);
+        if (buildFinished_) buildFinished_(false, dur, false);
         return;
     }
     if (order.empty()) {
         if (buildError_) buildError_("Target '" + targetName + "' not found");
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
-        if (buildFinished_) buildFinished_(false, dur);
+        if (buildFinished_) buildFinished_(false, dur, false);
         return;
     }
 
     auto dirtyNodes = collectDirtyNodes(order);
     if (dirtyNodes.empty()) {
-        // CHANGED: "All targets up to date" печатает ConsoleUI по taskIndex_==0.
-        // Здесь ничего не выводим — избегаем дубля с buildFinished.
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
-        if (buildFinished_) buildFinished_(true, dur);
+        if (buildFinished_) buildFinished_(true, dur, false);
         return;
     }
 
     buildPlan(dirtyNodes);
     if (totalTasks_ == 0) {
-        // CHANGED: тот же noop-путь, что и выше — ConsoleUI решит по taskIndex_.
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
-        if (buildFinished_) buildFinished_(true, dur);
+        if (buildFinished_) buildFinished_(true, dur, false);
         return;
     }
 
@@ -154,9 +166,6 @@ void Engine::runInternal(const std::string& target) {
     pumpReady();
 }
 
-// ============================================================
-// P1: BATCH STAT для leaves.
-// ============================================================
 void Engine::initializeFileStates() {
     auto leaves = graph_.leafNodes();
 
@@ -180,9 +189,6 @@ void Engine::initializeFileStates() {
     }
 }
 
-// ============================================================
-// P1: BATCH STAT для обновления состояний после сборки.
-// ============================================================
 void Engine::updateFileStates() {
     auto leaves = graph_.leafNodes();
     if (leaves.empty()) return;
@@ -235,10 +241,21 @@ void Engine::workerRoutine(Node* runner) {
 void Engine::abortBuild(const std::string& reason) {
     {
         std::lock_guard<std::mutex> lk(planMutex_);
-        if (finished_) return;
+        if (finished_ || aborted_) return;
         aborted_ = true;
     }
-    std::println(std::cerr, "{}", reason);
+    if (buildError_) buildError_(reason);
+    checkFinished();
+}
+
+// NEW: мягкая остановка по Ctrl+C.
+void Engine::requestInterrupt() {
+    {
+        std::lock_guard<std::mutex> lk(planMutex_);
+        if (finished_ || aborted_) return;
+        aborted_ = true;
+        interrupted_ = true;
+    }
     checkFinished();
 }
 

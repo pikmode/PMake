@@ -8,21 +8,17 @@
 namespace pmake::parser {
 
 double getPmakeVersion() {
-    // Единый источник правды — internal/config.h.
-    // Никаких version.txt, никаких warning'ов в stderr.
     return PMAKE_VERSION_NUM;
 }
 
 std::string formatError(std::string_view filename, int line, int column,
                         std::string_view msg, std::string_view token) {
     if (token.empty())
-        return std::format("{}:{}:{}: error: {}", filename, line, column, msg);
+        return std::format(PMAKE_MSG_PREFIX "{}:{}:{}: error: {}", filename, line, column, msg);
     else
-        return std::format("{}:{}:{}: error: {}\n    {}", filename, line, column, msg, token);
+        return std::format(PMAKE_MSG_PREFIX "{}:{}:{}: error: {}\n    {}", filename, line, column, msg, token);
 }
 
-// NEW (#4): глубокая копия AST-узла со всеми полями и потомками.
-// Используется в evaluateIncludeImpl для передачи functions из sub в parent.
 core::AstNode* cloneAst(core::AstNode* n) {
     if (!n) return nullptr;
     auto c = new core::AstNode();

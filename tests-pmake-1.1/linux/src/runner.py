@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import platform
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -28,16 +30,36 @@ def run_pmake(exe, args, cwd, timeout, kill_after_ms=None):
     t0 = time.time()
     if kill_after_ms is not None:
         try:
+            popen_kwargs = {}
+            # На Windows создаем новую группу процессов, чтобы CTRL_C_EVENT
+            # не убил сам тестовый раннер.
+            if platform.system() == "Windows":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
             p = subprocess.Popen(
                 [str(exe)] + list(args), cwd=str(cwd),
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                **popen_kwargs
             )
             time.sleep(kill_after_ms / 1000.0)
-            if p.poll() is None: p.kill()
-            try:
-                out_b, err_b = p.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                p.kill(); out_b, err_b = p.communicate()
+            
+            if p.poll() is None:
+                # Мягкое завершение (Ctrl+C)
+                if platform.system() == "Windows":
+                    p.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    p.send_signal(signal.SIGINT)
+                
+                try:
+                    # Даем pmake 2 секунды на graceful shutdown
+                    out_b, err_b = p.communicate(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    # Если завис — убиваем жестко
+                    p.kill()
+                    out_b, err_b = p.communicate()
+            else:
+                out_b, err_b = p.communicate()
+
             return {"exit": p.returncode,
                     "stdout": (out_b or b"").decode("utf-8", "replace"),
                     "stderr": (err_b or b"").decode("utf-8", "replace"),
@@ -46,6 +68,7 @@ def run_pmake(exe, args, cwd, timeout, kill_after_ms=None):
             return {"exit": -998, "stdout": "",
                     "stderr": f"[runner/kill] {type(e).__name__}: {e}",
                     "elapsed": time.time() - t0, "timedOut": False}
+            
     try:
         p = subprocess.run(
             [str(exe)] + list(args), cwd=str(cwd), timeout=timeout,

@@ -26,12 +26,9 @@ public:
     using BuildStartedFn   = std::function<void()>;
     using BuildProgressFn  = std::function<void(int, int)>;
     using NodeBuiltFn      = std::function<void(const std::string&, int, double)>;
-    using BuildFinishedFn  = std::function<void(bool, double)>;
+    using BuildFinishedFn  = std::function<void(bool, double, bool)>;  // CHANGED: + interrupted
     using BuildErrorFn     = std::function<void(const std::string&)>;
 
-    // CHANGED: display теперь = description (fallback output).
-    // description убран из сигнатуры — он уже внутри display,
-    // и в verbose не нужно дублировать.
     using TaskStartedFn    = std::function<void(const std::string& display, int total,
                                                  const std::string& command,
                                                  const std::string& workdir)>;
@@ -47,6 +44,9 @@ public:
     void onBuildError(BuildErrorFn fn)       { buildError_ = std::move(fn); }
     void onTaskStarted(TaskStartedFn fn)     { taskStarted_ = std::move(fn); }
     void onTaskFinished(TaskFinishedFn fn)   { taskFinished_ = std::move(fn); }
+
+    // NEW: подключить флаг отмены (например, g_interrupted из main).
+    void setCancelFlag(const std::atomic<bool>* flag) { cancelFlag_ = flag; }
 
     bool run(std::string_view target = {});
 
@@ -105,9 +105,12 @@ private:
     int totalTasks_ = 0;
     int completedTasks_ = 0;
     bool aborted_ = false;
+    bool interrupted_ = false;   // NEW: true → "Build interrupted" вместо "Build failed"
     bool finished_ = false;
     bool success_ = false;
     bool graphBuildFailed_ = false;
+
+    const std::atomic<bool>* cancelFlag_ = nullptr;  // NEW
 
     BuildStartedFn   buildStarted_;
     BuildProgressFn  buildProgress_;
@@ -125,6 +128,7 @@ private:
     void handleNodeDone(Node* node, int exitCode, double duration);
     void checkFinished();
     void abortBuild(const std::string& reason);
+    void requestInterrupt();   // NEW
     void cleanupPlan();
 
     std::vector<Node*> collectDirtyNodes(const std::vector<Node*>& order);

@@ -177,18 +177,6 @@ void Engine::startTask(SchedTask* t) {
         return;
     }
 
-    // ============================================================
-    // CHANGED: display = description (expand'нутый), fallback — output.
-    //
-    //   rule link { description = "link ${out}" ... }
-    //   → [1/3] link app         ← как в ninja
-    //
-    //   rule cc { command = "..." }  (без description)
-    //   → [1/3] main.o           ← fallback на output
-    //
-    // Раньше display ВСЕГДА был output, а description шёл отдельной
-    // строкой только в verbose. Теперь description виден всегда.
-    // ============================================================
     std::string display = (t->build && !t->build->outputs.empty())
                           ? t->build->outputs.front()
                           : t->runnerNode->name();
@@ -206,7 +194,6 @@ void Engine::startTask(SchedTask* t) {
                 specialVars);
         }
 
-        // Команда expand'нутая — готова к копипасту в терминал.
         commandExpanded = state_.expandVarsWithSpecial(
             rule->command,
             t->build ? t->build->scope.get() : nullptr,
@@ -214,8 +201,6 @@ void Engine::startTask(SchedTask* t) {
         workdir = resolveWorkdirForDisplay(t->build, &state_);
     }
 
-    // CHANGED: сигнатура 4 параметра (display, total, command, workdir).
-    // description больше не передаётся — он уже в display.
     if (taskStarted_) {
         taskStarted_(display, totalTasks_, commandExpanded, workdir);
     }
@@ -262,6 +247,7 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
             // Короткий код — полное сообщение собирает ConsoleUI.
             errorMsg = std::format("exit {}", exitCode);
             aborted_ = true;
+            // Если задачи падают сами по себе (без Ctrl+C), interrupted_ остаётся false.
         } else {
             t->state = TaskState::Done;
             if (t->isReal) completedTasks_++;
@@ -296,8 +282,6 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
             if (buildProgress_) buildProgress_(completedTasks_, totalTasks_);
         }
     } else {
-        // НЕ дублируем в cerr. ConsoleUI напечатает [ERROR] name (exit N)
-        // в stdout, а raw stderr дочернего процесса уже напечатан в Node::build().
         if (taskFinished_) taskFinished_(nodeName, false, duration, errorMsg);
     }
 
@@ -318,7 +302,12 @@ void Engine::checkFinished() {
             if (aborted_) {
                 shouldFinish = true;
                 success = false;
-                reason = "Build failed";
+                
+                // NEW: Если это был Ctrl+C (interrupted_), не пишем "Build failed",
+                // так как ConsoleUI выведет "Build interrupted".
+                if (!interrupted_) {
+                    reason = "Build failed";
+                }
             } else if (pendingTasks_ == 0) {
                 shouldFinish = true;
                 success = true;
@@ -339,7 +328,9 @@ void Engine::checkFinished() {
         if (!reason.empty() && buildError_) buildError_(reason);
         auto dur = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - buildStart_).count();
-        if (buildFinished_) buildFinished_(success, dur);
+            
+        // CHANGED: Передаем interrupted_ третьим аргументом.
+        if (buildFinished_) buildFinished_(success, dur, interrupted_);
         completionCv_.notify_all();
     }
 }

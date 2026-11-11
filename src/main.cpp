@@ -13,6 +13,13 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#else
+    #include <unistd.h>
+#endif
+
 #include "core/engine.h"
 #include "core/state.h"
 #include "parser/parser.h"
@@ -29,9 +36,49 @@ using namespace pmake::core;
 
 namespace {
 
+std::atomic<bool> g_interrupted{false};
+std::atomic<int>  g_signal_count{0};
+
+void on_signal(int sig) {
+    int n = g_signal_count.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n >= 2) {
+        std::_Exit(128 + sig);
+    }
+    g_interrupted.store(true, std::memory_order_relaxed);
+}
+
 void print_version() {
     std::fprintf(stdout, "%s %s\n", PMAKE_NAME, PMAKE_VERSION);
     std::fflush(stdout);
+}
+
+// NEW: Перезапуск самого себя для подхвата обновленного манифеста
+[[noreturn]] void restart_self(int argc, char** argv) {
+#ifdef _WIN32
+    std::string cmdLine;
+    for (int i = 0; i < argc; ++i) {
+        if (i > 0) cmdLine += " ";
+        cmdLine += argv[i];
+    }
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessA(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        DWORD exitCode = 0;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        std::exit(static_cast<int>(exitCode));
+    }
+    std::exit(1);
+#else
+    // CHANGED: execvp ищет бинарник в PATH, execv требует полный путь.
+    // Если пользователь запустил 'pmake' из PATH, execv упадет.
+    execvp(argv[0], argv);
+    std::perror("execvp");
+    std::exit(1);
+#endif
 }
 
 struct Options {
@@ -64,14 +111,14 @@ void printHelp() {
         "  -V, --version                Display version information\n"
         "  -f, --file <file>            Use <file> as build file\n"
         "  -j, --jobs <N>               Run <N> jobs in parallel\n"
-        "  --clean                      Clean all outputs\n"
-        "  --config <name>              Build configuration (debug/release)\n"
-        "  --platform <name>            Target platform (windows/linux/darwin)\n"
+        "      --clean                  Clean all outputs\n"
+        "      --config <name>          Build configuration (debug/release)\n"
+        "      --platform <name>        Target platform (windows/linux/darwin)\n"
         "  -v, --verbose                Show detailed command output\n"
         "  -q, --quiet                  Minimal output\n"
         "  -n, --dry-run                Show what would be built\n"
-        "  --no-color                   Disable colored output\n"
-        "  --license                    Show license\n"
+        "      --no-color               Disable colored output\n"
+        "      --license                Show license\n"
         "  -h, --help                   Show this help\n"
         "\n",
         PMAKE_NAME, PMAKE_VERSION);
@@ -92,18 +139,42 @@ int parse_args(int argc, char** argv, Options& opt) {
     std::vector<std::string> positional;
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
+
+        auto require_next = [&](const char* opt_name) -> bool {
+            if (i + 1 >= argc) {
+                LOG_ERROR(std::format("option '{}' requires an argument", opt_name));
+                return false;
+            }
+            return true;
+        };
+
         if (arg == "-f" || arg == "--file") {
-            if (i + 1 < argc) opt.buildFile = argv[++i];
+            if (!require_next("-f")) return 0;
+            opt.buildFile = argv[++i];
         } else if (arg == "-j" || arg == "--jobs") {
-            if (i + 1 < argc) {
-                try { opt.jobs = std::stoi(argv[++i]); } catch (...) {}
+            if (!require_next("-j")) return 0;
+            std::string valStr = argv[++i];
+            try {
+                size_t pos;
+                int val = std::stoi(valStr, &pos);
+                if (pos != valStr.length()) throw std::invalid_argument("trailing chars");
+                if (val <= 0) {
+                    LOG_ERROR(std::format("invalid value '{}' for '-j': must be greater than 0", valStr));
+                    return 0;
+                }
+                opt.jobs = val;
+            } catch (...) {
+                LOG_ERROR(std::format("invalid value '{}' for '-j': expected an integer", valStr));
+                return 0;
             }
         } else if (arg == "--clean") {
             opt.clean = true;
         } else if (arg == "--config") {
-            if (i + 1 < argc) opt.config = argv[++i];
+            if (!require_next("--config")) return 0;
+            opt.config = argv[++i];
         } else if (arg == "--platform") {
-            if (i + 1 < argc) opt.platform = argv[++i];
+            if (!require_next("--platform")) return 0;
+            opt.platform = argv[++i];
         } else if (arg == "-v" || arg == "--verbose") {
             opt.verbose = true;
         } else if (arg == "-q" || arg == "--quiet") {
@@ -119,7 +190,7 @@ int parse_args(int argc, char** argv, Options& opt) {
         } else if (!arg.empty() && arg[0] != '-') {
             positional.emplace_back(argv[i]);
         } else {
-            std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            LOG_ERROR(std::format("unknown option '{}'. Try '{} --help'", argv[i], PMAKE_NAME));
             return 0;
         }
     }
@@ -171,8 +242,11 @@ int main(int argc, char** argv) {
     if (rc < 0) return 0;
     if (rc == 0) return 1;
 
-    signal(SIGINT, [](int) { std::_Exit(130); });
-    signal(SIGTERM, [](int) { std::_Exit(143); });
+    std::signal(SIGINT,  on_signal);
+    std::signal(SIGTERM, on_signal);
+#ifdef _WIN32
+    std::signal(SIGBREAK, on_signal); // NEW: ловим CTRL_BREAK_EVENT от раннера
+#endif
 
     std::string buildFile = opt.buildFile;
     if (buildFile.empty()) {
@@ -223,16 +297,58 @@ int main(int argc, char** argv) {
             state = pmakeParser.parse(buildFile, opt.config, opt.platform);
         }
     } catch (const std::exception& e) {
-        LOG_ERROR(std::format("Parser exception: {}", e.what()));
+        LOG_ERROR(std::format("parser exception: {}", e.what()));
         return 1;
     } catch (...) {
-        LOG_ERROR("Parser unknown exception");
+        LOG_ERROR("parser unknown exception");
         return 1;
     }
     if (!state) {
-        LOG_ERROR("Failed to parse build file");
+        LOG_ERROR("failed to parse build file");
         return 1;
     }
+
+    // ============================================================
+    // NEW: Generator logic (Manifest Regeneration)
+    // ============================================================
+    std::vector<std::string> manifestTargets;
+    for (const auto& b : state->builds()) {
+        const Rule* r = state->getRule(b.rule_name);
+        if (r && r->generator) {
+            for (const auto& out : b.outputs) {
+                if (out == buildFile) {
+                    manifestTargets.push_back(out);
+                } else {
+                    for (const auto& inc : state->includedFiles()) {
+                        if (out == inc) {
+                            manifestTargets.push_back(out);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!manifestTargets.empty()) {
+        if (opt.verbose) {
+            std::println(stderr, "Checking if build manifest needs regeneration...");
+        }
+        Engine genEngine(*state, 1, opt.dryRun);
+        bool genResult = true;
+        for (const auto& t : manifestTargets) {
+            if (!genEngine.run(t)) genResult = false;
+        }
+        
+        if (!genResult) return 1;
+        
+        // Если сборка манифеста реально что-то сделала (не noop) и это не dry-run
+        if (!genEngine.wasNoop() && !opt.dryRun) {
+            std::println(stderr, "Build manifest was regenerated. Restarting pmake...");
+            restart_self(argc, argv);
+        }
+    }
+    // ============================================================
 
     if (opt.target.empty() && opt.command == "build") {
         bool hasAll = false;
@@ -253,13 +369,11 @@ int main(int argc, char** argv) {
 
     if (useCache) {
         if (cache.load(cachePath)) {
-            // Всегда загружаем хеши и состояния
             for (const auto& [path, fs] : cache.fileStates()) state->setFileState(path, fs);
             state->setCommandHashes(cache.commandHashes());
 
-            // Проверяем, менялся ли конфиг или платформа
             if (cache.getConfig() != opt.config || cache.getPlatform() != opt.platform) {
-                LOG_VERBOSE("Cache: config or platform changed, forcing rebuild");
+                LOG_VERBOSE("cache: config or platform changed, forcing rebuild");
                 state->setForceRebuild(true);
                 cacheValid = false;
             } else {
@@ -270,18 +384,18 @@ int main(int argc, char** argv) {
                 if (cache.isValid(buildFile) && !buildFileNewer) {
                     cacheValid = true;
                 } else {
-                    LOG_VERBOSE("Cache: invalid (build file changed)");
+                    LOG_VERBOSE("cache: invalid (build file changed)");
                     pmake::deps::DepsLog::instance().clear();
                 }
             }
         } else {
-            LOG_VERBOSE("Cache: not found");
+            LOG_VERBOSE("cache: not found");
         }
     }
     state->setCacheValid(cacheValid);
 
     if (!cacheValid) {
-        LOG_VERBOSE("Re-scanning depfiles");
+        LOG_VERBOSE("re-scanning depfiles");
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
             if (!rule || rule->name == "phony" || rule->generator || rule->depfile.empty()) continue;
@@ -306,8 +420,8 @@ int main(int argc, char** argv) {
 
     if (useCache && !opt.dryRun && !cacheValid) {
         cache.store(*state, buildFile, opt.config, opt.platform);
-        if (!cache.save(cachePath)) LOG_WARN("Failed to save cache");
-        else LOG_VERBOSE("Cache: saved");
+        if (!cache.save(cachePath)) LOG_WARN("failed to save cache");
+        else LOG_VERBOSE("cache: saved");
     }
 
     if (opt.clean || opt.command == "clean") {
@@ -325,11 +439,13 @@ int main(int argc, char** argv) {
     }
 
     if (opt.command != "build") {
-        LOG_ERROR(std::format("Unknown command: {}", opt.command));
+        LOG_ERROR(std::format("unknown command '{}'", opt.command));
         return 1;
     }
 
     pmake::core::Engine engine(*state, opt.jobs, opt.dryRun);
+    engine.setCancelFlag(&g_interrupted);
+
     pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose);
 
     engine.onTaskStarted([&ui, verbose = opt.verbose](
@@ -341,16 +457,20 @@ int main(int argc, char** argv) {
     engine.onTaskFinished([&ui](const std::string& name, bool ok, double dur, const std::string& err) {
         ui.onTaskFinished(name, ok, dur, err);
     });
-    engine.onBuildFinished([&ui](bool ok, double dur) {
-        ui.onBuildFinished(ok, dur);
+    engine.onBuildFinished([&ui](bool ok, double dur, bool interrupted) {
+        ui.onBuildFinished(ok, dur, interrupted);
     });
 
     bool result = engine.run(opt.target);
 
+    if (g_interrupted.load()) {
+        return 130;
+    }
+
     if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
         cache.store(*state, buildFile, opt.config, opt.platform);
-        if (!cache.save(cachePath)) LOG_WARN("Failed to save cache after build");
+        if (!cache.save(cachePath)) LOG_WARN("failed to save cache after build");
     }
 
     return result ? 0 : 1;

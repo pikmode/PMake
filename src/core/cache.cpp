@@ -1,5 +1,6 @@
 #include "core/cache.h"
 #include "deps/deps_log.h"
+#include "util/logging.h" // NEW: для LOG_WARN
 
 #include <cstring>
 #include <filesystem>
@@ -18,7 +19,7 @@ namespace pmake::core {
 
 namespace {
 constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
-constexpr std::uint32_t kVersion = 8u;           // CHANGED: 7 -> 8
+constexpr std::uint32_t kVersion = 8u;
 } // namespace
 
 Cache::Cache() = default;
@@ -26,8 +27,8 @@ Cache::Cache() = default;
 void Cache::store(const State& state, std::string_view /*mainFile*/,
                   std::string_view config, std::string_view platform) {
     data_.version = kVersion;
-    data_.config = std::string(config);     // NEW
-    data_.platform = std::string(platform); // NEW
+    data_.config = std::string(config);
+    data_.platform = std::string(platform);
 
     data_.globalVars = state.globals();
     data_.rules.clear();
@@ -59,11 +60,11 @@ bool Cache::save(std::string_view path) const {
     }
     std::ofstream f(p, std::ios::binary | std::ios::trunc);
     if (!f) {
-        std::println(std::cerr, "Cannot open cache file for writing: {}", path);
+        LOG_ERROR(std::format("Cannot open cache file for writing: {}", path));
         return false;
     }
     if (!write(f)) {
-        std::println(std::cerr, "Cache write failed");
+        LOG_ERROR("Cache write failed");
         return false;
     }
     return true;
@@ -84,7 +85,6 @@ bool Cache::write(std::ostream& out) const {
     write_u32(out, kMagic);
     write_u32(out, kVersion);
 
-    // NEW: Сохраняем config и platform
     write_str(out, data_.config);
     write_str(out, data_.platform);
 
@@ -165,18 +165,16 @@ bool Cache::write(std::ostream& out) const {
 bool Cache::read(std::istream& in) {
     std::uint32_t magic = 0, version = 0;
     if (!read_u32(in, magic) || magic != kMagic) {
-        std::println(std::cerr, "Cache: bad magic");
+        LOG_VERBOSE("Cache: bad magic, ignoring");
         return false;
     }
     if (!read_u32(in, version)) return false;
     data_.version = version;
     if (version != kVersion) {
-        std::println(std::cerr, "Cache version mismatch ({} != {}), ignoring",
-                     version, kVersion);
+        LOG_WARN(std::format("Cache version mismatch ({} != {}), ignoring", version, kVersion));
         return false;
     }
 
-    // NEW: Читаем config и platform
     if (!read_str(in, data_.config)) return false;
     if (!read_str(in, data_.platform)) return false;
 
@@ -364,7 +362,7 @@ bool Cache::read_u8(std::istream& in, std::uint8_t& v) {
 bool Cache::read_str(std::istream& in, std::string& s) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
-    if (n > 64 * 1024 * 1024) return false; // BOUNDS CHECK (Защита от битого кэша)
+    if (n > 64 * 1024 * 1024) return false; 
     s.assign(n, '\0');
     if (n > 0 && !in.read(s.data(), static_cast<std::streamsize>(n))) return false;
     return true;
@@ -372,7 +370,7 @@ bool Cache::read_str(std::istream& in, std::string& s) {
 bool Cache::read_strs(std::istream& in, std::vector<std::string>& v) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
-    if (n > 64 * 1024 * 1024) return false; // BOUNDS CHECK
+    if (n > 64 * 1024 * 1024) return false; 
     v.clear();
     v.reserve(n);
     for (std::uint32_t i = 0; i < n; ++i) {

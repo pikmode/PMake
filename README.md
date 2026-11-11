@@ -167,7 +167,7 @@ python run.py --generate-only
 python run.py --pmake ../../build/linux/pmake
 ```
 
-Expected: **105 / 105 passed, 0 regressions**.
+Expected: **111 / 111 passed, 0 regressions**.
 
 ---
 
@@ -182,8 +182,8 @@ functions, builtins, depfile, restat, rspfile, caching, Windows specifics.
 
 ## Project status
 
-- **Version:** 1.1.0
-- **Tests:** 105 / 105 passing
+- **Version:** 1.2.0
+- **Tests:** 111 / 111 passing
 - **Maturity:** stable for small and medium projects
 - **Roadmap:** thread pool, `--export-compile-commands`, stdlib of common rules
 

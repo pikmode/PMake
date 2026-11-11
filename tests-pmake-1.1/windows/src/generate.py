@@ -29,12 +29,14 @@ from .tests_hard import TESTS as T_HARD
 from .tests_platform import TESTS as T_PLATFORM
 from .tests_config import TESTS as T_CONFIG
 from .tests_v110 import TESTS as T_V110
+from .tests_v111 import TESTS as T_V111  # NEW
 
 ALL_TESTS = (
-    T_BASIC + T_INCR + T_RESTAT + T_ORDER + T_PHONY + T_DEPFILE +
-    T_HASH + T_INCLUDE + T_ERRORS + T_PARALLEL + T_PATHS +
-    T_MODULES + T_BUILTINS + T_POOL + T_RSPFILE + T_GEN +
-    T_CMAKE + T_MISC + T_HARD + T_PLATFORM + T_CONFIG + T_V110
+    T_BASIC + T_INCR + T_RESTAT + T_ORDER + T_PHONY + T_DEPFILE
+    + T_HASH + T_INCLUDE + T_ERRORS + T_PARALLEL + T_PATHS
+    + T_MODULES + T_BUILTINS + T_POOL + T_RSPFILE + T_GEN
+    + T_CMAKE + T_MISC + T_HARD + T_PLATFORM + T_CONFIG + T_V110
+    + T_V111
 )
 
 

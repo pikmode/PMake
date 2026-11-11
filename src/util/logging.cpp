@@ -1,4 +1,5 @@
 #include "util/logging.h"
+#include "internal/config.h" // NEW: для PMAKE_MSG_PREFIX
 
 #include <cstdio>
 #include <ctime>
@@ -64,8 +65,17 @@ std::string formatMessage(Level level, std::string_view message) {
         result += buf;
         result += ' ';
     }
+    
     auto color = levelColor(level);
     if (!color.empty()) result += color;
+    
+    // NEW: Единый префикс для ошибок и предупреждений
+    if (level == Level::ERR || level == Level::FATAL) {
+        result += PMAKE_MSG_PREFIX "error: ";
+    } else if (level == Level::WARN) {
+        result += PMAKE_MSG_PREFIX "warning: ";
+    }
+
     result += message;
     if (!color.empty()) result += "\033[0m";
     return result;
