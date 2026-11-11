@@ -1,0 +1,3 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule echo { command = "${python} echo_to.py ${out} from_sub" }

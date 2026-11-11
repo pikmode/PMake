@@ -1,0 +1,20 @@
+{
+  "description": "while с break и continue (строковая итерация)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "filesWith": {
+          "out.txt": "x xxx"
+        }
+      }
+    }
+  ]
+}

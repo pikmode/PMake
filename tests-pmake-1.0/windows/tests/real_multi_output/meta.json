@@ -1,0 +1,52 @@
+{
+  "description": "multi-output",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "a.txt",
+          "b.txt",
+          "c.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "delete_b",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "delete": [
+            "b.txt"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

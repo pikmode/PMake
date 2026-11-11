@@ -1,0 +1,37 @@
+{
+  "description": "удалённый input → ошибка, а не «up to date»",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ]
+      }
+    },
+    {
+      "name": "delete_input",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "delete": [
+            "in.txt"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 1
+      }
+    }
+  ]
+}

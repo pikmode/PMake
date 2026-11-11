@@ -1,0 +1,53 @@
+{
+  "description": "generator: exists → skip; missing → rebuild",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "gen.txt"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "delete_output",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "delete": [
+            "gen.txt"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "gen.txt"
+        ]
+      }
+    }
+  ]
+}

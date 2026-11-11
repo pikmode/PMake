@@ -1,0 +1,24 @@
+{
+  "description": "нет build.pmake",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "no_file",
+      "args": [
+        "-f",
+        "build.pmake"
+      ],
+      "expect": {
+        "exit": 1,
+        "stderrMatches": [
+          "(?i)cannot read|no build file|build\\.pmake"
+        ]
+      }
+    }
+  ]
+}

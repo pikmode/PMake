@@ -1,0 +1,30 @@
+{
+  "description": "pool=console сериализует при -j8",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "j8_serialized",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "8"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 3,
+        "files": [
+          "c_1.txt",
+          "c_2.txt",
+          "c_3.txt"
+        ],
+        "elapsedMin": 0.85
+      }
+    }
+  ]
+}

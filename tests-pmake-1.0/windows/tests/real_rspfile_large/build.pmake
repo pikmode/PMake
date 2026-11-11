@@ -1,0 +1,9 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule link_all {
+    command = "${python} cat_rspfile.py ${rspfile} ${out}"
+    rspfile = "${out}.rsp"
+    rspfile_content = "${in}"
+}
+build "out.txt" : link_all "in_1.txt" "in_2.txt" "in_3.txt" "in_4.txt" "in_5.txt" "in_6.txt" "in_7.txt" "in_8.txt" "in_9.txt" "in_10.txt" "in_11.txt" "in_12.txt" "in_13.txt" "in_14.txt" "in_15.txt" "in_16.txt" "in_17.txt" "in_18.txt" "in_19.txt" "in_20.txt" "in_21.txt" "in_22.txt" "in_23.txt" "in_24.txt" "in_25.txt" "in_26.txt" "in_27.txt" "in_28.txt" "in_29.txt" "in_30.txt" "in_31.txt" "in_32.txt" "in_33.txt" "in_34.txt" "in_35.txt" "in_36.txt" "in_37.txt" "in_38.txt" "in_39.txt" "in_40.txt" "in_41.txt" "in_42.txt" "in_43.txt" "in_44.txt" "in_45.txt" "in_46.txt" "in_47.txt" "in_48.txt" "in_49.txt" "in_50.txt" "in_51.txt" "in_52.txt" "in_53.txt" "in_54.txt" "in_55.txt" "in_56.txt" "in_57.txt" "in_58.txt" "in_59.txt" "in_60.txt" "in_61.txt" "in_62.txt" "in_63.txt" "in_64.txt" "in_65.txt" "in_66.txt" "in_67.txt" "in_68.txt" "in_69.txt" "in_70.txt" "in_71.txt" "in_72.txt" "in_73.txt" "in_74.txt" "in_75.txt" "in_76.txt" "in_77.txt" "in_78.txt" "in_79.txt" "in_80.txt" "in_81.txt" "in_82.txt" "in_83.txt" "in_84.txt" "in_85.txt" "in_86.txt" "in_87.txt" "in_88.txt" "in_89.txt" "in_90.txt" "in_91.txt" "in_92.txt" "in_93.txt" "in_94.txt" "in_95.txt" "in_96.txt" "in_97.txt" "in_98.txt" "in_99.txt" "in_100.txt"
+alias all : "out.txt"

@@ -1,0 +1,20 @@
+{
+  "description": "include cycle → ошибка, не крашить",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "cycle_detected",
+      "expect": {
+        "exit": 1,
+        "stderrHas": [
+          "ycl"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "description": "вложенные foreach",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 4,
+        "files": [
+          "out_x86_debug.txt",
+          "out_x86_release.txt",
+          "out_x64_debug.txt",
+          "out_x64_release.txt"
+        ]
+      }
+    }
+  ]
+}

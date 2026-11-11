@@ -1,0 +1,35 @@
+{
+  "description": "комментарий не форсит rebuild",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "add_comment",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "modify": {
+            "build.pmake": "pmake_required_version = 1.0\n// just a comment\npython = \"E:/python/python.exe\"\nrule echo { command = \"${python} echo_to.py ${out} x\" }\nbuild \"out.txt\" : echo\nalias all : \"out.txt\"\n"
+          }
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    }
+  ]
+}

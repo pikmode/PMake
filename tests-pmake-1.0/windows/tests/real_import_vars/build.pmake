@@ -1,0 +1,6 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+import "vars.pmake"
+rule echo { command = "${python} write_all.py ${out} ${SUBDIR}" }
+build "out.txt" : echo
+alias all : "out.txt"

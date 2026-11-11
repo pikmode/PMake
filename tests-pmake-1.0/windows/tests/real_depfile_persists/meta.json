@@ -1,0 +1,35 @@
+{
+  "description": "depfile persists (однострочный rule)",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "touch_hdr",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "hdr.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "description": "Кэш — ускоритель: удаление не форсит rebuild",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.c"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.5
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "delete_cache_noop",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "delete": [
+            "Project-cache.pmake"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "delete_cache_and_modify",
+      "before": [
+        {
+          "sleep": 0.5
+        },
+        {
+          "delete": [
+            "Project-cache.pmake"
+          ]
+        },
+        {
+          "modify": {
+            "src.c": "int v = 2;\n"
+          }
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesWith": {
+          "out.c": "int v = 2;"
+        }
+      }
+    }
+  ]
+}

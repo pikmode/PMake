@@ -136,6 +136,18 @@ int parse_args(int argc, char** argv, Options& opt) {
         }
     }
 
+    if (opt.platform.empty()) {
+#ifdef _WIN32
+        opt.platform = "windows";
+#elif __linux__
+        opt.platform = "linux";
+#elif __APPLE__
+        opt.platform = "darwin";
+#else
+        opt.platform = "unknown";
+#endif
+    }
+
     if (opt.jobs <= 0) opt.jobs = idealThreadCount();
     return 1;
 }
@@ -162,7 +174,6 @@ int main(int argc, char** argv) {
     signal(SIGINT, [](int) { std::_Exit(130); });
     signal(SIGTERM, [](int) { std::_Exit(143); });
 
-    // ---------- build file ----------
     std::string buildFile = opt.buildFile;
     if (buildFile.empty()) {
         if (pmake::util::fileExists("build.pmake"))      buildFile = "build.pmake";
@@ -173,7 +184,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---------- logging ----------
     pmake::logging::Config logCfg;
     logCfg.log_to_console = true;
     logCfg.color_output   = !opt.noColor && std::getenv("NO_COLOR") == nullptr;
@@ -189,7 +199,6 @@ int main(int argc, char** argv) {
     }
     pmake::logging::init(logCfg);
 
-    // ---------- ninja vs pmake ----------
     bool isNinja = ends_with(to_lower(buildFile), ".ninja");
     if (!isNinja && !ends_with(to_lower(buildFile), ".pmake")) {
         std::string head;
@@ -204,7 +213,6 @@ int main(int argc, char** argv) {
 
     LOG_VERBOSE(std::format("Build file type: {}", isNinja ? "ninja" : "pmake"));
 
-    // ---------- parse ----------
     std::unique_ptr<State> state;
     try {
         if (isNinja) {
@@ -226,7 +234,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---------- default target ----------
     if (opt.target.empty() && opt.command == "build") {
         bool hasAll = false;
         for (const auto& b : state->builds()) {
@@ -236,7 +243,6 @@ int main(int argc, char** argv) {
         else if (!state->defaultTargets().empty()) opt.target = state->defaultTargets().front();
     }
 
-    // ---------- cache ----------
     bool useCache = true;
     auto cacheVar = state->getGlobal("cache");
     if (cacheVar.has_value() && to_lower(*cacheVar) == "false") useCache = false;
@@ -247,22 +253,26 @@ int main(int argc, char** argv) {
 
     if (useCache) {
         if (cache.load(cachePath)) {
+            // Всегда загружаем хеши и состояния
             for (const auto& [path, fs] : cache.fileStates()) state->setFileState(path, fs);
             state->setCommandHashes(cache.commandHashes());
 
-            std::int64_t buildMtime = pmake::util::getFileMtime(buildFile);
-            std::int64_t cacheMtime = pmake::util::getFileMtime(cachePath);
-            bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
-
-            if (cache.isValid(buildFile) && !buildFileNewer) {
-                cacheValid = true;
-                LOG_VERBOSE(std::format("Cache: valid, {} file states, {} deps, {} command hashes",
-                    cache.fileStates().size(),
-                    pmake::deps::DepsLog::instance().entries().size(),
-                    cache.commandHashes().size()));
+            // Проверяем, менялся ли конфиг или платформа
+            if (cache.getConfig() != opt.config || cache.getPlatform() != opt.platform) {
+                LOG_VERBOSE("Cache: config or platform changed, forcing rebuild");
+                state->setForceRebuild(true);
+                cacheValid = false;
             } else {
-                LOG_VERBOSE("Cache: invalid (build file changed)");
-                pmake::deps::DepsLog::instance().clear();
+                std::int64_t buildMtime = pmake::util::getFileMtime(buildFile);
+                std::int64_t cacheMtime = pmake::util::getFileMtime(cachePath);
+                bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
+
+                if (cache.isValid(buildFile) && !buildFileNewer) {
+                    cacheValid = true;
+                } else {
+                    LOG_VERBOSE("Cache: invalid (build file changed)");
+                    pmake::deps::DepsLog::instance().clear();
+                }
             }
         } else {
             LOG_VERBOSE("Cache: not found");
@@ -270,7 +280,6 @@ int main(int argc, char** argv) {
     }
     state->setCacheValid(cacheValid);
 
-    // ---------- depfiles ----------
     if (!cacheValid) {
         LOG_VERBOSE("Re-scanning depfiles");
         for (const auto& build : state->builds()) {
@@ -295,14 +304,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---------- cache save after parse ----------
     if (useCache && !opt.dryRun && !cacheValid) {
-        cache.store(*state, buildFile);
+        cache.store(*state, buildFile, opt.config, opt.platform);
         if (!cache.save(cachePath)) LOG_WARN("Failed to save cache");
         else LOG_VERBOSE("Cache: saved");
     }
 
-    // ---------- clean ----------
     if (opt.clean || opt.command == "clean") {
         int removed = 0;
         for (const auto& build : state->builds()) {
@@ -322,12 +329,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---------- engine + UI ----------
     pmake::core::Engine engine(*state, opt.jobs, opt.dryRun);
     pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose);
 
-    // CHANGED: 4 параметра (display, total, command, workdir).
-    // display уже содержит description (если было), fallback — output.
     engine.onTaskStarted([&ui, verbose = opt.verbose](
             const std::string& name, int total,
             const std::string& cmd, const std::string& wd) {
@@ -343,10 +347,9 @@ int main(int argc, char** argv) {
 
     bool result = engine.run(opt.target);
 
-    // ---------- cache save after build ----------
     if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
-        cache.store(*state, buildFile);
+        cache.store(*state, buildFile, opt.config, opt.platform);
         if (!cache.save(cachePath)) LOG_WARN("Failed to save cache after build");
     }
 

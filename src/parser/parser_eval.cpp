@@ -1,4 +1,5 @@
 #include "parser/parser_impl.h"
+#include "parser/parser_utils.h"
 #include "core/builtins.h"
 #include "util/filesystem.h"
 
@@ -92,12 +93,29 @@ void ParserImpl::evaluateAst(AstNode* root) {
 
         if (frame.index == 0) {
             switch (node->type) {
-                case AstNode::ASSIGNMENT: evaluateAssignment(node); break;
-                case AstNode::RULE: evaluateRule(node); break;
-                case AstNode::BUILD: evaluateBuild(node); break;
-                case AstNode::CONFIG: evaluateConfig(node); break;
-                case AstNode::PLATFORM: evaluatePlatform(node); break;
+                // ----- leaf-handled: хендлер сам обходит детей -----
+                case AstNode::ASSIGNMENT: evaluateAssignment(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::RULE: evaluateRule(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::BUILD: evaluateBuild(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::CONFIG: evaluateConfig(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::PLATFORM: evaluatePlatform(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::ALIAS: evaluateAlias(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::INCLUDE: evaluateInclude(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::IMPORT: evaluateImport(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::CONST_DECL: evaluateConst(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
+                case AstNode::ENUM_DECL: evaluateEnum(node);
+                    frame.index = static_cast<int>(node->children.size()); break;
 
+                // ----- управляющие: хендлер сам решает, каких детей eval'ить -----
                 case AstNode::FUNCTION_CALL:
                     evaluateExpression(node);
                     frame.index = static_cast<int>(node->children.size());
@@ -129,11 +147,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::BREAK:    pendingFlow_ = 1; break;
                 case AstNode::CONTINUE: pendingFlow_ = 2; break;
 
-                case AstNode::ALIAS: evaluateAlias(node); break;
-                case AstNode::INCLUDE: evaluateInclude(node); break;
-                case AstNode::IMPORT: evaluateImport(node); break;
-                case AstNode::CONST_DECL: evaluateConst(node); break;
-                case AstNode::ENUM_DECL: evaluateEnum(node); break;
                 default: break;
             }
         }
@@ -319,6 +332,12 @@ void ParserImpl::evaluateConfig(AstNode* config) {
         }
     }
     state_.addConfig(block);
+
+    if (config->name == config_) {
+        for (const auto& [key, val] : block.vars) {
+            state_.setGlobal(key, val);
+        }
+    }
 }
 
 void ParserImpl::evaluatePlatform(AstNode* platform) {
@@ -330,6 +349,12 @@ void ParserImpl::evaluatePlatform(AstNode* platform) {
         }
     }
     state_.addPlatform(block);
+
+    if (platform->name == platform_) {
+        for (const auto& [key, val] : block.vars) {
+            state_.setGlobal(key, val);
+        }
+    }
 }
 
 void ParserImpl::evaluateIf(AstNode* ifNode) {
@@ -409,11 +434,7 @@ void ParserImpl::evaluateAlias(AstNode* alias) {
 }
 
 // ============================================================
-// NEW (#4): evaluateInclude / evaluateImport через общую реализацию.
-//
-// На фазе eval — resolve path (переменные уже установлены) →
-// cycle check → read file → parseAstOnly sub → eval sub-AST
-// в parent state_ с временной подменой currentEvalFilename_.
+// ВОССТАНОВЛЕННЫЙ INCLUDE / IMPORT
 // ============================================================
 void ParserImpl::evaluateInclude(AstNode* include) {
     evaluateIncludeImpl(include, "include");
@@ -426,19 +447,16 @@ void ParserImpl::evaluateImport(AstNode* importNode) {
 void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
     if (!node || node->children.empty()) return;
 
-    // 1. resolve path (теперь переменные установлены — если include внутри foreach/if)
     std::string rawPath = evaluateExpression(node->children[0]).to_string();
     if (rawPath.empty()) {
         error(std::format("{} path is empty", kind), true);
         return;
     }
 
-    // 2. resolve относительно currentEvalFilename_ (а не корневого build.pmake)
     std::filesystem::path curPath(currentEvalFilename_);
     std::string absPath = (curPath.parent_path() / rawPath).lexically_normal().string();
     std::string canonical = normalizePath(absPath);
 
-    // 3. cycle check
     if (processingStack_.contains(canonical)) {
         error(std::format("Include/import cycle detected: {}", canonical), false);
         return;
@@ -450,7 +468,6 @@ void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
         return;
     }
 
-    // 4. read file
     std::string data;
     if (!util::readFile(canonical, data)) {
         error(std::format("Cannot read {} file: {} (resolved: {})",
@@ -459,20 +476,16 @@ void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
         return;
     }
 
-    // 5. parse only AST (без eval)
     ParserImpl subParser(data, canonical, config_, platform_);
     subParser.processingStack_ = processingStack_;
     subParser.parseAstOnly();
 
-    // 6. копируем functions из sub в parent — ГЛУБОКАЯ копия через cloneAst,
-    // иначе double-free: sub и parent оба удалят func.body при деструкторе
     for (const auto& [name, func] : subParser.state().functions()) {
         core::FunctionDef copy = func;
         copy.body = cloneAst(func.body);
         state_.addFunction(copy);
     }
 
-    // 7. eval sub-AST в parent state_, с временной подменой filename
     processingStack_.insert(canonical);
     std::string savedFilename = currentEvalFilename_;
     currentEvalFilename_ = canonical;
@@ -490,7 +503,6 @@ void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
     processingStack_.erase(canonical);
     --ParserImpl::includeDepth;
 
-    // 8. трекаем include в state_ (для clean/отладки)
     state_.includedFiles().push_back(canonical);
 }
 

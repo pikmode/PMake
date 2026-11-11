@@ -1,0 +1,4 @@
+pmake_required_version = 1.0
+include "subdir/part.pmake"
+build "out.txt" : echo
+alias all : "out.txt"

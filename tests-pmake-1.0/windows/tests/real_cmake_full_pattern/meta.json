@@ -1,0 +1,69 @@
+{
+  "description": "CMake full pattern",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 3,
+        "files": [
+          "autogen_stamp",
+          "main.o",
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "touch_gen_order_only_no_propagate",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "gen.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "touch_main_c_rebuild",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "main.c"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    }
+  ]
+}

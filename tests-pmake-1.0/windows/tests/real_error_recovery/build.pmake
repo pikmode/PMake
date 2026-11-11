@@ -1,0 +1,8 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule cc { command = "${python} cc_maybe_fail.py ${in} ${out}" }
+rule link { command = "${python} concat.py ${out} ${in}" }
+build "a.o" : cc "a.c"
+build "b.o" : cc "b.c"
+build "app" : link "a.o" "b.o"
+alias all : "app"

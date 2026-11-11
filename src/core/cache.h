@@ -13,13 +13,6 @@ namespace pmake::deps { class DepsLog; }
 
 namespace pmake::core {
 
-/**
- * @brief Бинарный кэш состояния сборки.
- *
- * ВАЖНО: Формат изменён с QDataStream (версия 6) на собственный (версия 7).
- * При первом запуске STL-версии на существующем проекте кэш от Qt-версии
- * будет проигнорирован (version mismatch) → полный rebuild. Это ожидаемо.
- */
 class Cache {
 public:
     Cache();
@@ -29,15 +22,25 @@ public:
 
     bool isValid(std::string_view mainFile = {}) const;
 
-    void store(const State& state, std::string_view mainFile = {});
+    // CHANGED: Добавлены параметры config и platform
+    void store(const State& state, std::string_view mainFile = {}, 
+               std::string_view config = {}, 
+               std::string_view platform = {});
+               
     std::unique_ptr<State> restore() const;
 
     const std::unordered_map<std::string, FileState>& fileStates() const { return data_.fileStates; }
     const std::unordered_map<std::string, std::string>& commandHashes() const { return data_.commandHashes; }
 
+    // NEW: Геттеры для проверки в main.cpp
+    const std::string& getConfig() const { return data_.config; }
+    const std::string& getPlatform() const { return data_.platform; }
+
 private:
     struct Data {
-        std::uint32_t version = 7;
+        std::uint32_t version = 8; // ВЕРСИЯ ПОДНЯТА С 7 НА 8
+        std::string config;        // NEW
+        std::string platform;      // NEW
         std::unordered_map<std::string, std::string> globalVars;
         std::vector<Rule> rules;
         std::vector<Build> builds;

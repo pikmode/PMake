@@ -1,0 +1,28 @@
+{
+  "description": "shell && через {SHELL_PREFIX}",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "a.txt",
+          "b.txt",
+          "out.txt"
+        ],
+        "filesWith": {
+          "a.txt": "A",
+          "b.txt": "B",
+          "out.txt": "C"
+        }
+      }
+    }
+  ]
+}

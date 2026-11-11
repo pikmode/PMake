@@ -1,0 +1,35 @@
+{
+  "description": "restat + depfile",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    },
+    {
+      "name": "touch_h",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "common.h"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 2
+      }
+    }
+  ]
+}

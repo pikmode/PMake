@@ -104,7 +104,7 @@ private:
 
     void parseVersionDirective();
     std::string parseIdent();
-    void parseTopLevel();
+    void parseTopLevel(bool requireVersion = true);
     void parseStatement(int depth = 0);
     void parseAssignment(AstNode* parent);
     void parseRule(AstNode* parent);

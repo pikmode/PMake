@@ -1,0 +1,34 @@
+{
+  "description": "8 задач × 200ms sleep",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "parallel_fast",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "8"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 8,
+        "files": [
+          "s_1.txt",
+          "s_2.txt",
+          "s_3.txt",
+          "s_4.txt",
+          "s_5.txt",
+          "s_6.txt",
+          "s_7.txt",
+          "s_8.txt"
+        ]
+      }
+    }
+  ]
+}

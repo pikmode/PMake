@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -15,7 +17,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            pmake_exe: ../../build-ci/pmake.exe
+            test_dir: tests-pmake-1.0/windows
           - os: ubuntu-latest
+            pmake_exe: ../../build-ci/pmake
+            test_dir: tests-pmake-1.0/linux
 
     runs-on: ${{ matrix.os }}
 
@@ -28,14 +34,14 @@ jobs:
         with:
           python-version: '3.12'
 
-      # --- WINDOWS BUILD ---
+      # --- WINDOWS BUILD & NINJA ---
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-ninja
 
       - name: Build pmake (Windows)
         if: runner.os == 'Windows'
@@ -49,22 +55,52 @@ jobs:
               -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool \
               -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lstdc++exp
 
-      # --- LINUX BUILD ---
+      # --- LINUX BUILD & NINJA ---
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install ninja-build -y
+
       - name: Build pmake (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p build-ci
           g++ -std=c++23 -O2 -DNDEBUG -I src $(find src -name '*.cpp' | sort) -o build-ci/pmake -pthread
 
-      # --- TESTS (WINDOWS ONLY) ---
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        working-directory: tests-pmake-1.0
+      # --- TESTS (RUNS ON BOTH OS) ---
+      - name: Run tests
+        working-directory: ${{ matrix.test_dir }}
         run: |
           python run.py --generate-only
-          python run.py --pmake ../build-ci/pmake.exe
+          python run.py --pmake ${{ matrix.pmake_exe }}
 
-      - name: Check regressions (Windows)
-        if: runner.os == 'Windows'
-        working-directory: tests-pmake-1.0
-        run: python ../scripts/check_report.py
+      - name: Check regressions
+        if: always()
+        working-directory: ${{ matrix.test_dir }}
+        run: python ../../scripts/check_report.py
+
+      # --- BENCHMARK (RUNS ON BOTH OS) ---
+      - name: Run Benchmark (1000 files)
+        if: always()
+        working-directory: ${{ matrix.test_dir }}/bench
+        run: |
+          python benchmark.py --files 1000 --runs 3 --jobs 4 --pmake ${{ matrix.pmake_exe }} --ninja ninja > benchmark_results.txt
+        continue-on-error: true
+        timeout-minutes: 15
+
+      - name: Upload Benchmark Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.os }}
+          path: ${{ matrix.test_dir }}/bench/benchmark_results.txt
+          retention-days: 7
+
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.os }}
+          path: |
+            ${{ matrix.test_dir }}/results/report.json
+            ${{ matrix.test_dir }}/results/*.log
+          retention-days: 30

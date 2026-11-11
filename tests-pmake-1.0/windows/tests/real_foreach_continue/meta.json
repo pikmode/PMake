@@ -1,0 +1,21 @@
+{
+  "description": "continue в foreach",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesWith": {
+          "out.txt": "a c d"
+        }
+      }
+    }
+  ]
+}

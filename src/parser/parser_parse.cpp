@@ -10,7 +10,12 @@
 namespace pmake::parser {
 
 // ---- parseTopLevel ----
-void ParserImpl::parseTopLevel() {
+//
+// requireVersion = true  → корневой файл: pmake_required_version ОБЯЗАТЕЛЬНА.
+// requireVersion = false → include/import: директива ОПЦИОНАЛЬНА,
+//                          а если присутствует — просто пропускается
+//                          (без валидации версии, без изменения состояния).
+void ParserImpl::parseTopLevel(bool requireVersion) {
     advance();
     while (cur_.type == TOK_NEWLINE || cur_.type == TOK_INDENT) advance();
 
@@ -19,18 +24,29 @@ void ParserImpl::parseTopLevel() {
         return;
     }
 
-    if (cur_.type != TOK_IDENT || str(cur_.strId) != "pmake_required_version") {
-        error("First directive must be 'pmake_required_version = 1.0'", true);
-        while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
-        if (cur_.type == TOK_NEWLINE) advance();
-    } else {
-        advance();
-        parseVersionDirective();
-        if (!versionDeclared_) {
-            if (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
-                while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
-                if (cur_.type == TOK_NEWLINE) advance();
+    if (requireVersion) {
+        // ----- Корневой файл: версия обязательна -----
+        if (cur_.type != TOK_IDENT || str(cur_.strId) != "pmake_required_version") {
+            error("First directive must be 'pmake_required_version = 1.0'", true);
+            while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
+            if (cur_.type == TOK_NEWLINE) advance();
+        } else {
+            advance();
+            parseVersionDirective();
+            if (!versionDeclared_) {
+                if (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) {
+                    while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
+                    if (cur_.type == TOK_NEWLINE) advance();
+                }
             }
+        }
+    } else {
+        // ----- Include/import: версия опциональна и игнорируется -----
+        if (cur_.type == TOK_IDENT && str(cur_.strId) == "pmake_required_version") {
+            // Пропускаем всю строку целиком — не вызываем parseVersionDirective,
+            // не проверяем значение, не ставим versionDeclared_.
+            while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
+            if (cur_.type == TOK_NEWLINE) advance();
         }
     }
 
@@ -50,7 +66,7 @@ void ParserImpl::parseTopLevel() {
 // ---- Публичный метод parse ----
 std::unique_ptr<core::State> ParserImpl::parse() {
     try {
-        parseTopLevel();
+        parseTopLevel();  // requireVersion = true (default)
         if (!errors_.empty()) {
             for (const auto& err : errors_) {
                 std::println(std::cerr, "{}", err);
@@ -81,19 +97,18 @@ std::unique_ptr<core::State> ParserImpl::parse() {
 }
 
 // ============================================================
-// NEW (#4): parseAstOnly
+// parseAstOnly
 //
 // Только строит AST в root_. Никакого eval. Используется в
 // evaluateIncludeImpl для sub-файлов: sub-файл парсится, но его
 // AST eval'ится в parent ParserImpl (чтобы видеть parent globals).
 //
-// Errors логируются, но не бросаются наверх — если sub-файл битый,
-// AST просто будет неполным. Это OK: main parse() уже соберёт errors
-// от основного файла.
+// requireVersion = false → sub-файл не обязан содержать
+// pmake_required_version, а если содержит — она игнорируется.
 // ============================================================
 void ParserImpl::parseAstOnly() {
     try {
-        parseTopLevel();
+        parseTopLevel(/*requireVersion=*/false);
     } catch (const std::exception& e) {
         std::println(std::cerr, "Parsing failed: {}", e.what());
     } catch (...) {

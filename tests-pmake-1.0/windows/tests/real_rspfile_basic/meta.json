@@ -1,0 +1,39 @@
+{
+  "description": "rspfile: пишется перед командой, удаляется после",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ],
+        "filesWith": {
+          "out.txt": "line1\nline2"
+        }
+      }
+    },
+    {
+      "name": "rspfile_removed",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0,
+        "filesNot": [
+          "out.txt.rsp"
+        ]
+      }
+    }
+  ]
+}

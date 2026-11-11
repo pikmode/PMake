@@ -1,0 +1,47 @@
+{
+  "description": "Diamond граф",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 5
+      }
+    },
+    {
+      "name": "noop",
+      "before": [
+        {
+          "sleep": 0.3
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "name": "touch_root",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "touch": [
+            "a.in"
+          ]
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 5
+      }
+    }
+  ]
+}

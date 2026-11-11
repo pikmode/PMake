@@ -1,0 +1,12 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule ok { command = "${python} echo_to.py ${out} OK" }
+rule fail { command = "${python} fail.py" }
+build "p_1.txt" : ok
+build "p_2.txt" : ok
+build "p_3.txt" : ok
+build "p_4.txt" : ok
+build "p_5.txt" : ok
+build "bad.txt" : fail
+build "p_6.txt" : ok
+alias all : "p_1.txt", "p_2.txt", "p_3.txt", "p_4.txt", "p_5.txt", "p_6.txt", "bad.txt"

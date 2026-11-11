@@ -12,5 +12,5 @@
 // ============================================================
 
 #define PMAKE_NAME           "PMake"
-#define PMAKE_VERSION        "1.0.0"
-#define PMAKE_VERSION_NUM    (1.0)
+#define PMAKE_VERSION        "1.1.0"
+#define PMAKE_VERSION_NUM    (1.1)

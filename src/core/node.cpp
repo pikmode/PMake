@@ -72,6 +72,9 @@ bool Node::isDirty() {
     if (isPhony()) return false;
     if (!build_ || !rule_) return false;
 
+    // Если сменился конфиг или платформа, форсируем пересборку
+    if (state_ && state_->forceRebuild()) return true;
+
     if (rule_->generator) {
         bool anyMissing = false;
         for (const auto& out : build_->outputs) {
@@ -87,9 +90,6 @@ bool Node::isDirty() {
         auto checkGenDep = [&](Node* dep) -> bool {
             if (dep->isLeaf()) {
                 std::int64_t m = util::getFileMtime(dep->name());
-                // NEW (#7): missing input форсит rebuild generator-правила.
-                // Раньше "m > maxOut" при m == -1 давал false, и удалённый
-                // input не замечался. Теперь — пересборка.
                 if (m == -1) return true;
                 return m > maxOut;
             }
@@ -126,15 +126,6 @@ bool Node::isDirty() {
     auto checkNode = [&](Node* dep) -> bool {
         if (dep->isLeaf()) {
             std::int64_t m = util::getFileMtime(dep->name());
-            // NEW (#7): missing input → форсим rebuild.
-            // -1 означает "файла нет" (соглашение util::getFileMtime).
-            // Раньше "-1 > maxOut" = false, и pmake молча продолжал
-            // с устаревшим output при удалённом input. Теперь — rebuild,
-            // и если команда не справится без input — exit 1.
-            //
-            // Важно: order-only deps сюда не попадают (checkNode вызывается
-            // только для deps_ и implicit_deps_), поэтому real_order_only_missing
-            // не ломается — missing order-only по-прежнему легален.
             if (m == -1) return true;
             if (m > maxOut) return true;
         } else {
@@ -168,10 +159,12 @@ bool Node::isDirty() {
         if (maxDepMtime > maxOut) return true;
     }
 
+    // Если кэш невалиден, проверяем хэш команды.
     if (state_ && !state_->isCacheValid()) {
         std::string currentHash = computeCommandHash();
         if (!currentHash.empty()) {
             auto cached = state_->getCommandHash(name_);
+            // Если хэша нет (например, кэш удален), НЕ форсируем rebuild, доверяем mtime
             if (cached.has_value() && *cached != currentHash) return true;
         }
     }

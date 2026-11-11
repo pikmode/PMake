@@ -1,0 +1,11 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule gen_out {
+    command = "${python} concat.py ${out} ${in}"
+}
+rule gen_stamp {
+    command = "${python} touch.py ${out}"
+}
+build "stamp.txt" : gen_stamp
+build "out.txt" : gen_out "main.txt" | "hdr.txt" || "stamp.txt"
+alias all : "out.txt"

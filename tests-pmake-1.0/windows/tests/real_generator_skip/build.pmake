@@ -1,0 +1,8 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule gen {
+    command = "${python} touch.py ${out}"
+    generator = true
+}
+build "gen.txt" : gen
+alias all : "gen.txt"

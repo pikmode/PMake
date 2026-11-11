@@ -1,0 +1,38 @@
+{
+  "description": "command hash: flags -O2 → -O3",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1
+      }
+    },
+    {
+      "name": "change_var",
+      "before": [
+        {
+          "sleep": 0.3
+        },
+        {
+          "modify": {
+            "build.pmake": "pmake_required_version = 1.0\npython = \"E:/python/python.exe\"\nflags = \"-O3\"\nrule echo { command = \"${python} echo_to.py ${out} ${flags}\" }\nbuild \"out.txt\" : echo\nalias all : \"out.txt\"\n"
+          }
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "filesWith": {
+          "out.txt": "-O3"
+        }
+      }
+    }
+  ]
+}

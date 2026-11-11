@@ -1,0 +1,24 @@
+{
+  "description": "пробелы в именах файлов",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out file.txt"
+        ],
+        "filesWith": {
+          "out file.txt": "spaces work"
+        }
+      }
+    }
+  ]
+}

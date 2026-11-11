@@ -1,0 +1,6 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+inputs = dep_inputs("test.d")
+rule write { command = "${python} write_all.py ${out} ${inputs}" }
+build "out.txt" : write
+alias all : "out.txt"

@@ -1,0 +1,20 @@
+{
+  "description": "import видит переменные из родителя/импорта",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "filesWith": {
+          "out.txt": "imported_dir"
+        }
+      }
+    }
+  ]
+}

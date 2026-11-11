@@ -14,6 +14,7 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 - **One file, one command.** No `cmake . && ninja`. Just `pmake`.
 - **Fast.** Rebuild speed on par with Ninja; minimal startup overhead.
 - **Expressive DSL.** `if` / `foreach` / `function` / `include` — without an external generator.
+- **Smart configurations.** Native `--config debug/release` and `--platform` support with automatic cache invalidation.
 - **Ninja-compatible.** Parses `.ninja` files directly (drop-in for CMake/Meson output).
 - **Incremental by default.** Binary cache, depfile, restat, generator.
 - **Cross-platform.** Windows, Linux, macOS.
@@ -106,7 +107,7 @@ pmake -n        # dry-run
 pmake clean     # clean outputs
 ```
 
-
+---
 
 ## Syntax at a glance
 
@@ -147,7 +148,7 @@ Options:
   -h, --help              help
 ```
 
-
+---
 
 ## Building and testing
 
@@ -155,15 +156,20 @@ Options:
 # Build
 g++ -std=c++23 -O2 $(find src -name '*.cpp') -o pmake -pthread
 
-# Run the test suite
-cd tests-pmake-1.0
+# Run the test suite (Windows)
+cd tests-pmake-1.0/windows
 python run.py --generate-only
-python run.py --pmake ../pmake
+python run.py --pmake ../../build/pmake/PMake.exe
+
+# Run the test suite (Linux/macOS)
+cd tests-pmake-1.0/linux
+python run.py --generate-only
+python run.py --pmake ../../build/linux/pmake
 ```
 
-Expected: **95 / 95 passed, 0 regressions**.
+Expected: **105 / 105 passed, 0 regressions**.
 
-
+---
 
 ## Documentation
 
@@ -172,12 +178,12 @@ Full language reference (Russian): [`readme.txt`](readme.txt)
 Covers: variables, rules, builds, aliases, includes, `if`/`foreach`/`while`/`switch`,
 functions, builtins, depfile, restat, rspfile, caching, Windows specifics.
 
-
+---
 
 ## Project status
 
-- **Version:** 1.0.0
-- **Tests:** 95 / 95 passing
+- **Version:** 1.1.0
+- **Tests:** 105 / 105 passing
 - **Maturity:** stable for small and medium projects
 - **Roadmap:** thread pool, `--export-compile-commands`, stdlib of common rules
 
@@ -187,7 +193,7 @@ functions, builtins, depfile, restat, rspfile, caching, Windows specifics.
 
 Licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE).
 
-
+---
 
 ## About
 

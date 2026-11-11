@@ -1,0 +1,35 @@
+{
+  "description": "проверка config в условиях if",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "default",
+      "expect": {
+        "exit": 0,
+        "filesWith": {
+          "out.txt": "RELEASE_ACTIVE"
+        }
+      }
+    },
+    {
+      "name": "debug",
+      "args": [
+        "-f",
+        "build.pmake",
+        "--config",
+        "debug"
+      ],
+      "expect": {
+        "exit": 0,
+        "filesWith": {
+          "out.txt": "DEBUG_ACTIVE"
+        }
+      }
+    }
+  ]
+}

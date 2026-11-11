@@ -1,0 +1,2 @@
+pmake_required_version = 1.0
+SUBDIR = "imported_dir"

@@ -6,9 +6,6 @@
 
 namespace pmake::core {
 
-// ==================================================================
-// Scope
-// ==================================================================
 Scope::Scope(Scope* parent) : parent_(parent) {}
 
 void Scope::set(std::string_view name, std::string_view value) {
@@ -30,9 +27,6 @@ bool Scope::has(std::string_view name) const {
     return get(name).has_value();
 }
 
-// ==================================================================
-// State
-// ==================================================================
 State::State() {}
 
 State::~State() {
@@ -54,7 +48,8 @@ State::State(State&& other) noexcept
     , platforms_(std::move(other.platforms_))
     , functions_(std::move(other.functions_))
     , commandHashes_(std::move(other.commandHashes_))
-    , cacheValid_(other.cacheValid_) {
+    , cacheValid_(other.cacheValid_)
+    , forceRebuild_(other.forceRebuild_) {
     other.functions_.clear();
 }
 
@@ -75,6 +70,7 @@ State& State::operator=(State&& other) noexcept {
     functions_      = std::move(other.functions_);
     commandHashes_  = std::move(other.commandHashes_);
     cacheValid_     = other.cacheValid_;
+    forceRebuild_   = other.forceRebuild_;
 
     other.functions_.clear();
     return *this;

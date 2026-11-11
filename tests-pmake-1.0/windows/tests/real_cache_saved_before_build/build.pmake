@@ -1,0 +1,5 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule fail { command = "${python} fail.py" }
+build "out.txt" : fail
+alias all : "out.txt"

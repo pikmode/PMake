@@ -1,0 +1,36 @@
+{
+  "description": "-j 8 fail",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "j8_fail",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-j",
+        "8"
+      ],
+      "expect": {
+        "exit": 1
+      }
+    },
+    {
+      "name": "dry_after",
+      "args": [
+        "-f",
+        "build.pmake",
+        "-n"
+      ],
+      "expect": {
+        "exit": 0,
+        "taskCountMin": 1,
+        "taskCountMax": 7
+      }
+    }
+  ]
+}

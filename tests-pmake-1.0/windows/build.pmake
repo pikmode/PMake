@@ -1,0 +1,17 @@
+pmake_required_version = 1.0
+
+if os == "windows" {
+    python = "E:/python/python.exe"
+} else {
+    python = "python3"  // или /usr/bin/python3
+}
+
+rule gen_tests {
+    command     = "${python} run.py --generate-only"
+    description = "generating test project"
+    restat      = true
+}
+
+build ".generated" : gen_tests "run.py" "src/__init__.py" "src/_common.py" "src/helpers.py" "src/tests_basic.py" "src/tests_incremental.py" "src/tests_restat.py" "src/tests_order_only.py" "src/tests_phony.py" "src/tests_depfile.py" "src/tests_command_hash.py" "src/tests_include.py" "src/tests_errors.py" "src/tests_parallel.py" "src/tests_paths.py" "src/tests_modules.py" "src/tests_builtins.py" "src/tests_pool.py" "src/tests_rspfile.py" "src/tests_generator.py" "src/tests_cmake.py" "src/tests_misc.py" "src/tests_hard.py" "src/generate.py" "src/runner.py" "src/tests_v110.py"
+
+alias all : ".generated"

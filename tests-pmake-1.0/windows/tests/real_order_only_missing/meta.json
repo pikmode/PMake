@@ -1,0 +1,24 @@
+{
+  "description": "missing order-only: leaf игнорируется",
+  "bug": "",
+  "timeoutSec": 60,
+  "args": [
+    "-f",
+    "build.pmake"
+  ],
+  "runs": [
+    {
+      "name": "first",
+      "expect": {
+        "exit": 0,
+        "taskCount": 1,
+        "files": [
+          "out.txt"
+        ],
+        "filesWith": {
+          "out.txt": "in"
+        }
+      }
+    }
+  ]
+}

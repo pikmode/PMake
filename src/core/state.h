@@ -135,6 +135,10 @@ public:
     void setCacheValid(bool valid) { cacheValid_ = valid; }
     bool isCacheValid() const { return cacheValid_; }
 
+    // NEW: Флаг для принудительной пересборки при смене конфига/платформы
+    void setForceRebuild(bool force) { forceRebuild_ = force; }
+    bool forceRebuild() const { return forceRebuild_; }
+
     Value callUserFunction(std::string_view name,
                            const std::vector<Value>& args,
                            Scope* callerScope = nullptr);
@@ -159,6 +163,7 @@ private:
     mutable std::unordered_map<std::string, std::string> commandHashes_;
     mutable std::mutex commandHashesMutex_;
     bool cacheValid_ = false;
+    bool forceRebuild_ = false; // NEW
 };
 
 } // namespace pmake::core

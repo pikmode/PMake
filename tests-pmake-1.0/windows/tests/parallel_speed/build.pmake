@@ -1,0 +1,12 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule slow { command = "${python} sleep_and_touch.py 200 ${out}" }
+build "s_1.txt" : slow
+build "s_2.txt" : slow
+build "s_3.txt" : slow
+build "s_4.txt" : slow
+build "s_5.txt" : slow
+build "s_6.txt" : slow
+build "s_7.txt" : slow
+build "s_8.txt" : slow
+alias all : "s_1.txt", "s_2.txt", "s_3.txt", "s_4.txt", "s_5.txt", "s_6.txt", "s_7.txt", "s_8.txt"

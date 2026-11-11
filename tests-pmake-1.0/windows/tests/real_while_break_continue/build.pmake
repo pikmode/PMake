@@ -1,0 +1,13 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+i = ""
+result = ""
+while i != "xxxxx" {
+    i = "${i}x"
+    if i == "xx" { continue }
+    if i == "xxxx" { break }
+    result += i
+}
+rule echo { command = "${python} write_all.py ${out} ${result}" }
+build "out.txt" : echo
+alias all : "out.txt"

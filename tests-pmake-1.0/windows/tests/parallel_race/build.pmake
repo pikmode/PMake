@@ -1,0 +1,34 @@
+pmake_required_version = 1.0
+python = "E:/python/python.exe"
+rule noop { command = "${python} touch.py ${out}" }
+build "r_1.txt" : noop
+build "r_2.txt" : noop
+build "r_3.txt" : noop
+build "r_4.txt" : noop
+build "r_5.txt" : noop
+build "r_6.txt" : noop
+build "r_7.txt" : noop
+build "r_8.txt" : noop
+build "r_9.txt" : noop
+build "r_10.txt" : noop
+build "r_11.txt" : noop
+build "r_12.txt" : noop
+build "r_13.txt" : noop
+build "r_14.txt" : noop
+build "r_15.txt" : noop
+build "r_16.txt" : noop
+build "r_17.txt" : noop
+build "r_18.txt" : noop
+build "r_19.txt" : noop
+build "r_20.txt" : noop
+build "r_21.txt" : noop
+build "r_22.txt" : noop
+build "r_23.txt" : noop
+build "r_24.txt" : noop
+build "r_25.txt" : noop
+build "r_26.txt" : noop
+build "r_27.txt" : noop
+build "r_28.txt" : noop
+build "r_29.txt" : noop
+build "r_30.txt" : noop
+alias all : "r_1.txt", "r_2.txt", "r_3.txt", "r_4.txt", "r_5.txt", "r_6.txt", "r_7.txt", "r_8.txt", "r_9.txt", "r_10.txt", "r_11.txt", "r_12.txt", "r_13.txt", "r_14.txt", "r_15.txt", "r_16.txt", "r_17.txt", "r_18.txt", "r_19.txt", "r_20.txt", "r_21.txt", "r_22.txt", "r_23.txt", "r_24.txt", "r_25.txt", "r_26.txt", "r_27.txt", "r_28.txt", "r_29.txt", "r_30.txt"

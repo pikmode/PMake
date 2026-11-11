@@ -18,16 +18,16 @@ namespace pmake::core {
 
 namespace {
 constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
-constexpr std::uint32_t kVersion = 7u;
+constexpr std::uint32_t kVersion = 8u;           // CHANGED: 7 -> 8
 } // namespace
 
 Cache::Cache() = default;
 
-// ============================================================
-// store
-// ============================================================
-void Cache::store(const State& state, std::string_view /*mainFile*/) {
+void Cache::store(const State& state, std::string_view /*mainFile*/,
+                  std::string_view config, std::string_view platform) {
     data_.version = kVersion;
+    data_.config = std::string(config);     // NEW
+    data_.platform = std::string(platform); // NEW
 
     data_.globalVars = state.globals();
     data_.rules.clear();
@@ -51,9 +51,6 @@ void Cache::store(const State& state, std::string_view /*mainFile*/) {
     data_.commandHashes = state.commandHashes();
 }
 
-// ============================================================
-// save / load
-// ============================================================
 bool Cache::save(std::string_view path) const {
     std::filesystem::path p{std::string(path)};
     std::error_code ec;
@@ -83,21 +80,20 @@ bool Cache::load(std::string_view path) {
     return true;
 }
 
-// ============================================================
-// write
-// ============================================================
 bool Cache::write(std::ostream& out) const {
     write_u32(out, kMagic);
     write_u32(out, kVersion);
 
-    // global vars
+    // NEW: Сохраняем config и platform
+    write_str(out, data_.config);
+    write_str(out, data_.platform);
+
     write_u32(out, static_cast<std::uint32_t>(data_.globalVars.size()));
     for (const auto& [k, v] : data_.globalVars) {
         write_str(out, k);
         write_str(out, v);
     }
 
-    // rules
     write_u32(out, static_cast<std::uint32_t>(data_.rules.size()));
     for (const Rule& r : data_.rules) {
         write_str(out, r.name);
@@ -112,7 +108,6 @@ bool Cache::write(std::ostream& out) const {
         write_u8(out, r.pool ? 1 : 0);
     }
 
-    // builds + locals
     write_u32(out, static_cast<std::uint32_t>(data_.builds.size()));
     for (std::size_t i = 0; i < data_.builds.size(); ++i) {
         const Build& b = data_.builds[i];
@@ -130,18 +125,15 @@ bool Cache::write(std::ostream& out) const {
         }
     }
 
-    // pools
     write_u32(out, static_cast<std::uint32_t>(data_.pools.size()));
     for (const auto& [name, pool] : data_.pools) {
         write_str(out, name);
         write_u32(out, static_cast<std::uint32_t>(pool.depth));
     }
 
-    // default targets + included files
     write_strs(out, data_.defaultTargets);
     write_strs(out, data_.includedFilesList);
 
-    // file states
     write_u32(out, static_cast<std::uint32_t>(data_.fileStates.size()));
     for (const auto& [path, fs] : data_.fileStates) {
         write_str(out, path);
@@ -150,14 +142,12 @@ bool Cache::write(std::ostream& out) const {
         write_str(out, fs.hash);
     }
 
-    // command hashes
     write_u32(out, static_cast<std::uint32_t>(data_.commandHashes.size()));
     for (const auto& [output, hash] : data_.commandHashes) {
         write_str(out, output);
         write_str(out, hash);
     }
 
-    // DepsLog (singleton)
     const auto& depsEntries = deps::DepsLog::instance().entries();
     write_u32(out, static_cast<std::uint32_t>(depsEntries.size()));
     for (const auto& [key, entry] : depsEntries) {
@@ -172,9 +162,6 @@ bool Cache::write(std::ostream& out) const {
     return out.good();
 }
 
-// ============================================================
-// read
-// ============================================================
 bool Cache::read(std::istream& in) {
     std::uint32_t magic = 0, version = 0;
     if (!read_u32(in, magic) || magic != kMagic) {
@@ -189,9 +176,12 @@ bool Cache::read(std::istream& in) {
         return false;
     }
 
+    // NEW: Читаем config и platform
+    if (!read_str(in, data_.config)) return false;
+    if (!read_str(in, data_.platform)) return false;
+
     std::uint32_t count = 0;
 
-    // global vars
     if (!read_u32(in, count)) return false;
     data_.globalVars.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -200,7 +190,6 @@ bool Cache::read(std::istream& in) {
         data_.globalVars[k] = v;
     }
 
-    // rules
     if (!read_u32(in, count)) return false;
     data_.rules.clear();
     data_.rules.reserve(count);
@@ -221,7 +210,6 @@ bool Cache::read(std::istream& in) {
         data_.rules.push_back(std::move(r));
     }
 
-    // builds + locals
     if (!read_u32(in, count)) return false;
     data_.builds.clear();
     data_.buildLocalVars.clear();
@@ -247,7 +235,6 @@ bool Cache::read(std::istream& in) {
         data_.buildLocalVars.push_back(std::move(locals));
     }
 
-    // pools
     if (!read_u32(in, count)) return false;
     data_.pools.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -258,11 +245,9 @@ bool Cache::read(std::istream& in) {
         data_.pools[name] = Pool{name, static_cast<int>(depth)};
     }
 
-    // default targets + included files
     if (!read_strs(in, data_.defaultTargets)) return false;
     if (!read_strs(in, data_.includedFilesList)) return false;
 
-    // file states
     if (!read_u32(in, count)) return false;
     data_.fileStates.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -280,7 +265,6 @@ bool Cache::read(std::istream& in) {
         data_.fileStates[path] = std::move(fs);
     }
 
-    // command hashes
     if (!read_u32(in, count)) return false;
     data_.commandHashes.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -289,7 +273,6 @@ bool Cache::read(std::istream& in) {
         data_.commandHashes[output] = hash;
     }
 
-    // DepsLog (singleton)
     std::uint32_t depsCount = 0;
     if (!read_u32(in, depsCount)) return false;
     auto& depsLog = deps::DepsLog::instance();
@@ -315,9 +298,6 @@ bool Cache::read(std::istream& in) {
     return in.good();
 }
 
-// ============================================================
-// isValid / restore
-// ============================================================
 bool Cache::isValid(std::string_view /*mainFile*/) const {
     return loaded_;
 }
@@ -348,9 +328,6 @@ std::unique_ptr<State> Cache::restore() const {
     return state;
 }
 
-// ============================================================
-// binary helpers
-// ============================================================
 void Cache::write_u32(std::ostream& out, std::uint32_t v) {
     out.write(reinterpret_cast<const char*>(&v), sizeof(v));
 }
@@ -387,6 +364,7 @@ bool Cache::read_u8(std::istream& in, std::uint8_t& v) {
 bool Cache::read_str(std::istream& in, std::string& s) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
+    if (n > 64 * 1024 * 1024) return false; // BOUNDS CHECK (Защита от битого кэша)
     s.assign(n, '\0');
     if (n > 0 && !in.read(s.data(), static_cast<std::streamsize>(n))) return false;
     return true;
@@ -394,6 +372,7 @@ bool Cache::read_str(std::istream& in, std::string& s) {
 bool Cache::read_strs(std::istream& in, std::vector<std::string>& v) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
+    if (n > 64 * 1024 * 1024) return false; // BOUNDS CHECK
     v.clear();
     v.reserve(n);
     for (std::uint32_t i = 0; i < n; ++i) {
