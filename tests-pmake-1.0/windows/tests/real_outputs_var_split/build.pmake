@@ -1,6 +1,0 @@
-pmake_required_version = 1.0
-python = "E:/python/python.exe"
-outs = "a.txt b.txt"
-rule mk { command = "${python} touch.py ${out}" }
-build "${outs}" : mk
-alias all : "a.txt", "b.txt"

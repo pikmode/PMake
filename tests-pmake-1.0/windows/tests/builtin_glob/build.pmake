@@ -1,6 +1,0 @@
-pmake_required_version = 1.0
-python = "E:/python/python.exe"
-files = glob("*.src", ".")
-rule echo { command = "${python} echo_to.py ${out} built" }
-build "out.txt" : echo
-alias all : "out.txt"

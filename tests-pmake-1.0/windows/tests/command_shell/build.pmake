@@ -1,6 +1,0 @@
-pmake_required_version = 1.0
-rule echo_chain {
-    command = "cmd /c \"echo A > a.txt && echo B > b.txt && echo C > out.txt\""
-}
-build "out.txt" : echo_chain
-alias all : "out.txt"

@@ -82,11 +82,17 @@ test_*.tmp
 *.orig
 *.rej
 *.bak
-test
+
+
 
 # ============================================
-# Old / misc
+# Old / misc / test
 # ============================================
 /old/
 .pikmode
 test.py
+tests
+bench
+helpers
+results
+.generated

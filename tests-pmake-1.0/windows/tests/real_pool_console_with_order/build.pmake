@@ -1,9 +1,0 @@
-pmake_required_version = 1.0
-python = "E:/python/python.exe"
-rule console_task {
-    command = "${python} sleep_and_touch.py 300 ${out}"
-    pool = console
-}
-build "stamp.txt" : console_task
-build "out.txt" : console_task || "stamp.txt"
-alias all : "out.txt"

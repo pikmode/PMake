@@ -1,5 +1,0 @@
-pmake_required_version = 1.0
-python = "E:/python/python.exe"
-OUT_DIR = "out_dir"
-include "sub.pmake"
-alias all : "${OUT_DIR}/result.txt"

@@ -3,8 +3,7 @@ name: CI
 on:
   push:
     branches: [main, master]
-    tags:
-      - 'v*'
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -19,54 +18,78 @@ jobs:
           - os: windows-latest
             pmake_exe: ../../build-ci/pmake.exe
             test_dir: tests-pmake-1.0/windows
+            artifact_name: pmake-windows
           - os: ubuntu-latest
             pmake_exe: ../../build-ci/pmake
             test_dir: tests-pmake-1.0/linux
+            artifact_name: pmake-linux
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # --- WINDOWS BUILD & NINJA ---
+      # ============ WINDOWS BUILD (LTO, -O3, static) ============
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-ninja
+          install: mingw-w64-x86_64-gcc
 
-      - name: Build pmake (Windows)
+      - name: Build pmake (Windows, optimized LTO)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           mkdir -p build-ci
-          g++ -std=c++23 -O2 -DNDEBUG -static -static-libgcc -static-libstdc++ -I src \
+          g++ -std=c++23 -O3 -DNDEBUG \
+              -march=core2 -mtune=generic \
+              -flto -ffunction-sections -fdata-sections \
+              -fomit-frame-pointer -fno-ident \
+              -static -static-libgcc -static-libstdc++ \
+              -Wl,--gc-sections -Wl,-O1 -Wl,--no-insert-timestamp -s \
+              -I src \
               src/main.cpp src/core/*.cpp src/parser/*.cpp src/parser/ninja-parser/*.cpp \
               src/executor/*.cpp src/deps/*.cpp src/util/*.cpp src/ui/*.cpp \
               -o build-ci/pmake.exe \
               -lmpr -luserenv -lkernel32 -luser32 -lgdi32 -lwinspool \
               -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lstdc++exp
+          echo "=== Binary size ==="
+          ls -la build-ci/
 
-      # --- LINUX BUILD & NINJA ---
-      - name: Install Ninja (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install ninja-build -y
-
-      - name: Build pmake (Linux)
+      # ============ LINUX BUILD (LTO, -O3, static) ============
+      - name: Build pmake (Linux, optimized LTO)
         if: runner.os == 'Linux'
         run: |
           mkdir -p build-ci
-          g++ -std=c++23 -O2 -DNDEBUG -I src $(find src -name '*.cpp' | sort) -o build-ci/pmake -pthread
+          g++ -std=c++23 -O3 -DNDEBUG \
+              -march=core2 -mtune=generic \
+              -flto -ffunction-sections -fdata-sections \
+              -fomit-frame-pointer -fno-ident \
+              -static -static-libgcc -static-libstdc++ \
+              -Wl,--gc-sections -Wl,-O1 -s \
+              -I src \
+              $(find src -name '*.cpp' | sort) \
+              -o build-ci/pmake -pthread
+          echo "=== Binary size ==="
+          ls -la build-ci/
 
-      # --- TESTS (RUNS ON BOTH OS) ---
+      # ============ VERIFY ============
+      - name: Verify version
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./build-ci/pmake.exe -V
+          else
+            ./build-ci/pmake -V
+          fi
+
+      # ============ TESTS ============
       - name: Run tests
         working-directory: ${{ matrix.test_dir }}
         run: |
@@ -78,29 +101,47 @@ jobs:
         working-directory: ${{ matrix.test_dir }}
         run: python ../../scripts/check_report.py
 
-      # --- BENCHMARK (RUNS ON BOTH OS) ---
-      - name: Run Benchmark (1000 files)
-        if: always()
-        working-directory: ${{ matrix.test_dir }}/bench
+      # ============ ARTIFACTS ============
+      - name: Upload pmake binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: build-ci/pmake${{ runner.os == 'Windows' && '.exe' || '' }}
+          retention-days: 90
+
+  # ============ AUTO-RELEASE (only on tag push) ============
+  release:
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pmake-windows
+          path: release/windows
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pmake-linux
+          path: release/linux
+
+      - name: Package binaries
         run: |
-          python benchmark.py --files 1000 --runs 3 --jobs 4 --pmake ${{ matrix.pmake_exe }} --ninja ninja > benchmark_results.txt
-        continue-on-error: true
-        timeout-minutes: 15
+          cd release/windows && zip PMake-${{ github.ref_name }}-windows-x64.zip pmake.exe
+          cd ../linux && zip PMake-${{ github.ref_name }}-linux-x64.zip pmake
+          echo "=== Packaged files ==="
+          ls -lh ../windows ../linux
 
-      - name: Upload Benchmark Results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: benchmark-results-${{ matrix.os }}
-          path: ${{ matrix.test_dir }}/bench/benchmark_results.txt
-          retention-days: 7
-
-      - name: Upload Test Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: report-${{ matrix.os }}
-          path: |
-            ${{ matrix.test_dir }}/results/report.json
-            ${{ matrix.test_dir }}/results/*.log
-          retention-days: 30
+          files: |
+            release/windows/PMake-${{ github.ref_name }}-windows-x64.zip
+            release/linux/PMake-${{ github.ref_name }}-linux-x64.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
