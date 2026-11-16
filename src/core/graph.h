@@ -16,7 +16,7 @@ namespace pmake::core {
 
 class Graph {
 public:
-    static constexpr int MAX_NODES = 100000;
+    static constexpr int MAX_NODES = 20000000;
 
     explicit Graph(const State& state, bool dryRun = false);
     bool build();

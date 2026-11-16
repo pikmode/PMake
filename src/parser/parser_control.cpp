@@ -33,7 +33,7 @@ void ParserImpl::parseIf(AstNode* parent) {
 
     int guard = 0;
     while (true) {
-        if (++guard > 10000) {
+        if (++guard > MAX_LOOP_GUARD) {               // CHANGED: было 10000
             error("Infinite loop in if/elseif/else", true);
             break;
         }

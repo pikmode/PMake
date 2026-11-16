@@ -205,8 +205,13 @@ void Engine::startTask(SchedTask* t) {
         taskStarted_(display, totalTasks_, commandExpanded, workdir);
     }
 
+    // thread pool вместо thread-per-task.
     Node* runner = t->runnerNode;
-    workers_.emplace_back([this, runner]() { workerRoutine(runner); });
+    {
+        std::lock_guard<std::mutex> lk(workMutex_);
+        workQueue_.push(runner);
+    }
+    workCv_.notify_one();
 }
 
 void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
@@ -244,10 +249,8 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
 
         if (!ok) {
             t->state = TaskState::Failed;
-            // Короткий код — полное сообщение собирает ConsoleUI.
             errorMsg = std::format("exit {}", exitCode);
             aborted_ = true;
-            // Если задачи падают сами по себе (без Ctrl+C), interrupted_ остаётся false.
         } else {
             t->state = TaskState::Done;
             if (t->isReal) completedTasks_++;
@@ -272,9 +275,26 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
     }
 
     if (success) {
-        for (Node* n : affectedNodes) {
-            auto inputs = deps::DepsLog::instance().inputsFor(n->name());
-            if (!inputs.empty()) graph_.addDepsForOutput(n->name(), inputs);
+        // CHANGED (issue #1b): обновляем граф из DepsLog ТОЛЬКО когда
+        // это имеет смысл:
+        //   * в dry-run .d файлы не пересобираются → DepsLog не менялся
+        //     → граф уже правильный из Engine::Engine() (addDepsFromLog).
+        //   * для rule без depfile граф вообще не меняется.
+        //
+        // Без фикса: 250 depfile-задач × ~30ms addDepsForOutput =
+        // +7.5 сек в cold dry-run (7970 → 4050 ms после частичного фикса;
+        // + дедуп paths_to_stat вернёт noop к ~100 ms).
+        //
+        // TODO (v1.3.1): для real build добавить Node::depsChanged() flag,
+        // чтобы пропускать addDepsForOutput для 99% задач, где depfile
+        // семантически не изменился (список headers тот же).
+        if (!dryRun_) {
+            for (Node* n : affectedNodes) {
+                const Rule* r = n->rule();
+                if (!r || r->depfile.empty()) continue;
+                auto inputs = deps::DepsLog::instance().inputsFor(n->name());
+                if (!inputs.empty()) graph_.addDepsForOutput(n->name(), inputs);
+            }
         }
         if (wasReal) {
             if (nodeBuilt_) nodeBuilt_(nodeName, exitCode, duration);
@@ -302,8 +322,8 @@ void Engine::checkFinished() {
             if (aborted_) {
                 shouldFinish = true;
                 success = false;
-                
-                // NEW: Если это был Ctrl+C (interrupted_), не пишем "Build failed",
+
+                // Если это был Ctrl+C (interrupted_), не пишем "Build failed",
                 // так как ConsoleUI выведет "Build interrupted".
                 if (!interrupted_) {
                     reason = "Build failed";
@@ -328,8 +348,7 @@ void Engine::checkFinished() {
         if (!reason.empty() && buildError_) buildError_(reason);
         auto dur = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - buildStart_).count();
-            
-        // CHANGED: Передаем interrupted_ третьим аргументом.
+
         if (buildFinished_) buildFinished_(success, dur, interrupted_);
         completionCv_.notify_all();
     }

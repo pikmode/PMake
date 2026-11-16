@@ -1,0 +1,45 @@
+pmake_required_version = 1.0
+
+if os == "windows" {
+    python = "E:/python/python.exe"
+} else {
+    python = "python3"
+}
+
+test_src = "src/__init__.py"
+test_src += "src/_common.py"
+test_src += "src/helpers.py"
+test_src += "src/tests_basic.py"
+test_src += "src/tests_incremental.py"
+test_src += "src/tests_restat.py"
+test_src += "src/tests_order_only.py"
+test_src += "src/tests_phony.py"
+test_src += "src/tests_depfile.py"
+test_src += "src/tests_command_hash.py"
+test_src += "src/tests_include.py"
+test_src += "src/tests_errors.py"
+test_src += "src/tests_parallel.py"
+test_src += "src/tests_paths.py"
+test_src += "src/tests_modules.py"
+test_src += "src/tests_builtins.py"
+test_src += "src/tests_pool.py"
+test_src += "src/tests_rspfile.py"
+test_src += "src/tests_generator.py"
+test_src += "src/tests_cmake.py"
+test_src += "src/tests_misc.py"
+test_src += "src/tests_hard.py"
+test_src += "src/generate.py"
+test_src += "src/runner.py"
+test_src += "src/tests_v110.py"
+test_src += "src/tests_v111.py"
+test_src += "src/tests_critical.py"
+test_src += "src/tests_stress.py"
+
+rule gen_tests {
+    command     = "${python} run.py --generate-only"
+    description = "generating test project"
+}
+
+build ".generated" : gen_tests "run.py" ${test_src}
+
+alias all : ".generated"

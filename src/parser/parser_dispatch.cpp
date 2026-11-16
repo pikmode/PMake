@@ -1,5 +1,6 @@
 #include "parser/parser_impl.h"
 
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -8,12 +9,14 @@ namespace pmake::parser {
 // ---- parseStatement ----
 void ParserImpl::parseStatement(int depth) {
     if (depth > MAX_STATEMENT_DEPTH) {
-        error("Too deep recursion in parser (max 100)", true);
+        error(std::format("Too deep recursion in parser (max {})",
+                          MAX_STATEMENT_DEPTH), true);   // CHANGED: было «max 100»
         return;
     }
 
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
-        error("Too many operations (max 1000000), aborting", false);
+        error(std::format("Too many operations (max {}), aborting",
+                          MAX_OPERATIONS), false);       // CHANGED: было «max 1000000»
         return;
     }
 

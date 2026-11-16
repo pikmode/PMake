@@ -1,8 +1,11 @@
 #include "core/engine.h"
 #include "core/node.h"
+#include "deps/deps_log.h"
 #include "util/filesystem.h"
 #include "util/string_utils.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -16,28 +19,55 @@ std::vector<Node*> Engine::collectDirtyNodes(const std::vector<Node*>& order) {
     for (Node* n : order) reachable.insert(n);
 
     // ============================================================
-    // P1: BATCH STAT — прогреваем FileCache ОДНИМ вызовом.
+    // P2 (Issue #1): PREFETCH — собрать ВСЕ mtime, которые могут
+    // понадобиться isDirty():
+    //   * leaves (sources)
+    //   * outputs всех build-нод
+    //   * depfile-inputs (~500 headers/build)
     //
-    // Собираем ВСЕ пути, которые могут понадобиться isDirty():
-    //   * leaves (input-файлы) — их mtime сравнивается с output
-    //   * outputs всех build-нод — их mtime тоже проверяется
-    //
-    // После statBatch: любая getFileMtime() → попадание в FileCache,
-    // значит 0 syscalls на N файлов вместо N syscalls.
+    // CHANGED (RAM fix): depfile-inputs теперь как uint32 ids, а не
+    // строки. Дедуп через unordered_set<uint32_t> — на Chromium это
+    // 50K уникальных ids из 175M вставок.
     // ============================================================
     std::vector<std::string> paths_to_stat;
     paths_to_stat.reserve(order.size() * 2);
 
+    std::unordered_set<std::uint32_t> dep_ids_seen;
+    dep_ids_seen.reserve(order.size());
+
+    auto& depsLog = deps::DepsLog::instance();
+
     for (Node* node : order) {
         if (node->isLeaf()) {
             paths_to_stat.push_back(node->name());
-        }
-        const Build* b = node->getBuild();
-        if (b) {
+        } else if (const Build* b = node->getBuild()) {
             for (const auto& out : b->outputs) {
                 paths_to_stat.push_back(out);
             }
         }
+        const Rule* r = node->rule();
+        if (r && !r->depfile.empty()) {
+            const auto* idlist = depsLog.inputIdsFor(node->name());
+            if (idlist) {
+                for (std::uint32_t id : *idlist) {
+                    dep_ids_seen.insert(id);
+                }
+            }
+        }
+    }
+
+    // Конвертируем уникальные ids → строки
+    paths_to_stat.reserve(paths_to_stat.size() + dep_ids_seen.size());
+    for (std::uint32_t id : dep_ids_seen) {
+        paths_to_stat.emplace_back(depsLog.lookup(id));
+    }
+
+    // Финальный дедуп (leaves/outputs могут пересекаться с headers)
+    if (!paths_to_stat.empty()) {
+        std::sort(paths_to_stat.begin(), paths_to_stat.end());
+        paths_to_stat.erase(
+            std::unique(paths_to_stat.begin(), paths_to_stat.end()),
+            paths_to_stat.end());
     }
 
     if (!paths_to_stat.empty()) {
@@ -49,8 +79,17 @@ std::vector<Node*> Engine::collectDirtyNodes(const std::vector<Node*>& order) {
     }
 
     // ============================================================
-    // Теперь обычная логика — getFileMtime читает из прогретого кэша.
+    // P3 (Issue #1): MEMOIZE isDirty.
     // ============================================================
+    std::unordered_map<Node*, bool> isDirtyCache;
+    isDirtyCache.reserve(order.size());
+
+    auto isDirtyMemo = [&](Node* n) -> bool {
+        auto [it, inserted] = isDirtyCache.try_emplace(n, false);
+        if (inserted) it->second = n->isDirty();
+        return it->second;
+    };
+
     std::unordered_set<Node*> dirtySet;
 
     for (Node* node : order) {
@@ -59,22 +98,19 @@ std::vector<Node*> Engine::collectDirtyNodes(const std::vector<Node*>& order) {
             auto cached = state_.getFileState(node->name());
             if (!cached.has_value() || cached->mtime != currentMtime) {
                 for (Node* consumer : node->reverseDeps()) {
-                    // Фильтр isDirty(): не включаем consumer'ов, которые
-                    // реально up-to-date (иначе [1/38] на одной задаче).
-                    if (reachable.contains(consumer) && consumer->isDirty()) {
+                    if (reachable.contains(consumer) && isDirtyMemo(consumer)) {
                         dirtySet.insert(consumer);
                     }
                 }
             }
             continue;
         }
-        if (node->isDirty()) {
+        if (isDirtyMemo(node)) {
             dirtySet.insert(node);
         }
     }
 
-    // BFS: расширяем на всех downstream (без фильтра isDirty — их input
-    // ещё не изменился, потому что A ещё не выполнился).
+    // BFS: расширяем на всех downstream
     std::unordered_set<Node*> expanded = dirtySet;
     std::vector<Node*> queue;
     for (Node* n : dirtySet) if (reachable.contains(n)) queue.push_back(n);

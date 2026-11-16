@@ -87,13 +87,13 @@ void ParserImpl::evaluateAst(AstNode* root) {
         AstNode* node = frame.node;
 
         if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
-            error("Too many operations in AST evaluation (max 500000)", false);
+            error(std::format("Too many operations in AST evaluation (max {})",
+                              MAX_OPERATIONS), false);
             return;
         }
 
         if (frame.index == 0) {
             switch (node->type) {
-                // ----- leaf-handled: хендлер сам обходит детей -----
                 case AstNode::ASSIGNMENT: evaluateAssignment(node);
                     frame.index = static_cast<int>(node->children.size()); break;
                 case AstNode::RULE: evaluateRule(node);
@@ -115,7 +115,6 @@ void ParserImpl::evaluateAst(AstNode* root) {
                 case AstNode::ENUM_DECL: evaluateEnum(node);
                     frame.index = static_cast<int>(node->children.size()); break;
 
-                // ----- управляющие: хендлер сам решает, каких детей eval'ить -----
                 case AstNode::FUNCTION_CALL:
                     evaluateExpression(node);
                     frame.index = static_cast<int>(node->children.size());
@@ -462,10 +461,23 @@ void ParserImpl::evaluateIncludeImpl(AstNode* node, std::string_view kind) {
         return;
     }
 
+    // CHANGED (Issue B fix): recover=false → throw, а не silent ignore.
+    //
+    // До фикса: recover=true, ошибка только копилась в errors_ и НЕ
+    // проверялась в parse() после evaluateAst. Результат: depth check
+    // срабатывал, но пользователь видел exit 0 (или exit 1 от
+    // "target not found", если не было alias all) — без сообщения.
+    //
+    // С recover=false: throw → unwind всех уровней рекурсии → catch
+    // в parse() → печать "Parsing failed: ...Include depth exceeds 200"
+    // → return nullptr → exit 1 с сообщением. Правильно.
+    //
+    // `--includeDepth` перед throw — балансируем, чтобы unwind через
+    // catch-блоки ниже decrement'ил корректно.
     if (++ParserImpl::includeDepth > MAX_INCLUDE_DEPTH) {
-        error("Include depth exceeds 500", true);
         --ParserImpl::includeDepth;
-        return;
+        error(std::format("Include depth exceeds {}", MAX_INCLUDE_DEPTH), false);
+        // unreachable (error throws)
     }
 
     std::string data;
@@ -541,8 +553,9 @@ void ParserImpl::evaluateWhile(AstNode* whileNode) {
     AstNode* body = whileNode->children[1];
     int iteration = 0;
     while (evaluateExpression(condition).to_bool()) {
-        if (++iteration > 1000) {
-            error("While loop exceeded 1000 iterations", true);
+        if (++iteration > MAX_WHILE_ITERATIONS) {
+            error(std::format("While loop exceeded {} iterations",
+                              MAX_WHILE_ITERATIONS), true);
             break;
         }
         evaluateAst(body);
@@ -691,8 +704,9 @@ Value ParserImpl::evaluateExpression(AstNode* expr) {
 Value ParserImpl::callBuiltin(std::string_view name, const std::vector<Value>& args) {
     std::string nameStr(name);
     if (state_.getFunction(nameStr)) {
-        if (++ParserImpl::functionCallDepth > 100) {
-            error("Function call depth exceeds 100", true);
+        if (++ParserImpl::functionCallDepth > MAX_FUNCTION_CALL_DEPTH) {
+            error(std::format("Function call depth exceeds {}",
+                              MAX_FUNCTION_CALL_DEPTH), true);
             --ParserImpl::functionCallDepth;
             return Value();
         }

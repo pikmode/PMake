@@ -96,3 +96,4 @@ bench
 helpers
 results
 .generated
+setup_docs.py

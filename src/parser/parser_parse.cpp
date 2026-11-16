@@ -43,8 +43,6 @@ void ParserImpl::parseTopLevel(bool requireVersion) {
     } else {
         // ----- Include/import: версия опциональна и игнорируется -----
         if (cur_.type == TOK_IDENT && str(cur_.strId) == "pmake_required_version") {
-            // Пропускаем всю строку целиком — не вызываем parseVersionDirective,
-            // не проверяем значение, не ставим versionDeclared_.
             while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF) advance();
             if (cur_.type == TOK_NEWLINE) advance();
         }
@@ -54,7 +52,7 @@ void ParserImpl::parseTopLevel(bool requireVersion) {
 
     int loopGuard = 0;
     while (cur_.type != TOK_EOF) {
-        if (++loopGuard > 50000) {
+        if (++loopGuard > MAX_LOOP_GUARD) {
             error("Infinite loop in parser at top level", true);
             break;
         }
@@ -63,8 +61,26 @@ void ParserImpl::parseTopLevel(bool requireVersion) {
     }
 }
 
-// ---- Публичный метод parse ----
+// ---- Публичный метод parse (корневой) ----
+//
+// CHANGED (Issue B): здесь инициализируем статические счётчики.
+// Это ЕДИНСТВЕННОЕ место, где они сбрасываются. Sub-парсеры
+// (evaluateIncludeImpl) вызывают parseAstOnly() и НЕ трогают счётчики —
+// поэтому MAX_INCLUDE_DEPTH / MAX_OPERATIONS / MAX_FUNCTION_CALL_DEPTH
+// работают на всём дереве include-ов, а не «на каждый файл отдельно».
+//
+// До фикса конструктор ParserImpl сбрасывал их в 0, и каждый sub-парсер
+// начинал с чистого листа:
+//   * includeDepth = 0 → 5001-й include видел depth=1, лимит не срабатывал
+//   * после возврата parent делал --includeDepth → -1 (латентный баг)
+//   * operationCounter = 5B на файл → на Chromium с 2500 include это
+//     12.5 трлн операций «разрешено», лимит фактически не работал
 std::unique_ptr<core::State> ParserImpl::parse() {
+    // RESET — ОДИН раз на корневой parse. Не переносить в конструктор.
+    ParserImpl::operationCounter  = 0;
+    ParserImpl::includeDepth      = 0;
+    ParserImpl::functionCallDepth = 0;
+
     try {
         parseTopLevel();  // requireVersion = true (default)
         if (!errors_.empty()) {
@@ -105,6 +121,11 @@ std::unique_ptr<core::State> ParserImpl::parse() {
 //
 // requireVersion = false → sub-файл не обязан содержать
 // pmake_required_version, а если содержит — она игнорируется.
+//
+// CHANGED (Issue B): НЕ сбрасываем статические счётчики здесь.
+// Sub-парсер должен видеть parent's includeDepth / operationCounter /
+// functionCallDepth и продолжать их инкрементить. Иначе лимиты
+// работают «на каждый файл», а не на всё дерево.
 // ============================================================
 void ParserImpl::parseAstOnly() {
     try {

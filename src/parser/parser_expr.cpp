@@ -1,5 +1,6 @@
 #include "parser/parser_impl.h"
 
+#include <format>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,11 +21,13 @@ int ParserImpl::getPrecedence(TokenType t) {
 
 AstNode* ParserImpl::parseExpressionPrecedence(int minPrec, int depth) {
     if (depth > MAX_EXPR_DEPTH) {
-        error("Expression too deep (max 100), aborting", false);
+        error(std::format("Expression too deep (max {}), aborting",
+                          MAX_EXPR_DEPTH), false);    // CHANGED: было «max 100»
         return nullptr;
     }
     if (++ParserImpl::operationCounter > MAX_OPERATIONS) {
-        error("Too many operations in expression parsing", false);
+        error(std::format("Too many operations in expression parsing (max {})",
+                          MAX_OPERATIONS), false);     // CHANGED: было без max
         return nullptr;
     }
 
@@ -54,11 +57,12 @@ AstNode* ParserImpl::parseAtom() {
             advance();
             std::vector<AstNode*> args;
             int argCount = 0;
-            const int MAX_ARGS = 1000;
+            constexpr int MAX_ARGS = MAX_FUNCTION_ARGS;   // CHANGED: было 1000
 
             while (cur_.type != TOK_RPAREN && cur_.type != TOK_EOF) {
                 if (++argCount > MAX_ARGS) {
-                    error("Too many arguments in function call", true);
+                    error(std::format("Too many arguments in function call (max {})",
+                                      MAX_ARGS), true);
                     break;
                 }
                 TokenType before = cur_.type;
@@ -142,22 +146,19 @@ AstNode* ParserImpl::parseAtom() {
 }
 
 // ============================================================
-// CHANGED: parseValueSequence
+// parseValueSequence
 //
 // stopAtIdentAssign=true — останавливает sequence, как только следующий
 // непустой токен это "IDENT = " или "IDENT += ". Нужно для однострочных
 // rule/build блоков:
 //   rule X { command = "..." restat = true }
 //                                  ^^^^^^ — это уже следующий атрибут.
-//
-// Первая часть значения (например, "..." после command =) парсится как
-// обычно. Только когда parts уже непуст, а следующее — IDENT=, — стоп.
 // ============================================================
 AstNode* ParserImpl::parseValueSequence(bool stopOnNewline, bool stopAtIdentAssign) {
     std::vector<AstNode*> parts;
     int loopGuard = 0;
     while (true) {
-        if (++loopGuard > 10000) {
+        if (++loopGuard > MAX_LOOP_GUARD) {           // CHANGED: было 10000
             error("Infinite loop in parseValueSequence", true);
             break;
         }
@@ -194,7 +195,7 @@ std::vector<AstNode*> ParserImpl::parseValueList() {
     std::vector<AstNode*> list;
     int loopGuard = 0;
     while (true) {
-        if (++loopGuard > 10000) {
+        if (++loopGuard > MAX_LOOP_GUARD) {           // CHANGED: было 10000
             error("Infinite loop in parseValueList", true);
             break;
         }

@@ -36,8 +36,13 @@ Engine::~Engine() {
         std::lock_guard<std::mutex> lk(planMutex_);
         finished_ = true;
     }
+    {
+        std::lock_guard<std::mutex> lk(workMutex_);
+        shutdown_ = true;
+    }
+    workCv_.notify_all();
     completionCv_.notify_all();
-    for (auto& th : workers_) if (th.joinable()) th.join();
+    for (auto& th : workerPool_) if (th.joinable()) th.join();
     cleanupPlan();
 }
 
@@ -50,7 +55,7 @@ bool Engine::run(std::string_view target) {
 
     runInternal(std::string(target));
 
-    // NEW: timeout-based wait — проверяем cancelFlag_ каждые 100 мс.
+    // timeout-based wait — проверяем cancelFlag_ каждые 100 мс.
     while (true) {
         std::unique_lock<std::mutex> lk(completionMutex_);
         completionCv_.wait_for(lk, std::chrono::milliseconds(100), [&] {
@@ -76,9 +81,9 @@ bool Engine::run(std::string_view target) {
         if (finished_) break;
     }
 
-    for (auto& th : workers_) if (th.joinable()) th.join();
-    workers_.clear();
-
+    // NEW: пул НЕ очищаем — живёт до деструктора. Это позволяет
+    // manifest-regeneration вызывать run() несколько раз без
+    // пересоздания потоков. Worker'ы между run()'ами спят на workCv_.
     return success_;
 }
 
@@ -86,6 +91,7 @@ void Engine::runInternal(const std::string& target) {
     // NEW: если Ctrl+C пришёл до старта — сразу выходим.
     if (cancelFlag_ && cancelFlag_->load()) {
         requestInterrupt();
+        success_ = false;
         finished_ = true;
         if (buildFinished_) buildFinished_(false, 0.0, true);
         return;
@@ -94,6 +100,15 @@ void Engine::runInternal(const std::string& target) {
     if (buildStarted_) buildStarted_();
     initializeFileStates();
     buildStart_ = std::chrono::steady_clock::now();
+
+    // NEW: создаём пул ОДИН раз (первый вызов runInternal).
+    // Последующие run() используют уже готовый пул.
+    if (workerPool_.empty()) {
+        int n = maxJobs_ + 4;   // concurrent tasks ≤ maxJobs_ + console + custom pools + slack
+        for (int i = 0; i < n; ++i) {
+            workerPool_.emplace_back([this] { workerLoop(); });
+        }
+    }
 
     completedTasks_ = 0;
     runningTasks_ = 0;
@@ -121,6 +136,7 @@ void Engine::runInternal(const std::string& target) {
             if (!candidates.empty()) targetName = candidates.back();
             else {
                 if (buildError_) buildError_("No target specified and no builds");
+                success_ = false;
                 finished_ = true;
                 if (buildFinished_) buildFinished_(false, 0.0, false);
                 return;
@@ -133,6 +149,7 @@ void Engine::runInternal(const std::string& target) {
         order = graph_.topologicalSort(targetName);
     } catch (const std::exception& e) {
         if (buildError_) buildError_(std::string("Graph error: ") + e.what());
+        success_ = false;
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
         if (buildFinished_) buildFinished_(false, dur, false);
@@ -140,6 +157,7 @@ void Engine::runInternal(const std::string& target) {
     }
     if (order.empty()) {
         if (buildError_) buildError_("Target '" + targetName + "' not found");
+        success_ = false;
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();
         if (buildFinished_) buildFinished_(false, dur, false);
@@ -215,6 +233,23 @@ std::string Engine::poolNameFor(const Build* b) const {
     const Rule* rule = b ? state_.getRule(b->rule_name) : nullptr;
     if (rule && rule->pool) return "console";
     return "default";
+}
+
+// NEW: workerLoop — постоянный цикл пула.
+// Ждёт на workCv_, забирает Node* из workQueue_, вызывает workerRoutine.
+// Завершается когда shutdown_ = true и очередь пуста (в ~Engine).
+void Engine::workerLoop() {
+    while (true) {
+        Node* node = nullptr;
+        {
+            std::unique_lock<std::mutex> lk(workMutex_);
+            workCv_.wait(lk, [&] { return !workQueue_.empty() || shutdown_; });
+            if (shutdown_ && workQueue_.empty()) return;
+            node = workQueue_.front();
+            workQueue_.pop();
+        }
+        workerRoutine(node);
+    }
 }
 
 void Engine::workerRoutine(Node* runner) {

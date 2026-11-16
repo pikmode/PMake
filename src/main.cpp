@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <memory>
 #include <print>
 #include <string>
@@ -73,12 +74,47 @@ void print_version() {
     }
     std::exit(1);
 #else
-    // CHANGED: execvp ищет бинарник в PATH, execv требует полный путь.
-    // Если пользователь запустил 'pmake' из PATH, execv упадет.
     execvp(argv[0], argv);
     std::perror("execvp");
     std::exit(1);
 #endif
+}
+
+// ============================================================
+// CRITICAL (clean fix): защита от удаления source-файлов и
+// build-манифестов.
+//
+// CMake генерирует phony-edge ("missing input files is not an error"
+// trick), где ВСЕ входные файлы стоят в позиции OUTPUTS:
+//
+//   build CMakeCache.txt CMakeFiles/... E:/proj/CMakeLists.txt \
+//         E:/pikmode/tools/CMake/share/cmake-3.30/Modules/*.cmake : phony
+//
+// Без пропуска phony pmake clean удаляет CMakeLists.txt, CMakeCache.txt,
+// и всю установку CMake (~200 .cmake модулей).
+// ============================================================
+static bool is_protected_source(std::string_view path) {
+    if (path.ends_with("CMakeLists.txt") ||
+        path.ends_with("Makefile")     ||
+        path.ends_with("build.pmake")  ||
+        path.ends_with("build.ninja")) {
+        return true;
+    }
+
+    static constexpr std::string_view exts[] = {
+        ".cmake",
+        ".pmake", ".ninja",
+        ".c", ".cc", ".cpp", ".cxx", ".c++", ".m", ".mm",
+        ".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp",
+        ".py", ".sh", ".bat", ".ps1",
+    };
+    for (auto ext : exts) {
+        if (path.size() >= ext.size() &&
+            path.substr(path.size() - ext.size()) == ext) {
+            return true;
+        }
+    }
+    return false;
 }
 
 struct Options {
@@ -195,15 +231,28 @@ int parse_args(int argc, char** argv, Options& opt) {
         }
     }
 
-    if (!positional.empty()) opt.command = positional[0];
-    if (positional.size() > 1) opt.target = positional[1];
-
-    if (opt.command == "build" && positional.size() > 1) {
-        if (positional[1] == "debug" || positional[1] == "release") {
-            opt.config = positional[1];
-            if (positional.size() > 2) opt.target = positional[2];
+    // FIX: pmake <target> работает как make/ninja.
+    if (!positional.empty()) {
+        const std::string& p0 = positional[0];
+        if (p0 == "build" || p0 == "clean") {
+            opt.command = p0;
+            if (positional.size() > 1) {
+                if (opt.command == "build" &&
+                    (positional[1] == "debug" || positional[1] == "release")) {
+                    opt.config = positional[1];
+                    if (positional.size() > 2) opt.target = positional[2];
+                } else {
+                    opt.target = positional[1];
+                }
+            }
         } else {
-            opt.target = positional[1];
+            opt.command = "build";
+            opt.target  = p0;
+            if (positional.size() > 1) {
+                LOG_ERROR(std::format(
+                    "unexpected extra positional argument '{}'", positional[1]));
+                return 0;
+            }
         }
     }
 
@@ -245,7 +294,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
 #ifdef _WIN32
-    std::signal(SIGBREAK, on_signal); // NEW: ловим CTRL_BREAK_EVENT от раннера
+    std::signal(SIGBREAK, on_signal);
 #endif
 
     std::string buildFile = opt.buildFile;
@@ -309,7 +358,7 @@ int main(int argc, char** argv) {
     }
 
     // ============================================================
-    // NEW: Generator logic (Manifest Regeneration)
+    // Generator logic (Manifest Regeneration)
     // ============================================================
     std::vector<std::string> manifestTargets;
     for (const auto& b : state->builds()) {
@@ -335,14 +384,32 @@ int main(int argc, char** argv) {
             std::println(stderr, "Checking if build manifest needs regeneration...");
         }
         Engine genEngine(*state, 1, opt.dryRun);
+
+        // CHANGED: НЕ подключаем onBuildFinished и onTaskFinished.
+        //
+        // Иначе regen-noop печатает "All targets up to date" ПЕРЕД основным
+        // build'ом — пользователь видит это и думает, что ничего не собралось.
+        //
+        // onTaskStarted достаточно: если regen реально работает — увидим
+        // "[1/1] Re-running CMake...". Если noop — ничего не печатаем.
+        genEngine.onTaskStarted([verbose = opt.verbose](
+                const std::string& name, int total,
+                const std::string& cmd, const std::string& wd) {
+            std::println(stdout, "[1/{}] {}", total, name);
+            if (verbose) {
+                std::println(stdout, "  command: {}", cmd);
+                std::println(stdout, "  workdir: {}", wd);
+            }
+            std::fflush(stdout);
+        });
+
         bool genResult = true;
         for (const auto& t : manifestTargets) {
             if (!genEngine.run(t)) genResult = false;
         }
-        
+
         if (!genResult) return 1;
-        
-        // Если сборка манифеста реально что-то сделала (не noop) и это не dry-run
+
         if (!genEngine.wasNoop() && !opt.dryRun) {
             std::println(stderr, "Build manifest was regenerated. Restarting pmake...");
             restart_self(argc, argv);
@@ -424,17 +491,41 @@ int main(int argc, char** argv) {
         else LOG_VERBOSE("cache: saved");
     }
 
+    // ============================================================
+    // CLEAN — критический фикс (data-destroying bug).
+    // ============================================================
     if (opt.clean || opt.command == "clean") {
         int removed = 0;
+        int skipped = 0;
+
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
-            if (rule && rule->generator) continue;
+
+            if (rule && (rule->generator ||
+                         rule->name == "phony" ||
+                         rule->command.empty())) {
+                continue;
+            }
+
             for (const auto& out : build.outputs) {
+                if (is_protected_source(out)) {
+                    LOG_VERBOSE(std::format("clean: skipping protected '{}'", out));
+                    ++skipped;
+                    continue;
+                }
                 std::error_code ec;
-                if (std::filesystem::remove(std::filesystem::path(out), ec)) ++removed;
+                if (std::filesystem::remove(std::filesystem::path(out), ec)) {
+                    ++removed;
+                }
             }
         }
-        LOG_INFO(std::format("Cleaned {} files", removed));
+
+        if (skipped > 0) {
+            LOG_INFO(std::format("Cleaned {} files (skipped {} protected source files)",
+                                 removed, skipped));
+        } else {
+            LOG_INFO(std::format("Cleaned {} files", removed));
+        }
         return 0;
     }
 

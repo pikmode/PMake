@@ -1,6 +1,6 @@
 #include "core/cache.h"
 #include "deps/deps_log.h"
-#include "util/logging.h" // NEW: для LOG_WARN
+#include "util/logging.h"
 
 #include <cstring>
 #include <filesystem>
@@ -19,7 +19,11 @@ namespace pmake::core {
 
 namespace {
 constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
-constexpr std::uint32_t kVersion = 8u;
+// CHANGED: 8 → 9. DepsEntry.inputs (vector<string>) стал inputIds
+// (vector<uint32_t>) + StringPool. Формат кеша изменён.
+// Старые .pmake-кеши будут отвергнуты по version mismatch
+// (graceful: LOG_WARN + return false → пересборка).
+constexpr std::uint32_t kVersion = 9u;
 } // namespace
 
 Cache::Cache() = default;
@@ -148,13 +152,16 @@ bool Cache::write(std::ostream& out) const {
         write_str(out, hash);
     }
 
+    // CHANGED (RAM fix): entry.inputs → entry.inputIds + lookup.
+    // На диск пишем строки (для совместимости с ручным grep), при
+    // чтении интернируем обратно.
     const auto& depsEntries = deps::DepsLog::instance().entries();
     write_u32(out, static_cast<std::uint32_t>(depsEntries.size()));
     for (const auto& [key, entry] : depsEntries) {
         write_str(out, entry.output);
-        write_u32(out, static_cast<std::uint32_t>(entry.inputs.size()));
-        for (const auto& in : entry.inputs) {
-            write_str(out, in);
+        write_u32(out, static_cast<std::uint32_t>(entry.inputIds.size()));
+        for (std::uint32_t id : entry.inputIds) {
+            write_str(out, deps::DepsLog::instance().lookup(id));
         }
         write_i64(out, entry.mtime);
     }
@@ -271,26 +278,32 @@ bool Cache::read(std::istream& in) {
         data_.commandHashes[output] = hash;
     }
 
+    // CHANGED (RAM fix): restore через DepsLog::restore() — интернирует
+    // строки через StringPool, сохраняет entry.mtime из файла (не
+    // перезаписывает statFileFast'ом, как record() сделал бы).
     std::uint32_t depsCount = 0;
     if (!read_u32(in, depsCount)) return false;
     auto& depsLog = deps::DepsLog::instance();
     depsLog.clear();
-    auto& depsMap = depsLog.entries();
     for (std::uint32_t i = 0; i < depsCount; ++i) {
-        deps::DepsEntry entry;
-        if (!read_str(in, entry.output)) return false;
+        std::string output;
+        if (!read_str(in, output)) return false;
+
         std::uint32_t inputCount = 0;
         if (!read_u32(in, inputCount)) return false;
-        entry.inputs.clear();
-        entry.inputs.reserve(inputCount);
+
+        std::vector<std::string> inputs;
+        inputs.reserve(inputCount);
         for (std::uint32_t j = 0; j < inputCount; ++j) {
             std::string depPath;
             if (!read_str(in, depPath)) return false;
-            entry.inputs.push_back(std::move(depPath));
+            inputs.push_back(std::move(depPath));
         }
-        if (!read_i64(in, entry.mtime)) return false;
-        entry.isLoaded = true;
-        depsMap[entry.output] = std::move(entry);
+
+        std::int64_t mtime = 0;
+        if (!read_i64(in, mtime)) return false;
+
+        depsLog.restore(output, inputs, mtime);
     }
 
     return in.good();
@@ -362,7 +375,7 @@ bool Cache::read_u8(std::istream& in, std::uint8_t& v) {
 bool Cache::read_str(std::istream& in, std::string& s) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
-    if (n > 64 * 1024 * 1024) return false; 
+    if (n > 64 * 1024 * 1024) return false;
     s.assign(n, '\0');
     if (n > 0 && !in.read(s.data(), static_cast<std::streamsize>(n))) return false;
     return true;
@@ -370,7 +383,7 @@ bool Cache::read_str(std::istream& in, std::string& s) {
 bool Cache::read_strs(std::istream& in, std::vector<std::string>& v) {
     std::uint32_t n = 0;
     if (!read_u32(in, n)) return false;
-    if (n > 64 * 1024 * 1024) return false; 
+    if (n > 64 * 1024 * 1024) return false;
     v.clear();
     v.reserve(n);
     for (std::uint32_t i = 0; i < n; ++i) {

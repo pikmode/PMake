@@ -1,0 +1,23 @@
+pmake_required_version = 1.0
+
+cxx   = "g++"
+flags = "-std=c++20 -O2 -Wall -Wextra"
+
+rule cc {
+    command     = "${cxx} ${flags} -c ${in} -o ${out} -MMD -MF ${out}.d"
+    description = "compiling ${in}"
+    depfile     = "${out}.d"
+    deps        = "gcc"
+}
+
+rule link {
+    command     = "${cxx} ${flags} ${in} -o ${out}"
+    description = "linking ${out}"
+}
+
+sources = glob("*.cpp", "src")
+objects = replace_suffix(sources, ".o")
+
+build ${objects} : cc ${sources}
+build "app" : link ${objects}
+alias all : "app"

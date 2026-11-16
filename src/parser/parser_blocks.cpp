@@ -68,7 +68,7 @@ AstNode* ParserImpl::parseAttributeBlock() {
         skipNewlinesAndIndents();
         int guard = 0;
         while (cur_.type != TOK_RBRACE && cur_.type != TOK_EOF) {
-            if (++guard > 10000) {
+            if (++guard > MAX_LOOP_GUARD) {           // CHANGED: было 10000
                 error("Infinite loop in attribute block (brace)", true);
                 break;
             }
@@ -109,7 +109,7 @@ AstNode* ParserImpl::parseAttributeBlock() {
         }
         int guard = 0;
         while (true) {
-            if (++guard > 10000) {
+            if (++guard > MAX_LOOP_GUARD) {           // CHANGED: было 10000
                 error("Infinite loop in attribute block (indent)", true);
                 break;
             }

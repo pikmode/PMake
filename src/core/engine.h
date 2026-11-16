@@ -98,7 +98,14 @@ private:
     std::condition_variable completionCv_;
     std::queue<Completion> completed_;
 
-    std::vector<std::thread> workers_;
+    // NEW: thread pool вместо thread-per-task.
+    // Раньше workers_ рос до числа задач (1000+), каждая — CreateThread.
+    // Теперь пул фиксированного размера, задачи идут через workQueue_.
+    std::vector<std::thread> workerPool_;
+    std::queue<Node*> workQueue_;
+    std::mutex workMutex_;
+    std::condition_variable workCv_;
+    bool shutdown_ = false;
 
     int runningTasks_ = 0;
     int pendingTasks_ = 0;
@@ -124,7 +131,8 @@ private:
     void buildPlan(const std::vector<Node*>& dirtyNodes);
     void pumpReady();
     void startTask(SchedTask* t);
-    void workerRoutine(Node* runner);
+    void workerRoutine(Node* runner);   // выполняет одну задачу (runner->build())
+    void workerLoop();                   // NEW: цикл пула: wait → pop → workerRoutine
     void handleNodeDone(Node* node, int exitCode, double duration);
     void checkFinished();
     void abortBuild(const std::string& reason);

@@ -1,5 +1,6 @@
 #include "parser/parser_impl.h"
 
+#include <format>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -11,7 +12,7 @@ namespace pmake::parser {
 // ---- parseRule ----
 void ParserImpl::parseRule(AstNode* parent) {
     if (state_.rules().size() >= static_cast<std::size_t>(MAX_RULES)) {
-        error("Too many rules (max 10000)", true);
+        error(std::format("Too many rules (max {})", MAX_RULES), true);   // CHANGED: было «max 10000»
         return;
     }
 
@@ -42,7 +43,7 @@ void ParserImpl::parseRule(AstNode* parent) {
 // ---- parseBuild ----
 void ParserImpl::parseBuild(AstNode* parent) {
     if (state_.builds().size() >= static_cast<std::size_t>(MAX_BUILDS)) {
-        error("Too many builds (max 10000)", true);
+        error(std::format("Too many builds (max {})", MAX_BUILDS), true); // CHANGED: было «max 10000»
         return;
     }
 
@@ -54,7 +55,7 @@ void ParserImpl::parseBuild(AstNode* parent) {
     std::vector<AstNode*> outputs;
     int guard = 0;
     while (true) {
-        if (++guard > 100000) { // FIX: было 1000
+        if (++guard > MAX_BUILD_ITEMS) {              // CHANGED: было 100000
             error("Infinite loop in build outputs", true);
             break;
         }
@@ -75,8 +76,8 @@ void ParserImpl::parseBuild(AstNode* parent) {
         error("Expected at least one output for build", true);
         return;
     }
-    if (outputs.size() > 100000) { // FIX: было 1000
-        error("Too many outputs in build (max 100000)", true);
+    if (outputs.size() > static_cast<std::size_t>(MAX_BUILD_ITEMS)) {  // CHANGED: было 100000
+        error(std::format("Too many outputs in build (max {})", MAX_BUILD_ITEMS), true);
         return;
     }
 
@@ -113,7 +114,7 @@ void ParserImpl::parseBuild(AstNode* parent) {
     int section = 0;
     guard = 0;
     while (cur_.type != TOK_NEWLINE && cur_.type != TOK_EOF && cur_.type != TOK_LBRACE) {
-        if (++guard > 100000) { // FIX: было 1000
+        if (++guard > MAX_BUILD_ITEMS) {              // CHANGED: было 100000
             error("Infinite loop in build inputs", true);
             break;
         }

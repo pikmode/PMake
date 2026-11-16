@@ -1,0 +1,9 @@
+pmake_required_version = 1.0
+
+rule echo {
+    command     = "echo ${msg} > ${out}"
+    description = "echo ${out}"
+}
+
+build "hello.txt" : echo { msg = "Hello, PMake!" }
+alias all : "hello.txt"

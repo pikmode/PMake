@@ -1,6 +1,7 @@
 #include "core/graph.h"
 #include "deps/deps_log.h"
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <print>
@@ -191,12 +192,34 @@ std::vector<Node*> Graph::affectedNodes(const std::vector<std::string>& changedL
     return result;
 }
 
+// ============================================================
+// CHANGED (Issue #1 RAM): entry.inputs → entry.inputIds + lookup.
+//
+// DepsEntry::inputs был vector<string>, стал vector<uint32_t>.
+// На этом вызове (старт Engine) конвертируем ids → строки, потому что
+// addDepsForOutput принимает vector<string>.
+//
+// Разово на старте: 350K entries × ~50 уникальных headers-ids
+// (после дедупа в StringPool) = ~17.5M строк → в graph уйдёт столько
+// же (edges в графе — это строки, не ids; их кеш не касается).
+//
+// Память: 17.5M graph-edges всё равно нужны, это не DepsLog.
+// Но DepsLog после restore из кеша занимает теперь 700 MB, а не 5.6 GB.
+// ============================================================
 void Graph::addDepsFromLog(const deps::DepsLog& log) {
     const auto& entries = log.entries();
     for (const auto& [output, entry] : entries) {
-        if (!entry.inputs.empty()) {
-            addDepsForOutput(output, entry.inputs);
+        if (entry.inputIds.empty()) continue;
+
+        // Раскрываем ids → строки через lookup.
+        // 50 уникальных headers = 50 строк, не 500 на каждый output.
+        std::vector<std::string> inputStrs;
+        inputStrs.reserve(entry.inputIds.size());
+        for (std::uint32_t id : entry.inputIds) {
+            inputStrs.emplace_back(log.lookup(id));
         }
+
+        addDepsForOutput(output, inputStrs);
     }
 }
 

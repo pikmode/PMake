@@ -5,6 +5,7 @@
 #include "util/hash.h"
 #include "util/string_utils.h"
 
+#include <cstdint>
 #include <format>
 #include <iostream>
 #include <print>
@@ -145,15 +146,19 @@ bool Node::isDirty() {
     for (Node* dep : deps_) if (checkNode(dep)) return true;
     for (Node* dep : implicit_deps_) if (checkNode(dep)) return true;
 
+    // CHANGED (RAM fix): depfile check через inputIdsFor + lookup.
+    // Без копии vector<string> из 500 элементов (было 16 KB alloc
+    // на каждый isDirty).
     if (rule_ && !rule_->depfile.empty()) {
-        auto depInputs = deps::DepsLog::instance().inputsFor(name_);
-        if (depInputs.empty()) {
+        const auto* idlist = deps::DepsLog::instance().inputIdsFor(name_);
+        if (!idlist || idlist->empty()) {
             std::println(std::cerr, "Depfile lost for '{}' -> force rebuild", name_);
             return true;
         }
         std::int64_t maxDepMtime = -1;
-        for (const auto& in : depInputs) {
-            std::int64_t m = util::getFileMtime(in);
+        for (std::uint32_t id : *idlist) {
+            std::string_view path = deps::DepsLog::instance().lookup(id);
+            std::int64_t m = util::getFileMtime(path);
             if (m > maxDepMtime) maxDepMtime = m;
         }
         if (maxDepMtime > maxOut) return true;
@@ -164,7 +169,6 @@ bool Node::isDirty() {
         std::string currentHash = computeCommandHash();
         if (!currentHash.empty()) {
             auto cached = state_->getCommandHash(name_);
-            // Если хэша нет (например, кэш удален), НЕ форсируем rebuild, доверяем mtime
             if (cached.has_value() && *cached != currentHash) return true;
         }
     }

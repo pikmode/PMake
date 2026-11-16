@@ -22,25 +22,23 @@ public:
 
     bool isValid(std::string_view mainFile = {}) const;
 
-    // CHANGED: Добавлены параметры config и platform
-    void store(const State& state, std::string_view mainFile = {}, 
-               std::string_view config = {}, 
+    void store(const State& state, std::string_view mainFile = {},
+               std::string_view config = {},
                std::string_view platform = {});
-               
+
     std::unique_ptr<State> restore() const;
 
     const std::unordered_map<std::string, FileState>& fileStates() const { return data_.fileStates; }
     const std::unordered_map<std::string, std::string>& commandHashes() const { return data_.commandHashes; }
 
-    // NEW: Геттеры для проверки в main.cpp
     const std::string& getConfig() const { return data_.config; }
     const std::string& getPlatform() const { return data_.platform; }
 
 private:
     struct Data {
-        std::uint32_t version = 8; // ВЕРСИЯ ПОДНЯТА С 7 НА 8
-        std::string config;        // NEW
-        std::string platform;      // NEW
+        std::uint32_t version = 9;   // CHANGED: 8 → 9 (DepsEntry inputIds)
+        std::string config;
+        std::string platform;
         std::unordered_map<std::string, std::string> globalVars;
         std::vector<Rule> rules;
         std::vector<Build> builds;
@@ -58,7 +56,6 @@ private:
     bool write(std::ostream& out) const;
     bool read(std::istream& in);
 
-    // helpers для бинарной сериализации
     static void write_u32(std::ostream& out, std::uint32_t v);
     static void write_u64(std::ostream& out, std::uint64_t v);
     static void write_i64(std::ostream& out, std::int64_t v);

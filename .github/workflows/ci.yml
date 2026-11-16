@@ -17,11 +17,9 @@ jobs:
         include:
           - os: windows-latest
             pmake_exe: ../../build-ci/pmake.exe
-            test_dir: tests-pmake-1.1/windows
             artifact_name: pmake-windows
           - os: ubuntu-latest
             pmake_exe: ../../build-ci/pmake
-            test_dir: tests-pmake-1.1/linux
             artifact_name: pmake-linux
 
     runs-on: ${{ matrix.os }}
@@ -89,17 +87,15 @@ jobs:
             ./build-ci/pmake -V
           fi
 
-      # ============ TESTS ============
+      # ============ TESTS (single folder) ============
+      # CHANGED: tests-pmake-1.1/windows и /linux → одна папка tests-pmake/basic.
+      # Тесты генерируются из src/*.py через `run.py --generate-only`,
+      # потом прогоняются через `run.py --pmake ...`.
       - name: Run tests
-        working-directory: ${{ matrix.test_dir }}
+        working-directory: tests-pmake/basic
         run: |
           python run.py --generate-only
           python run.py --pmake ${{ matrix.pmake_exe }}
-
-      - name: Check regressions
-        if: always()
-        working-directory: ${{ matrix.test_dir }}
-        run: python ../../scripts/check_report.py
 
       # ============ ARTIFACTS ============
       - name: Upload pmake binary

@@ -14,16 +14,35 @@
 namespace pmake::parser {
 
 // Инициализация статических счётчиков
-int ParserImpl::operationCounter = 0;
-int ParserImpl::includeDepth = 0;
-int ParserImpl::functionCallDepth = 0;
+int64_t ParserImpl::operationCounter   = 0;   // CHANGED: int64_t
+int     ParserImpl::includeDepth       = 0;
+int     ParserImpl::functionCallDepth  = 0;
 
 // ---- Конструктор/деструктор ----
+//
+// CHANGED (Issue B): НЕ сбрасываем статические счётчики здесь.
+//
+// Раньше было:
+//     operationCounter = 0;
+//     includeDepth = 0;
+//     functionCallDepth = 0;
+//
+// Это ломало лимиты для include-ов. evaluateIncludeImpl создаёт
+// ParserImpl subParser(...) в процессе eval. Каждый такой sub-парсер
+// обнулял глобальные счётчики parent'а → MAX_INCLUDE_DEPTH,
+// MAX_OPERATIONS, MAX_FUNCTION_CALL_DEPTH не работали для include-ов:
+//   * includeDepth сбрасывался на 0 в каждом файле → 5001-й include
+//     видел depth=1 (не 5001) → лимит 5000 никогда не срабатывал
+//   * после возврата из sub parent делал --includeDepth → -1
+//   * operationCounter = 5B «на файл», а не «на сборку»
+//
+// Теперь счётчики инициализируются ОДИН РАЗ в ParserImpl::parse()
+// (корневой парсер), а sub-парсеры только увеличивают/уменьшают их.
 ParserImpl::ParserImpl(std::string_view data, std::string_view filename,
                        std::string_view config, std::string_view platform)
     : lexer_(data, filename), filename_(filename),
       config_(config), platform_(platform),
-      currentEvalFilename_(filename) {    // NEW (#4)
+      currentEvalFilename_(filename) {
     state_.setGlobal("config", config_);
     state_.setGlobal("platform", platform_);
     state_.setGlobal("os",
@@ -40,10 +59,7 @@ ParserImpl::ParserImpl(std::string_view data, std::string_view filename,
     root_ = new AstNode();
     root_->type = AstNode::BLOCK;
     astStack_.push_back(root_);
-    operationCounter = 0;
-    includeDepth = 0;
-    functionCallDepth = 0;
-    pendingFlow_ = 0;    // NEW (#5)
+    pendingFlow_ = 0;   // per-instance, не static — можно сбрасывать
 }
 
 ParserImpl::~ParserImpl() {
@@ -59,14 +75,14 @@ void ParserImpl::advance() {
         cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
         currentColumn_ = cur_.column;
         hasError_ = true;
-        errors_.push_back(std::format("Lexer error: {}", e.what()));
-        std::println(std::cerr, "{}", errors_.back());
+        // e.what() уже содержит "Lexer error in {file} line {N}: {msg}".
+        // Печать перенесена в ParserImpl::parse() — один раз на всю пачку.
+        errors_.push_back(e.what());
     } catch (...) {
         cur_ = {TOK_EOF, -1, lexer_.line(), lexer_.column(), 0};
         currentColumn_ = cur_.column;
         hasError_ = true;
-        errors_.push_back("Unknown lexer error");
-        std::println(std::cerr, "{}", errors_.back());
+        errors_.push_back("Lexer error: unknown");
     }
 }
 
@@ -96,13 +112,14 @@ void ParserImpl::error(std::string_view msg, bool recover) {
     lastError = std::string(msg);
     lastLine = cur_.line;
 
-    std::string err = formatError(filename_, cur_.line, currentColumn_, msg, lexer_.str(cur_.strId));
+    std::string err = formatError(filename_, cur_.line, currentColumn_,
+                                  msg, lexer_.str(cur_.strId));
     errors_.push_back(err);
-    std::println(std::cerr, "{}", err);
     hasError_ = true;
     if (!recover) {
         throw std::runtime_error(err);
     }
+    // Печать — в ParserImpl::parse(), чтобы не дублировать.
 }
 
 std::string_view ParserImpl::str(int id) const {
@@ -120,7 +137,7 @@ void ParserImpl::skipNewlinesAndIndents() {
 bool ParserImpl::skipToBlockStart(int baseIndent) {
     int loopGuard = 0;
     while (true) {
-        if (++loopGuard > 10000) {
+        if (++loopGuard > MAX_LOOP_GUARD) {
             error("Infinite loop in skipToBlockStart", true);
             return false;
         }
@@ -256,8 +273,8 @@ AstNode* ParserImpl::makeConcat(const std::vector<AstNode*>& parts) {
 }
 
 AstNode* ParserImpl::makeList(const std::vector<AstNode*>& elements) {
-    if (elements.size() > 10000) {
-        error("List size exceeds 10000", true);
+    if (elements.size() > static_cast<std::size_t>(MAX_LIST_SIZE)) {
+        error(std::format("List size exceeds {} (max)", MAX_LIST_SIZE), true);
         return makeStringLiteral("");
     }
     auto node = new AstNode();
@@ -357,7 +374,7 @@ std::string ParserImpl::astNodeToStringWithState(AstNode* node, const core::Stat
 }
 
 // ============================================================
-// peekIdentFollowedByAssign — см. предыдущие итерации.
+// peekIdentFollowedByAssign
 // ============================================================
 bool ParserImpl::peekIdentFollowedByAssign() {
     if (cur_.type != TOK_IDENT) return false;

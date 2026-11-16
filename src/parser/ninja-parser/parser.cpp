@@ -4,6 +4,7 @@
 #include "util/filesystem.h"
 #include "util/logging.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -151,15 +152,20 @@ private:
 // ----------------------------------------------------------------------------
 
 // ============================================================
-// parseName — PERF: fast path для одиночного IDENT/STRING без $.
+// parseName — fast path для одиночного IDENT/STRING без $.
 //
 // 99% name в CMake-generated build.ninja — это одиночный IDENT
 // (obj/main.o, src/main.cpp) без $ и без continuation.
-// Fast path: сохраняем lexer state, advance на 1 токен, проверяем
-// разделитель, и если да — возвращаем просто string_view.
 //
-// Slow path: continuation (несколько токенов без whitespace) или
-// VAR_REF (${var}) — оригинальная логика.
+// CHANGED (fix Windows drive letter E$:): старый fast-path проверял
+// whitespace ПЕРЕД токеном (savedHadWs). Для `Release E$:/path`:
+//   savedHadWs = true (пробел перед E)
+//   → старый код возвращал "E" (обрубок) и терял ":... /path"
+//   → E попадал в inputs следующего билда → "Duplicate output 'E'" × 68.
+//
+// Правильно: fast path возвращает токен как complete name ТОЛЬКО если
+// следующий токен НЕ name (separator/EOF) ИЛИ отделён пробелом.
+// Если adjacent name token (E$: склеено) — откат в slow path.
 // ============================================================
 std::string ParserImpl::parseName() {
     // ---- PERF: fast path ----
@@ -168,29 +174,24 @@ std::string ParserImpl::parseName() {
         if (s.find('$') == std::string_view::npos) {
             auto ls = lexer_.saveState();
             Token saved = cur_;
-            int savedHadWs = lexer_.hadWhitespace();
 
             advance();
-            bool isSeparator =
-                cur_.type == TOK_NEWLINE || cur_.type == TOK_EOF ||
-                cur_.type == TOK_COLON   || cur_.type == TOK_PIPE ||
-                cur_.type == TOK_PIPE2   || cur_.type == TOK_INDENT ||
-                cur_.type == TOK_EQUALS;
 
-            // Continuation (без whitespace, но есть следующий name) — НЕ fast path.
-            bool isContinuation = !isSeparator && !savedHadWs && lexer_.hadWhitespace() == false &&
-                                  isNameToken();
+            // nextIsName — следующий токен является name-токеном
+            // (IDENT/STRING/VAR_REF). separatedBySpace — между s и
+            // следующим токеном был whitespace.
+            bool nextIsName = isNameToken();
+            bool separatedBySpace = lexer_.hadWhitespace();
 
-            if (isSeparator) {
+            // Fast path возвращает s как complete name если:
+            //   * следующий токен — не name (separator, EOF, ':', '|', ...)
+            //   * или следующий токен отделён пробелом (два разных name)
+            if (!nextIsName || separatedBySpace) {
                 return std::string(s);
             }
-            // Если был whitespace — это два разных name, fast path OK.
-            if (savedHadWs && !isSeparator) {
-                return std::string(s);
-            }
-            (void)isContinuation;
 
-            // Не разделитель и без whitespace — continuation (склейка), откат.
+            // Adjacent name token без пробела → склейка (E$: → E:path).
+            // Откат, slow path склеит корректно.
             lexer_.restoreState(ls);
             cur_ = saved;
         }
@@ -347,9 +348,6 @@ void ParserImpl::parseBuild() {
     if (cur_.type == TOK_INDENT && cur_.indent > 0) {
         scope = std::make_shared<core::Scope>();
         int baseIndent = cur_.indent;
-        // PERF: key/value передаём по value, но key копируется в Scope::set
-        // (в unordered_map). value можно move, но set принимает string_view.
-        // Оставляем как есть — экономия от move в Scope::set минимальна.
         parseIndentedBlock(baseIndent, [&](std::string&& key, std::string&& value) {
             scope->set(key, value);
         });

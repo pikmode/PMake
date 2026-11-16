@@ -259,6 +259,14 @@ Token Lexer::readSymbol() {
         case '-': return {TOK_MINUS, -1, line_, column_, 0};
         case '*': return {TOK_STAR, -1, line_, column_, 0};
         case '/': return {TOK_SLASH, -1, line_, column_, 0};
+        // NEW: подсказка про комментарии в PMake.
+        // В ninja-синтаксисе `#` — валидный комментарий, но PMake
+        // использует // и /* */. Если пользователь по привычке пишет
+        // #, говорим прямо, а не generic "Invalid character".
+        case '#':
+            error("'#' is not a comment in PMake. "
+                  "Use '//' for line comments or '/* */' for block comments.");
+            return {TOK_INVALID, -1, line_, column_, 0};  // unreachable (error throws)
         default:
             return {TOK_INVALID, -1, line_, column_, 0};
     }
@@ -336,9 +344,13 @@ std::string_view Lexer::str(int id) const {
     return pool_->get(id);
 }
 
+// CHANGED: не печатаем здесь. Сообщение попадает в ParserImpl::errors_
+// и печатается в ParserImpl::parse() ровно один раз. Иначе при фатальной
+// ошибке лексера пользователь видит её трижды (Lexer::error + advance +
+// parse).
 void Lexer::error(std::string_view msg) {
-    std::string err = std::format("Lexer error in {} line {}: {}", filename_, line_, msg);
-    std::println(std::cerr, "{}", err);
+    std::string err = std::format("Lexer error in {} line {}: {}",
+                                  filename_, line_, msg);
     throw std::runtime_error(std::move(err));
 }
 

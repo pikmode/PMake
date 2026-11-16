@@ -7,6 +7,7 @@
 #include "core/ast.h"
 #include "core/value.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -17,7 +18,7 @@ namespace pmake::parser {
 
 using pmake::core::AstNode;
 using pmake::core::Value;
-using pmake::core::ValueList;    
+using pmake::core::ValueList;
 
 class ParserImpl {
 public:
@@ -31,18 +32,27 @@ public:
     // нужно прочитать functions из sub-парсера и скопировать в parent.
     const core::State& state() const { return state_; }
 
-    static int operationCounter;
-    static int includeDepth;
-    static int functionCallDepth;
+    static int64_t operationCounter;    // CHANGED: было int (5e9 не лезет в int)
+    static int     includeDepth;
+    static int     functionCallDepth;
 
-    static constexpr int MAX_RULES = 1000000;
-    static constexpr int MAX_BUILDS = 1000000;
-    static constexpr int MAX_AST_NODES = 5000000;
-    static constexpr int MAX_FOREACH_ITERATIONS = 1000000;
-    static constexpr int MAX_INCLUDE_DEPTH = 500;
-    static constexpr int MAX_EXPR_DEPTH = 1000;
-    static constexpr int MAX_STATEMENT_DEPTH = 1000;
-    static constexpr int MAX_OPERATIONS = 10000000;
+    // ---- Основные лимиты (увеличены под «2 × Chromium») ----
+    static constexpr int     MAX_RULES                = 10'000'000;       // было 1'000'000
+    static constexpr int     MAX_BUILDS               = 20'000'000;       // было 1'000'000
+    static constexpr int     MAX_AST_NODES            = 100'000'000;      // было 5'000'000
+    static constexpr int     MAX_FOREACH_ITERATIONS   = 10'000'000;       // было 1'000'000
+    static constexpr int MAX_INCLUDE_DEPTH        = 200;
+    static constexpr int MAX_EXPR_DEPTH           = 500;
+    static constexpr int MAX_STATEMENT_DEPTH      = 500;
+    static constexpr int64_t MAX_OPERATIONS           = 5'000'000'000LL;  // было 10'000'000
+
+    // ---- Новые константы для ранее захардкоженных guard'ов ----
+    static constexpr int MAX_LOOP_GUARD          = 10'000'000;    // top-level/attr/value-seq/list
+    static constexpr int MAX_FUNCTION_ARGS       = 100'000;       // было 1000 в parseAtom
+    static constexpr int MAX_LIST_SIZE           = 1'000'000;     // было 10000 в makeList
+    static constexpr int MAX_WHILE_ITERATIONS    = 100'000'000;   // было 1000 в evaluateWhile
+    static constexpr int MAX_FUNCTION_CALL_DEPTH = 10'000;        // было 100 в callBuiltin
+    static constexpr int MAX_BUILD_ITEMS         = 1'000'000;     // было 100000 (inputs/outputs)
 
 private:
     Lexer lexer_;
@@ -75,9 +85,6 @@ private:
     int pendingFlow_ = 0;
 
     // NEW (#4): путь текущего eval-файла для резолва вложенных include.
-    // Обновляется в evaluateIncludeImpl (save/restore), чтобы
-    // include "nested.pmake" внутри sub.pmake резолвился относительно
-    // sub.pmake, а не корневого build.pmake.
     std::string currentEvalFilename_;
 
     void advance();
