@@ -81,10 +81,12 @@ PMake выберет alias all, если он объявлен. Можно та�
 
 После генерации CMake-манифеста PMake может собрать проект через Ninja-файл:
 
-    pmake -f build/build.ninja
+    cd build
+    pmake
 
-Проверка тестов из корня репозитория:
+Проверка тестов из корня репозитория (после сборки вернитесь в корень):
 
+    cd ..
     cd tests-pmake/basic
     python run.py --generate-only
 
@@ -115,6 +117,10 @@ PMake выберет alias all, если он объявлен. Можно та�
     --no-color                 Отключить цветной вывод.
     -V, --version              Показать версию.
     -h, --help                 Показать справку.
+
+Параметр `-f` выбирает манифест, но не меняет текущую директорию. Для
+CMake-generated Ninja-файла запускайте PMake из build-директории, чтобы
+относительные пути в манифесте разрешались правильно.
 
 Инструменты, выбираемые только через -t:
 
@@ -521,7 +527,8 @@ response-файл и depfile, чтобы частичный артефакт н�
 PMake может читать CMake-generated `build.ninja` напрямую:
 
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-    pmake -f build/build.ninja
+    cd build
+    pmake
 
 Также можно перейти в каталог build и запустить PMake без -f, если там есть
 build.ninja:

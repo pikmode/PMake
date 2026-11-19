@@ -1,45 +1,66 @@
 # Changelog
 
-All notable changes to PMake. Format based on [Keep a Changelog](https://keepachangelog.com/).
+All notable changes to PMake are documented here. This changelog follows
+[Keep a Changelog](https://keepachangelog.com/).
 
 ## [1.3.1] — 2026-11-19
 
 ### Added
 
-- Ninja-style utility tools via `-t` / `--tools`: `clean`, `targets`, and `commands`.
-- `-t commands [target]` prints expanded build commands in dependency order for the selected target.
+- Ninja-style utility tools selected with `-t` / `--tools`: `clean`, `targets`,
+  and `commands`.
+- `-t commands [target]` prints expanded build commands in dependency order for
+  the selected target.
 
 ### Changed
 
-- All positional arguments are manifest targets, including names such as `build`, `clean`, and `help`.
-- Built-in utility actions remain selected with `-t`, for example `pmake -t clean`.
-- Cache format version 9 → 10, adding content fingerprints for the main and included manifests.
-- Rewrote `readme.txt` as a detailed Russian user guide covering setup, manifest syntax, builds, CLI tools, caching, and Ninja/CMake compatibility.
+- Treat all positional arguments as manifest targets, including names such as
+  `build`, `clean`, and `help`. Select built-in utility actions with `-t`, for
+  example, `pmake -t clean`.
+- Incremented the cache format from version 9 to 10 and added content
+  fingerprints for the main and included manifests.
+- Rewrote `readme.txt` as a detailed Russian user guide covering setup,
+  manifest syntax, builds, CLI tools, caching, and Ninja/CMake compatibility.
 
 ### Fixed
 
-- Invalidate cached builds when an included manifest changes, and fingerprint response-file content and working directories.
-- Preserve dependency edges and command fingerprints for every output of a multi-output build.
-- Avoid recursive graph walks on deep dependency chains and prevent no-op `restat` generators from restarting PMake.
-- Remove partial outputs after command failures, treat external exit code 2 as a failure, and report `clean` removal errors.
-- Quote Windows self-restart arguments, compare Windows file names case-insensitively, and make process spawning safe with concurrent workers.
-- Synchronize engine completion state across scheduler and waiter threads.
+- Invalidate cached builds when an included manifest changes; include
+  response-file contents and working directories in command fingerprints.
+- Preserve dependency edges and command fingerprints for every output of a
+  multi-output build.
+- Avoid recursive graph walks for deep dependency chains and prevent no-op
+  `restat` generators from restarting PMake.
+- Remove partial outputs after command failures, treat external exit code 2 as
+  a failure, and report errors when `clean` cannot remove an output.
+- Removed the success summary from dry-run output.
+- Quote Windows self-restart arguments, compare Windows file names
+  case-insensitively, and make process spawning safe with concurrent workers.
+- Synchronize engine completion state between scheduler and waiter threads.
 
 ### Tests
 
-- **149/149 tests** pass, including new regressions for the fixed issues.
+- All **149 tests passed**, including regression tests for the issues fixed in
+  this release.
 
 ## [1.3.0] — 2026-11-16
 
-**Performance & Scale.** Optimized for LLVM/Chromium-class monorepos (350K+ build edges).
+Optimized for large codebases such as LLVM and Chromium, with build graphs
+containing hundreds of thousands of edges.
 
 ### Performance
 
-- **Thread pool** instead of thread-per-task. Cold dry-run with 1,000 tasks: **1080 ms → 208 ms** (5×). Scales linearly to 10K tasks without OOM.
-- **DepsLog StringPool**: `vector<string>` → `vector<uint32_t>`. RAM usage on Chromium (350K edges × 500 headers): **5.6 GB → 700 MB** (8×).
-- **Prefetch depfile inputs** in `statBatch` — noop builds no longer perform 175M cold stats. With 1,000 tasks: **204 ms → 172 ms**.
-- **Memoize `isDirty`** — reduced iterations for 350K edges × 100 consumers × 500 headers from 17 billion to 17.5 million.
-- **Skip `addDepsForOutput` in dry-run** — cold run with 1,000 depfile tasks: **7970 ms → 788 ms** (10×).
+- Replaced one thread per task with a thread pool. A cold dry run with 1,000
+  tasks improved from **1080 ms to 208 ms** (5×); the pool also scales to
+  10,000 tasks without running out of memory.
+- Replaced `vector<string>` with `vector<uint32_t>` IDs in the DepsLog
+  StringPool. In the Chromium workload (350,000 edges × 500 headers), memory
+  use fell from **5.6 GB to 700 MB** (8×).
+- Prefetched depfile inputs in `statBatch`. For 1,000 tasks, a no-op build
+  improved from **204 ms to 172 ms**.
+- Memoized `isDirty`, reducing checks in a 350,000-edge workload from
+  17 billion to 17.5 million iterations.
+- Skipped `addDepsForOutput` during dry runs. A cold run with 1,000 depfile
+  tasks improved from **7,970 ms to 788 ms** (10×).
 
 ### Fixed
 

@@ -5,22 +5,40 @@ Build your first project with PMake in under 5 minutes.
 ## 1. Install PMake
 
 Download `pmake.exe` (Windows) or `pmake` (Linux/macOS) from
-[Releases](https://github.com/user/pmake/releases), drop it somewhere
-in your `PATH`. That's it — single static binary, no dependencies.
+[Releases](https://github.com/pikmode/PMake/releases) and add its directory to
+your `PATH`. The release build is statically linked by default when supported
+by the toolchain; Python and Qt are not required to run PMake.
 
 ## 2. Hello world
+
+Create `main.cpp`:
+
+```cpp
+#include <iostream>
+
+int main() {
+    std::cout << "Hello, PMake!\n";
+}
+```
 
 Create `build.pmake`:
 
 ```pmake
 pmake_required_version = 1.0
+cxx = "g++"
 
-rule echo {
-    command = "echo ${msg} > ${out}"
+if os == "windows" {
+    output = "hello.exe"
+} else {
+    output = "hello"
 }
 
-build "hello.txt" : echo { msg = "Hello, PMake!" }
-alias all : "hello.txt"
+rule compile_and_link {
+    command = "${cxx} -std=c++20 ${in} -o ${out}"
+}
+
+build "${output}" : compile_and_link "main.cpp"
+alias all : "${output}"
 ```
 
 Run:
@@ -29,14 +47,11 @@ Run:
 pmake
 ```
 
-You'll see:
+PMake runs the compiler directly; commands are not implicitly interpreted by a
+shell. Run `./hello` on Linux/macOS or `.\hello.exe` in Windows PowerShell to
+start the program.
 
-```
-[1/1] echo hello.txt
-Build succeeded in 0.02 s.
-```
-
-## 3. Add a C++ file
+## 3. Track header dependencies
 
 ```pmake
 pmake_required_version = 1.0
@@ -54,9 +69,15 @@ rule link {
     command = "${cxx} ${in} -o ${out}"
 }
 
+if os == "windows" {
+    app = "app.exe"
+} else {
+    app = "app"
+}
+
 build "main.o" : cc "main.cpp"
-build "app"    : link "main.o"
-alias all      : "app"
+build "${app}" : link "main.o"
+alias all      : "${app}"
 ```
 
 ```bash
@@ -81,7 +102,7 @@ pmake --config debug
 pmake --config release
 ```
 
-Config change → cache invalidated → full rebuild (automatic).
+Changing the selected configuration invalidates the relevant build cache.
 
 ## 5. Include shared rules
 

@@ -37,15 +37,14 @@ It reads them directly — no conversion, no glue scripts.
 
 ```bash
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
-pmake -f build/build.ninja
-```
-
-Or let PMake auto-detect (looks for `build.pmake` first, then `build.ninja`):
-
-```bash
 cd build
 pmake
+# Or explicitly select the manifest from this directory:
+pmake -f build.ninja
 ```
+
+PMake resolves relative paths from the current working directory. Running from
+the build directory keeps paths in the generated Ninja file consistent.
 
 ## What's different from `ninja`
 

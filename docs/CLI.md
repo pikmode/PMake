@@ -23,7 +23,7 @@ both `build` and `clean`. Built-in utilities are selected only with `-t`.
 | Option | Description |
 |---|---|
 | `-f FILE`, `--file FILE` | Build file. Default: `build.pmake`, then `build.ninja` |
-| `-j N`, `--jobs N` | Parallel jobs. Default: `nproc` |
+| `-j N`, `--jobs N` | Number of parallel jobs. Defaults to detected hardware concurrency |
 | `-t TOOL`, `--tools TOOL` | Run a utility tool |
 | `--config NAME` | Configuration (e.g. `debug`, `release`). Default: `release` |
 | `--platform NAME` | Target platform. Default: detected (`windows`/`linux`/`darwin`) |
@@ -33,6 +33,10 @@ both `build` and `clean`. Built-in utilities are selected only with `-t`.
 | `--no-color` | Disable ANSI colors (respects `NO_COLOR` env) |
 | `-V`, `--version` | Show version |
 | `-h`, `--help` | Show help |
+
+The `-f` option selects a manifest; it does not change the working directory.
+For a generated Ninja build, run PMake from the build directory (or change to
+that directory first) so relative paths resolve as expected.
 
 ## Exit codes
 
@@ -64,9 +68,6 @@ pmake -j 8
 # Dry-run: what would be built?
 pmake -n
 
-# Verify everything is up-to-date
-pmake -n && echo "up-to-date"
-
 # List targets and inspect the commands for a target
 pmake -t targets
 pmake -t commands app
@@ -74,13 +75,12 @@ pmake -t commands app
 # Clean outputs (source files are safe)
 pmake -t clean
 
-# Build CMake project with PMake
-pmake -f build/build.ninja -j 8
+# From the CMake build directory
+pmake -j 8
 ```
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
-| `NO_COLOR` | Disable colors (any non-empty value) |
-| `PMAKE_JOBS` | Default `-j` value (overridden by `-j`) |
+| `NO_COLOR` | Disable colors when the variable is set |

@@ -18,7 +18,9 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 - **Ninja-compatible.** Parses `.ninja` files directly (drop-in for CMake/Meson output).
 - **Incremental by default.** Binary cache, depfile, restat, generator.
 - **Cross-platform.** Windows, Linux, macOS.
-- **No dependencies.** Single static binary. No Python, no Qt, no runtime.
+- **Simple deployment.** A single executable; the release build is statically
+  linked by default when supported by the toolchain. No Python or Qt runtime
+  is required.
 - **Scales to monorepos.** Thread pool + depfile prefetch + StringPool DepsLog — designed for 100K+ edges.
 - **Safe `clean`.** `pmake -t clean` never touches source files (`.cpp`, `.cmake`, `CMakeLists.txt`).
 
@@ -39,31 +41,52 @@ cmake --build build
 To rebuild PMake with PMake, use the generated Ninja manifest:
 
 ```bash
-pmake -f build/build.ninja
+cd build
+pmake
 ```
 
-### Hello world
+### Build a Hello World program
 
-**`build.pmake`:**
+Create `main.cpp`:
+
+```cpp
+#include <iostream>
+
+int main() {
+    std::cout << "Hello, PMake!\n";
+}
+```
+
+Create `build.pmake`:
 
 ```pmake
 pmake_required_version = 1.0
+cxx = "g++"
 
-rule echo {
-    command     = "echo ${msg} > ${out}"
-    description = "echo ${out}"
+if os == "windows" {
+    output = "hello.exe"
+} else {
+    output = "hello"
 }
 
-build "hello.txt" : echo { msg = "Hello, PMake!" }
-alias all : "hello.txt"
+rule compile_and_link {
+    command = "${cxx} -std=c++20 ${in} -o ${out}"
+}
+
+build "${output}" : compile_and_link "main.cpp"
+alias all : "${output}"
 ```
 
-Run:
+Build and run:
 
 ```bash
 pmake
-cat hello.txt   # Hello, PMake!
+./hello          # Linux/macOS
+.\hello.exe      # Windows PowerShell
 ```
+
+PMake launches commands directly; shell operators such as `>` and `|` are not
+interpreted unless you explicitly invoke a shell.
 
 ---
 
@@ -93,8 +116,15 @@ sources = glob("*.cpp", "src")
 objects = replace_suffix(sources, ".o")
 
 build ${objects} : cc ${sources}
-build "app" : link ${objects}
-alias all : "app"
+
+if os == "windows" {
+    app = "app.exe"
+} else {
+    app = "app"
+}
+
+build "${app}" : link ${objects}
+alias all : "${app}"
 ```
 
 Run:
@@ -127,7 +157,8 @@ PMake reads CMake-generated `build.ninja` directly:
 
 ```bash
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
-pmake -f build/build.ninja        # instead of: ninja -C build
+cd build
+pmake                              # instead of: ninja
 ```
 
 - Supported: `rule`, `build`, `pool`, `subninja`, `default`, `depfile`,

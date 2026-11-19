@@ -31,7 +31,7 @@ rule cc {
 
 | Field | Meaning |
 |---|---|
-| `command` | Shell command. `${in}`, `${out}`, `${in_newline}`, `${rspfile}` available |
+| `command` | Program and arguments to run. Shell syntax is not interpreted. |
 | `description` | Human-readable line (default: output path) |
 | `depfile` | Path to Makefile-format `.d` file |
 | `deps` | `"gcc"` for depfile parsing |
@@ -40,6 +40,13 @@ rule cc {
 | `pool` | `"console"` for serialized, or custom pool name |
 | `rspfile` | Response file path (written before command) |
 | `rspfile_content` | Content of response file |
+
+`${in}`, `${out}`, `${in_newline}`, and `${rspfile}` are available in
+`command`, `description`, and `rspfile_content`.
+
+Shell operators such as `>`, `|`, and `&&` are not interpreted by PMake. To use
+shell features, explicitly invoke a shell (for example, `cmd /c` on Windows or
+`sh -c` on Linux/macOS).
 
 ## Builds
 

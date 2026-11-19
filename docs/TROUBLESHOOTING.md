@@ -74,7 +74,8 @@ If you see this line and no progress for >2 minutes:
 
 1. `Ctrl+C`
 2. `cmake --fresh -S . -B build -G Ninja` — regenerate from scratch
-3. `pmake -f build/build.ninja`
+3. `cd build`
+4. `pmake`
 
 Usually caused by a corrupted `CMakeCache.txt` or a missing CMake module.
 

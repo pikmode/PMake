@@ -11,19 +11,21 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
 ## Build with PMake
 
 ```bash
-pmake -f build/build.ninja
+cd build
+pmake
 ```
 
 Equivalent to:
 
 ```bash
-ninja -C build
+ninja
 ```
 
 ## Build with Ninja (for comparison)
 
 ```bash
-ninja -C build
+cd build
+ninja
 ```
 
 ## Known limitations
