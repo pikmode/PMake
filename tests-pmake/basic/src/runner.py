@@ -144,6 +144,8 @@ def check_expect(expect, result, cwd):
         fails.append(f"elapsed={result['elapsed']:.2f}s > max {expect['elapsedMax']}")
     for s in expect.get("stdoutHas", []):
         if s not in result["stdout"]: fails.append(f"stdout missing: {s!r}")
+    for s in expect.get("stdoutNot", []):
+        if s in result["stdout"]: fails.append(f"stdout unexpectedly contains: {s!r}")
     for s in expect.get("stderrHas", []):
         if s not in result["stderr"]: fails.append(f"stderr missing: {s!r}")
 

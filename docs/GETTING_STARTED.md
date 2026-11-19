@@ -63,7 +63,7 @@ alias all      : "app"
 pmake              # incremental build
 pmake -j 8         # 8 parallel jobs
 pmake -n           # dry-run
-pmake clean        # remove outputs
+pmake -t clean     # remove outputs
 ```
 
 ## 4. Configurations

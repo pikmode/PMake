@@ -28,6 +28,7 @@ public:
     std::vector<Node*> leafNodes() const;
     std::vector<Node*> allNodes() const;
     std::vector<Node*> topologicalSort(std::string_view target);
+    std::vector<Node*> topologicalSort(const std::vector<std::string>& targets);
     bool hasCycle() const;
     std::vector<Node*> affectedNodes(const std::vector<std::string>& changedLeaves) const;
 

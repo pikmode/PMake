@@ -47,13 +47,18 @@ Engine::~Engine() {
 }
 
 bool Engine::run(std::string_view target) {
+    if (target.empty()) return run(std::vector<std::string>{});
+    return run(std::vector<std::string>{std::string(target)});
+}
+
+bool Engine::run(const std::vector<std::string>& targets) {
     if (graphBuildFailed_) {
         if (buildError_) buildError_("Graph build failed — see errors above");
         if (buildFinished_) buildFinished_(false, 0.0, false);
         return false;
     }
 
-    runInternal(std::string(target));
+    runInternal(targets);
 
     // timeout-based wait — проверяем cancelFlag_ каждые 100 мс.
     while (true) {
@@ -87,7 +92,9 @@ bool Engine::run(std::string_view target) {
     return success_;
 }
 
-void Engine::runInternal(const std::string& target) {
+void Engine::runInternal(const std::vector<std::string>& targets) {
+    totalTasks_ = 0;
+    restatNoop_ = true;
     // NEW: если Ctrl+C пришёл до старта — сразу выходим.
     if (cancelFlag_ && cancelFlag_->load()) {
         requestInterrupt();
@@ -118,8 +125,8 @@ void Engine::runInternal(const std::string& target) {
     finished_ = false;
     success_ = true;
 
-    std::string targetName = target;
-    if (targetName.empty()) {
+    std::vector<std::string> targetNames = targets;
+    if (targetNames.empty()) {
         bool hasAll = false;
         for (const auto& build : state_.builds()) {
             if (!build.outputs.empty() && build.outputs[0] == "all") {
@@ -127,13 +134,13 @@ void Engine::runInternal(const std::string& target) {
                 break;
             }
         }
-        if (hasAll) targetName = "all";
-        else if (!state_.defaultTargets().empty()) targetName = state_.defaultTargets().front();
+        if (hasAll) targetNames.emplace_back("all");
+        else if (!state_.defaultTargets().empty()) targetNames.push_back(state_.defaultTargets().front());
         else {
             std::vector<std::string> candidates;
             for (const auto& build : state_.builds())
                 for (const auto& out : build.outputs) candidates.push_back(out);
-            if (!candidates.empty()) targetName = candidates.back();
+            if (!candidates.empty()) targetNames.push_back(candidates.back());
             else {
                 if (buildError_) buildError_("No target specified and no builds");
                 success_ = false;
@@ -146,7 +153,7 @@ void Engine::runInternal(const std::string& target) {
 
     std::vector<Node*> order;
     try {
-        order = graph_.topologicalSort(targetName);
+        order = graph_.topologicalSort(targetNames);
     } catch (const std::exception& e) {
         if (buildError_) buildError_(std::string("Graph error: ") + e.what());
         success_ = false;
@@ -156,7 +163,13 @@ void Engine::runInternal(const std::string& target) {
         return;
     }
     if (order.empty()) {
-        if (buildError_) buildError_("Target '" + targetName + "' not found");
+        if (buildError_) {
+            if (targetNames.size() == 1) {
+                buildError_("Target '" + targetNames.front() + "' not found");
+            } else {
+                buildError_("One or more targets not found");
+            }
+        }
         success_ = false;
         finished_ = true;
         auto dur = std::chrono::duration<double>(std::chrono::steady_clock::now() - buildStart_).count();

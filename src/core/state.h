@@ -27,6 +27,10 @@ struct Rule {
     std::string rspfile;
     std::string rspfile_content;
     bool pool = false;
+
+    bool isNinjaTool() const {
+        return name == "CLEAN" || name == "HELP";
+    }
 };
 
 struct Build {

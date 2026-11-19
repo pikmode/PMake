@@ -60,22 +60,24 @@ bool Graph::build() {
 void Graph::buildEdges() {
     for (const auto& build : state_.builds()) {
         if (build.outputs.empty()) continue;
-        Node* outNode = node(build.outputs.front());
-        if (!outNode) continue;
-        for (const auto& in : build.inputs) {
-            if (in.empty()) continue;
-            Node* inNode = getOrCreateNode(in);
-            outNode->addDependency(inNode);
-        }
-        for (const auto& in : build.implicit) {
-            if (in.empty()) continue;
-            Node* inNode = getOrCreateNode(in);
-            outNode->addImplicitDependency(inNode);
-        }
-        for (const auto& in : build.order_only) {
-            if (in.empty()) continue;
-            Node* inNode = getOrCreateNode(in);
-            outNode->addOrderOnlyDependency(inNode);
+        for (const auto& output : build.outputs) {
+            Node* outNode = node(output);
+            if (!outNode) continue;
+            for (const auto& in : build.inputs) {
+                if (in.empty()) continue;
+                Node* inNode = getOrCreateNode(in);
+                outNode->addDependency(inNode);
+            }
+            for (const auto& in : build.implicit) {
+                if (in.empty()) continue;
+                Node* inNode = getOrCreateNode(in);
+                outNode->addImplicitDependency(inNode);
+            }
+            for (const auto& in : build.order_only) {
+                if (in.empty()) continue;
+                Node* inNode = getOrCreateNode(in);
+                outNode->addOrderOnlyDependency(inNode);
+            }
         }
     }
 }
@@ -127,25 +129,46 @@ bool Graph::dfs(std::string_view nodeName,
                 std::unordered_set<std::string>& recursionStack,
                 std::vector<Node*>& order) const {
     if (nodeName.empty()) return false;
+    struct Frame {
+        Node* node;
+        std::size_t nextDependency;
+    };
+
+    Node* root = this->node(nodeName);
     std::string key(nodeName);
     if (recursionStack.contains(key)) return true;
-    if (visited.contains(key)) return false;
-    visited.insert(key);
+    if (!visited.insert(key).second) return false;
+    if (!root) return false;
+
     recursionStack.insert(key);
-    Node* n = this->node(nodeName);
-    if (n) {
-        for (Node* dep : n->dependencies()) {
-            if (dfs(dep->name(), visited, recursionStack, order)) return true;
+    std::vector<Frame> stack{{root, 0}};
+    while (!stack.empty()) {
+        Frame& frame = stack.back();
+        const auto& deps = frame.node->dependencies();
+        const auto& implicit = frame.node->implicitDeps();
+        const auto& orderOnly = frame.node->orderOnlyDeps();
+        const std::size_t dependencyCount = deps.size() + implicit.size() + orderOnly.size();
+
+        if (frame.nextDependency == dependencyCount) {
+            recursionStack.erase(frame.node->name());
+            order.push_back(frame.node);
+            stack.pop_back();
+            continue;
         }
-        for (Node* dep : n->implicitDeps()) {
-            if (dfs(dep->name(), visited, recursionStack, order)) return true;
-        }
-        for (Node* dep : n->orderOnlyDeps()) {
-            if (dfs(dep->name(), visited, recursionStack, order)) return true;
-        }
+
+        std::size_t index = frame.nextDependency++;
+        Node* dep = index < deps.size()
+            ? deps[index]
+            : index < deps.size() + implicit.size()
+                ? implicit[index - deps.size()]
+                : orderOnly[index - deps.size() - implicit.size()];
+        const std::string& depName = dep->name();
+        if (recursionStack.contains(depName)) return true;
+        if (!visited.insert(depName).second) continue;
+
+        recursionStack.insert(depName);
+        stack.push_back({dep, 0});
     }
-    recursionStack.erase(key);
-    if (n) order.push_back(n);
     return false;
 }
 
@@ -162,15 +185,21 @@ bool Graph::hasCycle() const {
 }
 
 std::vector<Node*> Graph::topologicalSort(std::string_view target) {
+    return topologicalSort(std::vector<std::string>{std::string(target)});
+}
+
+std::vector<Node*> Graph::topologicalSort(const std::vector<std::string>& targets) {
     std::vector<Node*> order;
     std::unordered_set<std::string> visited, recursion;
-    if (target.empty() || !nodes_.contains(std::string(target))) {
-        std::println(std::cerr, "Target '{}' not found in graph", target);
-        return {};
-    }
-    if (dfs(target, visited, recursion, order)) {
-        std::println(std::cerr, "Cycle detected during topological sort");
-        return {};
+    for (const auto& target : targets) {
+        if (target.empty() || !nodes_.contains(target)) {
+            std::println(std::cerr, "Target '{}' not found in graph", target);
+            return {};
+        }
+        if (dfs(target, visited, recursion, order)) {
+            std::println(std::cerr, "Cycle detected during topological sort");
+            return {};
+        }
     }
     return order;
 }

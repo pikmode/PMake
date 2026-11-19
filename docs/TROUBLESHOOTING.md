@@ -37,22 +37,19 @@ If you need more: `/STACK:16777216` in MSVC, `-Wl,-z,stack-size=...` in GCC.
 
 ## `undefined reference` after a failed build
 
-**Known issue, v1.3.1 fix pending.**
+**Fixed in v1.3.1** for build commands that fail or are interrupted gracefully.
 
-When a build is interrupted (Ctrl+C or a task failure), in-flight
-compilers may finish writing `.obj` files **after** PMake gives up.
-These have a fresh mtime, so PMake thinks "up-to-date" on next run.
-Result: link fails with `undefined reference` to a symbol that should
-exist.
+PMake removes the failed task's declared outputs, response file, and depfile
+so the next run cannot mistake a partial artifact for a valid one.
 
-**Workaround:** `pmake clean` before rebuilding.
+If PMake is force-terminated by the operating system, cleanup cannot be
+guaranteed; run `pmake -t clean` before rebuilding.
 
-**Tracked:** v1.3.1 will remove partial outputs on abort.
+## `Cache version mismatch`
 
-## `Cache version mismatch (8 != 9)`
-
-**Normal after upgrade to v1.3.0.** Cache format changed (StringPool +
-`inputIds`). Old cache is rejected, PMake rebuilds it automatically.
+Expected after upgrading to a release with a newer cache format. PMake
+rejects an old cache and rebuilds it automatically. Version 10 includes
+manifest content fingerprints in addition to the dependency-log format.
 
 First run after upgrade: full `.d` re-scan (slow). Subsequent runs:
 fast.

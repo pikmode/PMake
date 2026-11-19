@@ -1,3 +1,4 @@
+
 #include <cctype>
 #include <csignal>
 #include <cstdio>
@@ -12,6 +13,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef _WIN32
@@ -22,6 +24,8 @@
 #endif
 
 #include "core/engine.h"
+#include "core/graph.h"
+#include "core/node.h"
 #include "core/state.h"
 #include "parser/parser.h"
 #include "parser/ninja-parser/parser.h"
@@ -56,22 +60,55 @@ void print_version() {
 // NEW: Перезапуск самого себя для подхвата обновленного манифеста
 [[noreturn]] void restart_self(int argc, char** argv) {
 #ifdef _WIN32
+    auto quoteArg = [](std::string_view arg) {
+        std::string quoted = "\"";
+        std::size_t backslashes = 0;
+        for (char c : arg) {
+            if (c == '\\') {
+                ++backslashes;
+            } else if (c == '"') {
+                quoted.append(backslashes * 2 + 1, '\\');
+                quoted.push_back('"');
+                backslashes = 0;
+            } else {
+                quoted.append(backslashes, '\\');
+                backslashes = 0;
+                quoted.push_back(c);
+            }
+        }
+        quoted.append(backslashes * 2, '\\');
+        quoted.push_back('"');
+        return quoted;
+    };
+
     std::string cmdLine;
     for (int i = 0; i < argc; ++i) {
         if (i > 0) cmdLine += " ";
-        cmdLine += argv[i];
+        cmdLine += quoteArg(argv[i]);
     }
     STARTUPINFOA si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
     if (CreateProcessA(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, INFINITE);
         DWORD exitCode = 0;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
+        DWORD error = ERROR_SUCCESS;
+        BOOL gotExitCode = FALSE;
+        if (waitResult == WAIT_OBJECT_0) {
+            gotExitCode = GetExitCodeProcess(pi.hProcess, &exitCode);
+            if (!gotExitCode) error = GetLastError();
+        } else {
+            error = GetLastError();
+        }
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        std::exit(static_cast<int>(exitCode));
+        if (gotExitCode) std::exit(static_cast<int>(exitCode));
+        std::println(stderr, "Failed to wait for restarted PMake (Windows error {})",
+                     error);
+        std::exit(1);
     }
+    DWORD error = GetLastError();
+    std::println(stderr, "Failed to restart PMake (Windows error {})", error);
     std::exit(1);
 #else
     execvp(argv[0], argv);
@@ -117,6 +154,102 @@ static bool is_protected_source(std::string_view path) {
     return false;
 }
 
+int clean_outputs(const State& state) {
+    int removed = 0;
+    int skipped = 0;
+    int failures = 0;
+
+    for (const auto& build : state.builds()) {
+        const Rule* rule = state.getRule(build.rule_name);
+        if (rule && (rule->generator || rule->name == "phony" || rule->command.empty())) {
+            continue;
+        }
+
+        for (const auto& out : build.outputs) {
+            if (is_protected_source(out)) {
+                LOG_VERBOSE(std::format("clean: skipping protected '{}'", out));
+                ++skipped;
+                continue;
+            }
+            std::error_code ec;
+            if (std::filesystem::remove(std::filesystem::path(out), ec)) ++removed;
+            else if (ec) {
+                LOG_ERROR(std::format("clean: failed to remove '{}': {}", out, ec.message()));
+                ++failures;
+            }
+        }
+    }
+
+    if (skipped > 0) {
+        LOG_INFO(std::format("Cleaned {} files (skipped {} protected source files)",
+                             removed, skipped));
+    } else {
+        LOG_INFO(std::format("Cleaned {} files", removed));
+    }
+    return failures == 0 ? 0 : 1;
+}
+
+void print_tools_help() {
+    std::println(stdout,
+        "Usage: {} -t TOOL [target]\n"
+        "\n"
+        "Tools:\n"
+        "  clean             Remove build outputs\n"
+        "  targets           List build targets\n"
+        "  commands [target] Print commands for a target and its dependencies\n"
+        "  help, list        Show available tools",
+        PMAKE_NAME);
+}
+
+void print_targets(const State& state) {
+    std::unordered_set<std::string> seen;
+    for (const auto& build : state.builds()) {
+        for (const auto& output : build.outputs) {
+            if (!output.empty() && seen.insert(output).second) {
+                std::println(stdout, "{}", output);
+            }
+        }
+    }
+}
+
+void print_build_command(const State& state, const Build& build) {
+    if (build.outputs.empty()) return;
+    const Rule* rule = state.getRule(build.rule_name);
+    if (!rule || rule->command.empty() || rule->name == "phony") return;
+
+    Node node(build.outputs.front(), &build, rule, &state);
+    auto specialVars = node.getSpecialVars();
+    if (!rule->rspfile.empty()) {
+        specialVars["rspfile"] = state.expandVarsWithSpecial(
+            rule->rspfile, build.scope.get(), specialVars);
+    }
+    std::string command = state.expandVarsWithSpecial(
+        rule->command, build.scope.get(), specialVars);
+    if (!command.empty()) std::println(stdout, "{}", command);
+}
+
+int print_commands(const State& state, std::string_view target) {
+    if (target.empty()) {
+        for (const auto& build : state.builds()) print_build_command(state, build);
+        return 0;
+    }
+
+    Graph graph(state, true);
+    if (!graph.build()) return 1;
+
+    if (!graph.node(target)) {
+        LOG_ERROR(std::format("target '{}' not found", target));
+        return 1;
+    }
+
+    std::unordered_set<const Build*> seen;
+    for (Node* node : graph.topologicalSort(target)) {
+        const Build* build = node->getBuild();
+        if (build && seen.insert(build).second) print_build_command(state, *build);
+    }
+    return 0;
+}
+
 struct Options {
     bool version   = false;
     bool help      = false;
@@ -124,13 +257,13 @@ struct Options {
     bool quiet     = false;
     bool dryRun    = false;
     bool noColor   = false;
-    bool clean     = false;
     std::string buildFile;
     int jobs = 0;
     std::string config = "release";
     std::string platform;
-    std::string command = "build";
-    std::string target;
+    std::string tool;
+    std::string toolTarget;
+    std::vector<std::string> targets;
 };
 
 int idealThreadCount() {
@@ -141,13 +274,14 @@ int idealThreadCount() {
 void printHelp() {
     std::fprintf(stdout,
         "%s %s — modern build system\n"
-        "Usage: pmake [options] [command] [target]\n"
+        "Usage: pmake [options] [targets...]\n"
+        "       pmake -t TOOL [target]\n"
         "\n"
         "Options:\n"
         "  -V, --version                Display version information\n"
         "  -f, --file <file>            Use <file> as build file\n"
         "  -j, --jobs <N>               Run <N> jobs in parallel\n"
-        "      --clean                  Clean all outputs\n"
+        "  -t, --tools <tool>           Run a utility tool (use 'list' for tools)\n"
         "      --config <name>          Build configuration (debug/release)\n"
         "      --platform <name>        Target platform (windows/linux/darwin)\n"
         "  -v, --verbose                Show detailed command output\n"
@@ -203,8 +337,13 @@ int parse_args(int argc, char** argv, Options& opt) {
                 LOG_ERROR(std::format("invalid value '{}' for '-j': expected an integer", valStr));
                 return 0;
             }
-        } else if (arg == "--clean") {
-            opt.clean = true;
+        } else if (arg == "-t" || arg == "--tools") {
+            if (!require_next("-t")) return 0;
+            if (!opt.tool.empty()) {
+                LOG_ERROR("only one tool may be selected");
+                return 0;
+            }
+            opt.tool = argv[++i];
         } else if (arg == "--config") {
             if (!require_next("--config")) return 0;
             opt.config = argv[++i];
@@ -231,28 +370,15 @@ int parse_args(int argc, char** argv, Options& opt) {
         }
     }
 
-    // FIX: pmake <target> работает как make/ninja.
     if (!positional.empty()) {
-        const std::string& p0 = positional[0];
-        if (p0 == "build" || p0 == "clean") {
-            opt.command = p0;
+        if (!opt.tool.empty()) {
             if (positional.size() > 1) {
-                if (opt.command == "build" &&
-                    (positional[1] == "debug" || positional[1] == "release")) {
-                    opt.config = positional[1];
-                    if (positional.size() > 2) opt.target = positional[2];
-                } else {
-                    opt.target = positional[1];
-                }
-            }
-        } else {
-            opt.command = "build";
-            opt.target  = p0;
-            if (positional.size() > 1) {
-                LOG_ERROR(std::format(
-                    "unexpected extra positional argument '{}'", positional[1]));
+                LOG_ERROR("utility tools accept at most one target argument");
                 return 0;
             }
+            opt.toolTarget = positional.front();
+        } else {
+            opt.targets = std::move(positional);
         }
     }
 
@@ -290,6 +416,25 @@ int main(int argc, char** argv) {
     int rc = parse_args(argc, argv, opt);
     if (rc < 0) return 0;
     if (rc == 0) return 1;
+
+    if (opt.tool == "list" || opt.tool == "help") {
+        if (!opt.toolTarget.empty()) {
+            std::fputs("utility tool help does not accept a target\n", stderr);
+            return 1;
+        }
+        print_tools_help();
+        return 0;
+    }
+    if (!opt.tool.empty() &&
+        opt.tool != "clean" && opt.tool != "targets" && opt.tool != "commands") {
+        std::fprintf(stderr, "unknown tool '%s'; run '%s -t list'\n",
+                     opt.tool.c_str(), PMAKE_NAME);
+        return 1;
+    }
+    if (!opt.tool.empty() && opt.tool != "commands" && !opt.toolTarget.empty()) {
+        std::fprintf(stderr, "tool '%s' does not accept a target\n", opt.tool.c_str());
+        return 1;
+    }
 
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
@@ -357,6 +502,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (opt.tool == "clean") return clean_outputs(*state);
+    if (opt.tool == "targets") {
+        print_targets(*state);
+        return 0;
+    }
+    if (opt.tool == "commands") return print_commands(*state, opt.toolTarget);
+
     // ============================================================
     // Generator logic (Manifest Regeneration)
     // ============================================================
@@ -404,26 +556,31 @@ int main(int argc, char** argv) {
         });
 
         bool genResult = true;
+        bool generatorDidWork = false;
         for (const auto& t : manifestTargets) {
-            if (!genEngine.run(t)) genResult = false;
+            if (!genEngine.run(t)) {
+                genResult = false;
+            } else if (!genEngine.wasNoop() && !genEngine.wasRestatNoop()) {
+                generatorDidWork = true;
+            }
         }
 
         if (!genResult) return 1;
 
-        if (!genEngine.wasNoop() && !opt.dryRun) {
+        if (generatorDidWork && !opt.dryRun) {
             std::println(stderr, "Build manifest was regenerated. Restarting pmake...");
             restart_self(argc, argv);
         }
     }
     // ============================================================
 
-    if (opt.target.empty() && opt.command == "build") {
+    if (opt.targets.empty()) {
         bool hasAll = false;
         for (const auto& b : state->builds()) {
             if (!b.outputs.empty() && b.outputs[0] == "all") { hasAll = true; break; }
         }
-        if (hasAll) opt.target = "all";
-        else if (!state->defaultTargets().empty()) opt.target = state->defaultTargets().front();
+        if (hasAll) opt.targets.emplace_back("all");
+        else if (!state->defaultTargets().empty()) opt.targets.push_back(state->defaultTargets().front());
     }
 
     bool useCache = true;
@@ -444,14 +601,10 @@ int main(int argc, char** argv) {
                 state->setForceRebuild(true);
                 cacheValid = false;
             } else {
-                std::int64_t buildMtime = pmake::util::getFileMtime(buildFile);
-                std::int64_t cacheMtime = pmake::util::getFileMtime(cachePath);
-                bool buildFileNewer = (buildMtime != -1 && cacheMtime != -1 && buildMtime > cacheMtime);
-
-                if (cache.isValid(buildFile) && !buildFileNewer) {
+                if (cache.isValid(buildFile, state->includedFiles())) {
                     cacheValid = true;
                 } else {
-                    LOG_VERBOSE("cache: invalid (build file changed)");
+                    LOG_VERBOSE("cache: invalid (build manifests changed)");
                     pmake::deps::DepsLog::instance().clear();
                 }
             }
@@ -491,53 +644,11 @@ int main(int argc, char** argv) {
         else LOG_VERBOSE("cache: saved");
     }
 
-    // ============================================================
-    // CLEAN — критический фикс (data-destroying bug).
-    // ============================================================
-    if (opt.clean || opt.command == "clean") {
-        int removed = 0;
-        int skipped = 0;
-
-        for (const auto& build : state->builds()) {
-            const Rule* rule = state->getRule(build.rule_name);
-
-            if (rule && (rule->generator ||
-                         rule->name == "phony" ||
-                         rule->command.empty())) {
-                continue;
-            }
-
-            for (const auto& out : build.outputs) {
-                if (is_protected_source(out)) {
-                    LOG_VERBOSE(std::format("clean: skipping protected '{}'", out));
-                    ++skipped;
-                    continue;
-                }
-                std::error_code ec;
-                if (std::filesystem::remove(std::filesystem::path(out), ec)) {
-                    ++removed;
-                }
-            }
-        }
-
-        if (skipped > 0) {
-            LOG_INFO(std::format("Cleaned {} files (skipped {} protected source files)",
-                                 removed, skipped));
-        } else {
-            LOG_INFO(std::format("Cleaned {} files", removed));
-        }
-        return 0;
-    }
-
-    if (opt.command != "build") {
-        LOG_ERROR(std::format("unknown command '{}'", opt.command));
-        return 1;
-    }
-
     pmake::core::Engine engine(*state, opt.jobs, opt.dryRun);
     engine.setCancelFlag(&g_interrupted);
 
-    pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose);
+    pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose,
+                            opt.dryRun);
 
     engine.onTaskStarted([&ui, verbose = opt.verbose](
             const std::string& name, int total,
@@ -552,7 +663,7 @@ int main(int argc, char** argv) {
         ui.onBuildFinished(ok, dur, interrupted);
     });
 
-    bool result = engine.run(opt.target);
+    bool result = engine.run(opt.targets);
 
     if (g_interrupted.load()) {
         return 130;
@@ -560,7 +671,7 @@ int main(int argc, char** argv) {
 
     if (!opt.dryRun && useCache && !engine.wasNoop()) {
         engine.updateFileStates();
-        cache.store(*state, buildFile, opt.config, opt.platform);
+        cache.updateResults(*state);
         if (!cache.save(cachePath)) LOG_WARN("failed to save cache after build");
     }
 

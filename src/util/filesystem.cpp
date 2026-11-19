@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <system_error>
 #include <filesystem>
 
@@ -17,6 +18,16 @@ namespace pmake::util {
 namespace {
 
 #ifdef _WIN32
+struct OrdinalInsensitiveLess {
+    bool operator()(const std::wstring& left, const std::wstring& right) const {
+        int result = CompareStringOrdinal(
+            left.data(), static_cast<int>(left.size()),
+            right.data(), static_cast<int>(right.size()), TRUE);
+        if (result == 0) return left < right;
+        return result == CSTR_LESS_THAN;
+    }
+};
+
 std::wstring utf8_to_utf16(std::string_view s) {
     if (s.empty()) return {};
     int wlen = MultiByteToWideChar(CP_UTF8, 0, s.data(),
@@ -26,18 +37,6 @@ std::wstring utf8_to_utf16(std::string_view s) {
     MultiByteToWideChar(CP_UTF8, 0, s.data(),
                         static_cast<int>(s.size()), w.data(), wlen);
     return w;
-}
-
-std::string utf16_to_utf8(const std::wstring& w) {
-    if (w.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.data(),
-                                  static_cast<int>(w.size()),
-                                  nullptr, 0, nullptr, nullptr);
-    if (len <= 0) return {};
-    std::string s(static_cast<std::size_t>(len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                        s.data(), len, nullptr, nullptr);
-    return s;
 }
 
 std::int64_t filetime_to_unix_ms(const FILETIME& ft) {
@@ -203,10 +202,10 @@ statBatch(const std::vector<std::string>& paths) {
         }
 
         // Сначала складываем всё, что нашли, по имени.
-        std::unordered_map<std::string, FileInfo> dir_cache;
+        std::map<std::wstring, FileInfo, OrdinalInsensitiveLess> dir_cache;
         do {
-            std::string name = utf16_to_utf8(data.cFileName);
-            if (name == "." || name == "..") continue;
+            std::wstring name(data.cFileName);
+            if (name == L"." || name == L"..") continue;
 
             FileInfo fi;
             fi.exists = true;
@@ -215,14 +214,14 @@ statBatch(const std::vector<std::string>& paths) {
             s.LowPart  = data.nFileSizeLow;
             s.HighPart = data.nFileSizeHigh;
             fi.size = static_cast<std::int64_t>(s.QuadPart);
-            dir_cache[name] = fi;
+            dir_cache[std::move(name)] = fi;
         } while (FindNextFileW(hFind, &data));
         FindClose(hFind);
 
         // Проставляем каждому запрошенному файлу.
         for (const auto& f : files) {
             auto [d, name] = split_path(f);
-            auto it = dir_cache.find(name);
+            auto it = dir_cache.find(utf8_to_utf16(name));
             if (it != dir_cache.end()) result[f] = it->second;
             else                       result[f] = FileInfo{};  // не существует
         }

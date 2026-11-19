@@ -1,9 +1,11 @@
 #include "executor/runner.h"
 
 #include <chrono>
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <print>
 #include <string>
 #include <string_view>
@@ -25,7 +27,23 @@ namespace pmake::executor {
 
 namespace {
 
+#ifndef _WIN32
+std::mutex processSpawnMutex;
+
+bool setCloseOnExec(int fd) {
+    int flags = fcntl(fd, F_GETFD);
+    return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
+void closePipe(int (&pipeFds)[2]) {
+    if (pipeFds[0] >= 0) close(pipeFds[0]);
+    if (pipeFds[1] >= 0) close(pipeFds[1]);
+}
+#endif
+
 #ifdef _WIN32
+std::mutex processSpawnMutex;
+
 std::wstring utf8_to_utf16(std::string_view s) {
     if (s.empty()) return {};
     int wlen = MultiByteToWideChar(CP_UTF8, 0, s.data(),
@@ -128,17 +146,42 @@ Result Runner::runSync(const Command& cmd) {
 
 #ifdef _WIN32
     // ---- Windows: CreateProcessW + pipes ----
+    std::wstring cmdline = build_cmdline(cmd.program, cmd.arguments);
+    std::wstring cwd = utf8_to_utf16(cmd.workingDirectory);
+    std::wstring envblock = build_env_block(cmd.env);
+
+    std::unique_lock<std::mutex> spawnLock(processSpawnMutex);
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
 
     HANDLE stdoutR = nullptr, stdoutW = nullptr;
     HANDLE stderrR = nullptr, stderrW = nullptr;
-    CreatePipe(&stdoutR, &stdoutW, &sa, 0);
-    CreatePipe(&stderrR, &stderrW, &sa, 0);
+    if (!CreatePipe(&stdoutR, &stdoutW, &sa, 0) ||
+        !CreatePipe(&stderrR, &stderrW, &sa, 0)) {
+        DWORD error = GetLastError();
+        if (stdoutR) CloseHandle(stdoutR);
+        if (stdoutW) CloseHandle(stdoutW);
+        if (stderrR) CloseHandle(stderrR);
+        if (stderrW) CloseHandle(stderrW);
+        res.exitCode = -1;
+        res.stderrOutput = "CreatePipe failed (Windows error " +
+                           std::to_string(error) + ")";
+        return res;
+    }
 
-    SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stderrR, HANDLE_FLAG_INHERIT, 0);
+    if (!SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0) ||
+        !SetHandleInformation(stderrR, HANDLE_FLAG_INHERIT, 0)) {
+        DWORD error = GetLastError();
+        CloseHandle(stdoutR);
+        CloseHandle(stdoutW);
+        CloseHandle(stderrR);
+        CloseHandle(stderrW);
+        res.exitCode = -1;
+        res.stderrOutput = "SetHandleInformation failed (Windows error " +
+                           std::to_string(error) + ")";
+        return res;
+    }
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -148,24 +191,23 @@ Result Runner::runSync(const Command& cmd) {
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
     PROCESS_INFORMATION pi{};
-    std::wstring cmdline = build_cmdline(cmd.program, cmd.arguments);
-    std::wstring cwd = utf8_to_utf16(cmd.workingDirectory);
-    std::wstring envblock = build_env_block(cmd.env);
-
     BOOL ok = CreateProcessW(
         nullptr, cmdline.data(), nullptr, nullptr, TRUE,
         CREATE_UNICODE_ENVIRONMENT,
         envblock.data(), cwd.empty() ? nullptr : cwd.c_str(),
         &si, &pi);
+    DWORD createError = ok ? ERROR_SUCCESS : GetLastError();
 
     CloseHandle(stdoutW);
     CloseHandle(stderrW);
+    spawnLock.unlock();
 
     if (!ok) {
         CloseHandle(stdoutR);
         CloseHandle(stderrR);
         res.exitCode = -1;
-        res.stderrOutput = "Failed to start process";
+        res.stderrOutput = "Failed to start process (Windows error " +
+                           std::to_string(createError) + ")";
         return res;
     }
 
@@ -186,13 +228,24 @@ Result Runner::runSync(const Command& cmd) {
         }
     });
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD waitError = waitResult == WAIT_OBJECT_0 ? ERROR_SUCCESS : GetLastError();
+    if (waitResult != WAIT_OBJECT_0) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
     tOut.join();
     tErr.join();
 
     DWORD code = 0;
-    GetExitCodeProcess(pi.hProcess, &code);
-    res.exitCode = static_cast<int>(code);
+    if (waitResult == WAIT_OBJECT_0 && GetExitCodeProcess(pi.hProcess, &code)) {
+        res.exitCode = static_cast<int>(code);
+    } else {
+        res.exitCode = -1;
+        DWORD error = waitResult == WAIT_OBJECT_0 ? GetLastError() : waitError;
+        errBuf += "Failed to wait for process (Windows error " +
+                  std::to_string(error) + ")";
+    }
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -205,88 +258,148 @@ Result Runner::runSync(const Command& cmd) {
     }
 #else
     // ---- POSIX: pipe + fork + exec ----
-    int outPipe[2], errPipe[2];
+    std::unordered_map<std::string, std::string> mergedEnv;
+    for (char** entry = environ; entry && *entry; ++entry) {
+        std::string value(*entry);
+        std::size_t equals = value.find('=');
+        if (equals != std::string::npos && equals > 0) {
+            mergedEnv[value.substr(0, equals)] = value.substr(equals + 1);
+        }
+    }
+    for (const auto& [key, value] : cmd.env) mergedEnv[key] = value;
+
+    std::vector<std::string> envStrings;
+    envStrings.reserve(mergedEnv.size());
+    for (const auto& [key, value] : mergedEnv) {
+        envStrings.push_back(key + "=" + value);
+    }
+    std::vector<char*> envp;
+    envp.reserve(envStrings.size() + 1);
+    for (auto& entry : envStrings) envp.push_back(entry.data());
+    envp.push_back(nullptr);
+
+    std::vector<char*> argv;
+    argv.reserve(cmd.arguments.size() + 2);
+    argv.push_back(const_cast<char*>(cmd.program.c_str()));
+    for (const auto& arg : cmd.arguments) argv.push_back(const_cast<char*>(arg.c_str()));
+    argv.push_back(nullptr);
+
+    std::vector<std::string> execPaths;
+    if (cmd.program.find('/') != std::string::npos) {
+        execPaths.push_back(cmd.program);
+    } else {
+        auto pathIt = mergedEnv.find("PATH");
+        std::string searchPath = pathIt == mergedEnv.end() ? "/bin:/usr/bin" : pathIt->second;
+        std::size_t start = 0;
+        while (start <= searchPath.size()) {
+            std::size_t end = searchPath.find(':', start);
+            if (end == std::string::npos) end = searchPath.size();
+            std::string directory = searchPath.substr(start, end - start);
+            execPaths.push_back(directory.empty()
+                ? cmd.program
+                : directory + "/" + cmd.program);
+            if (end == searchPath.size()) break;
+            start = end + 1;
+        }
+    }
+
+    int outPipe[2] = {-1, -1};
+    int errPipe[2] = {-1, -1};
+    pid_t pid = -1;
+    std::unique_lock<std::mutex> spawnLock(processSpawnMutex);
     if (pipe(outPipe) != 0 || pipe(errPipe) != 0) {
+        int savedErrno = errno;
+        for (int fd : {outPipe[0], outPipe[1], errPipe[0], errPipe[1]}) {
+            if (fd != STDOUT_FILENO && fd != STDERR_FILENO) close(fd);
+        }
         res.exitCode = -1;
-        res.stderrOutput = "pipe() failed";
+        res.stderrOutput = std::string("pipe() failed: ") + std::strerror(savedErrno);
         return res;
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
+    if (!setCloseOnExec(outPipe[0]) || !setCloseOnExec(outPipe[1]) ||
+        !setCloseOnExec(errPipe[0]) || !setCloseOnExec(errPipe[1])) {
+        int savedErrno = errno;
+        closePipe(outPipe);
+        closePipe(errPipe);
         res.exitCode = -1;
-        res.stderrOutput = "fork() failed";
-        close(outPipe[0]); close(outPipe[1]);
-        close(errPipe[0]); close(errPipe[1]);
+        res.stderrOutput = std::string("fcntl(FD_CLOEXEC) failed: ") +
+                           std::strerror(savedErrno);
+        return res;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        int savedErrno = errno;
+        closePipe(outPipe);
+        closePipe(errPipe);
+        res.exitCode = -1;
+        res.stderrOutput = std::string("fork() failed: ") + std::strerror(savedErrno);
         return res;
     }
 
     if (pid == 0) {
-        // child
-        dup2(outPipe[1], STDOUT_FILENO);
-        dup2(errPipe[1], STDERR_FILENO);
-        close(outPipe[0]); close(outPipe[1]);
-        close(errPipe[0]); close(errPipe[1]);
+        if (dup2(outPipe[1], STDOUT_FILENO) == -1 ||
+            dup2(errPipe[1], STDERR_FILENO) == -1) {
+            _exit(127);
+        }
+        closePipe(outPipe);
+        closePipe(errPipe);
 
         if (!cmd.workingDirectory.empty()) {
             if (chdir(cmd.workingDirectory.c_str()) != 0) _exit(127);
         }
 
-        std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(cmd.program.c_str()));
-        for (const auto& a : cmd.arguments) argv.push_back(const_cast<char*>(a.c_str()));
-        argv.push_back(nullptr);
-
-        if (cmd.env.empty()) {
-            execvp(cmd.program.c_str(), argv.data());
-        } else {
-            // merge с environ
-            std::unordered_map<std::string, std::string> merged;
-            for (char** e = environ; e && *e; ++e) {
-                std::string s(*e);
-                auto eq = s.find('=');
-                if (eq != std::string::npos && eq > 0)
-                    merged[s.substr(0, eq)] = s.substr(eq + 1);
-            }
-            for (const auto& [k, v] : cmd.env) merged[k] = v;
-            std::vector<std::string> envStrs;
-            std::vector<char*> envp;
-            envStrs.reserve(merged.size());
-            for (const auto& [k, v] : merged) {
-                envStrs.push_back(k + "=" + v);
-            }
-            for (auto& s : envStrs) envp.push_back(s.data());
-            envp.push_back(nullptr);
-            execvpe(cmd.program.c_str(), argv.data(), envp.data());
+        bool permissionDenied = false;
+        for (const auto& path : execPaths) {
+            execve(path.c_str(), argv.data(), envp.data());
+            if (errno == EACCES) permissionDenied = true;
         }
-        _exit(127);
+        _exit(permissionDenied ? 126 : 127);
     }
 
-    // parent
     close(outPipe[1]);
+    outPipe[1] = -1;
     close(errPipe[1]);
+    errPipe[1] = -1;
+    spawnLock.unlock();
 
     std::string outBuf, errBuf;
     std::thread tOut([&]() {
         char buf[4096];
-        ssize_t n;
-        while ((n = read(outPipe[0], buf, sizeof(buf))) > 0) outBuf.append(buf, n);
+        while (true) {
+            ssize_t n = read(outPipe[0], buf, sizeof(buf));
+            if (n > 0) outBuf.append(buf, static_cast<std::size_t>(n));
+            else if (n < 0 && errno == EINTR) continue;
+            else break;
+        }
     });
     std::thread tErr([&]() {
         char buf[4096];
-        ssize_t n;
-        while ((n = read(errPipe[0], buf, sizeof(buf))) > 0) errBuf.append(buf, n);
+        while (true) {
+            ssize_t n = read(errPipe[0], buf, sizeof(buf));
+            if (n > 0) errBuf.append(buf, static_cast<std::size_t>(n));
+            else if (n < 0 && errno == EINTR) continue;
+            else break;
+        }
     });
 
     int status = 0;
-    waitpid(pid, &status, 0);
+    pid_t waited;
+    do {
+        waited = waitpid(pid, &status, 0);
+    } while (waited == -1 && errno == EINTR);
+    int waitErrno = waited == -1 ? errno : 0;
     tOut.join();
     tErr.join();
 
     close(outPipe[0]);
     close(errPipe[0]);
 
-    if (WIFEXITED(status)) res.exitCode = WEXITSTATUS(status);
+    if (waited == -1) {
+        res.exitCode = -1;
+        errBuf += std::string("waitpid() failed: ") + std::strerror(waitErrno);
+    } else if (WIFEXITED(status)) res.exitCode = WEXITSTATUS(status);
     else res.exitCode = -1;
 
     if (cmd.captureOutput) {

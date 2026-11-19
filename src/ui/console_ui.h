@@ -7,7 +7,8 @@ namespace pmake::ui {
 
 class ConsoleUI {
 public:
-    explicit ConsoleUI(bool quiet = false, bool color = false, bool verbose = false);
+    explicit ConsoleUI(bool quiet = false, bool color = false, bool verbose = false,
+                       bool dryRun = false);
 
     void onTaskStarted(std::string_view displayName, int total);
     void onTaskVerbose(std::string_view command, std::string_view workdir);
@@ -23,6 +24,7 @@ private:
     bool quiet_      = false;
     bool color_      = false;
     bool verbose_    = false;
+    bool dryRun_     = false;
     std::mutex outputMutex_;
 };
 

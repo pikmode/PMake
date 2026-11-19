@@ -49,11 +49,13 @@ public:
     void setCancelFlag(const std::atomic<bool>* flag) { cancelFlag_ = flag; }
 
     bool run(std::string_view target = {});
+    bool run(const std::vector<std::string>& targets);
 
     void updateFileStates();
     void initializeFileStates();
 
     bool wasNoop() const { return totalTasks_ == 0; }
+    bool wasRestatNoop() const { return totalTasks_ > 0 && restatNoop_; }
 
 private:
     enum class TaskState { Want, Ready, Running, Done, Failed };
@@ -113,7 +115,8 @@ private:
     int completedTasks_ = 0;
     bool aborted_ = false;
     bool interrupted_ = false;   // NEW: true → "Build interrupted" вместо "Build failed"
-    bool finished_ = false;
+    bool restatNoop_ = false;
+    std::atomic<bool> finished_{false};
     bool success_ = false;
     bool graphBuildFailed_ = false;
 
@@ -127,7 +130,7 @@ private:
     TaskStartedFn    taskStarted_;
     TaskFinishedFn   taskFinished_;
 
-    void runInternal(const std::string& target);
+    void runInternal(const std::vector<std::string>& targets);
     void buildPlan(const std::vector<Node*>& dirtyNodes);
     void pumpReady();
     void startTask(SchedTask* t);

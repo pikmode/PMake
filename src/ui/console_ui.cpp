@@ -7,8 +7,8 @@
 
 namespace pmake::ui {
 
-ConsoleUI::ConsoleUI(bool quiet, bool color, bool verbose)
-    : quiet_(quiet), color_(color), verbose_(verbose) {}
+ConsoleUI::ConsoleUI(bool quiet, bool color, bool verbose, bool dryRun)
+    : quiet_(quiet), color_(color), verbose_(verbose), dryRun_(dryRun) {}
 
 void ConsoleUI::onTaskStarted(std::string_view displayName, int total) {
     ++taskIndex_;
@@ -64,6 +64,7 @@ void ConsoleUI::onTaskFinished(std::string_view name, bool success,
 
 void ConsoleUI::onBuildFinished(bool success, double durationSeconds, bool interrupted) {
     if (quiet_) return;
+    if (success && dryRun_ && taskIndex_ > 0) return;
 
     std::lock_guard<std::mutex> lk(outputMutex_);
 

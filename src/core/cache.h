@@ -20,11 +20,13 @@ public:
     bool save(std::string_view path) const;
     bool load(std::string_view path);
 
-    bool isValid(std::string_view mainFile = {}) const;
+    bool isValid(std::string_view mainFile,
+                 const std::vector<std::string>& includedFiles) const;
 
     void store(const State& state, std::string_view mainFile = {},
                std::string_view config = {},
                std::string_view platform = {});
+    void updateResults(const State& state);
 
     std::unique_ptr<State> restore() const;
 
@@ -36,7 +38,7 @@ public:
 
 private:
     struct Data {
-        std::uint32_t version = 9;   // CHANGED: 8 → 9 (DepsEntry inputIds)
+        std::uint32_t version = 10;
         std::string config;
         std::string platform;
         std::unordered_map<std::string, std::string> globalVars;
@@ -46,6 +48,7 @@ private:
         std::unordered_map<std::string, Pool> pools;
         std::vector<std::string> defaultTargets;
         std::vector<std::string> includedFilesList;
+        std::unordered_map<std::string, std::string> manifestHashes;
         std::unordered_map<std::string, FileState> fileStates;
         std::unordered_map<std::string, std::string> commandHashes;
     };

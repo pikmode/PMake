@@ -25,7 +25,8 @@ alias all : "out.txt"
 ''',
     }, runs=[
         {"name": "dry", "args": ["-f", "build.pmake", "-n"],
-         "expect": {"exit": 0, "taskCount": 1, "filesNot": ["out.txt"]}},
+         "expect": {"exit": 0, "taskCount": 1, "filesNot": ["out.txt"],
+                    "stdoutNot": ["Build succeeded"]}},
     ], description="-n не создаёт файлы"),
 
     test("clean", {
@@ -37,9 +38,60 @@ alias all : "out.txt"
 ''',
     }, runs=[
         {"name": "build_first", "expect": {"exit": 0, "taskCount": 1, "files": ["out.txt"]}},
-        {"name": "clean_cmd", "args": ["clean", "-f", "build.pmake"],
+        {"name": "clean_positional_looks_up_manifest_target", "args": ["clean"],
+         "expect": {"exit": 1, "stderrMatches": ["(?i)target.*clean.*not found"],
+                    "files": ["out.txt"]}},
+        {"name": "old_clean_flag_is_removed", "args": ["--clean"],
+         "expect": {"exit": 1, "files": ["out.txt"]}},
+        {"name": "clean_short", "args": ["-t", "clean", "-f", "build.pmake"],
          "expect": {"exit": 0, "filesNot": ["out.txt"]}},
-    ], description="pmake clean удаляет outputs"),
+        {"name": "build_again", "expect": {"exit": 0, "taskCount": 1, "files": ["out.txt"]}},
+        {"name": "clean_long", "args": ["--tools", "clean", "-f", "build.pmake"],
+         "expect": {"exit": 0, "filesNot": ["out.txt"]}},
+    ], description="utility clean removes outputs"),
+
+    test("multiple_positional_targets", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+rule echo { command = "${python} echo_to.py ${out} built" }
+build "build" : echo
+build "clean" : echo
+build "help" : echo
+''',
+    }, runs=[
+        {"name": "build_reserved_names_as_targets", "args": ["build", "clean", "help"],
+         "expect": {"exit": 0, "taskCount": 3,
+                    "files": ["build", "clean", "help"]}},
+    ], description="all positional arguments are manifest targets"),
+
+    test("tools_targets", {
+        "build.pmake": '''pmake_required_version = 1.0
+rule echo { command = "echo ${out}" }
+build "dep.txt" : echo
+build "app.txt" : echo "dep.txt"
+alias all : "app.txt"
+''',
+    }, runs=[
+        {"name": "list_targets", "args": ["-t", "targets"],
+         "expect": {"exit": 0, "stdoutHas": ["dep.txt", "app.txt", "all"]}},
+    ], description="targets tool lists build outputs and aliases"),
+
+    test("tools_commands_target", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+rule echo { command = "${python} echo_to.py ${out} ${value}" }
+build "dep.txt" : echo { value = "dependency" }
+build "app.txt" : echo "dep.txt" { value = "app" }
+alias all : "app.txt"
+''',
+    }, runs=[
+        {"name": "list_commands", "args": ["--tools", "commands", "app.txt"],
+         "expect": {
+             "exit": 0,
+             "stdoutHas": ["echo_to.py dep.txt dependency", "echo_to.py app.txt app"],
+             "filesNot": ["dep.txt", "app.txt"],
+         }},
+    ], description="commands tool expands target dependency commands without running them"),
 
     test("cache_delete", {
         "build.pmake": '''pmake_required_version = 1.0
@@ -210,7 +262,7 @@ alias all : "out.txt"
     ], description="нет build.pmake"),
 
     # ============================================================
-    # NEW: регрессия на CLI `pmake <target>` (make/ninja-style).
+    # Регрессия: все позиционные аргументы являются именами целей.
     #
     # До фикса `main.cpp::parse_args` первый positional-аргумент
     # ВСЕГДА считался командой, а команда только одна — `build`.
@@ -218,10 +270,7 @@ alias all : "out.txt"
     # с "unknown command '...'". `real_sanity_unknown_target` проходил
     # случайно (exit 1 и от этого тоже).
     #
-    # Теперь три формы должны работать одинаково:
-    #   1. pmake <target>            (positional, как make/ninja)
-    #   2. pmake build <target>      (явная подкоманда)
-    #   3. pmake <alias>             (alias-таргет)
+    # Ни один текстовый аргумент не интерпретируется как команда.
     # ============================================================
     test("cli_target_positional", {
         "build.pmake": '''pmake_required_version = 1.0
@@ -235,9 +284,6 @@ alias all : "out.txt"
          "args": ["-f", "build.pmake", "out.txt"],
          "expect": {"exit": 0, "files": ["out.txt"],
                     "filesWith": {"out.txt": "x"}}},
-        {"name": "build_subcmd_target",
-         "args": ["-f", "build.pmake", "build", "out.txt"],
-         "expect": {"exit": 0, "files": ["out.txt"]}},
         {"name": "alias_target",
          "args": ["-f", "build.pmake", "all"],
          "expect": {"exit": 0, "files": ["out.txt"]}},

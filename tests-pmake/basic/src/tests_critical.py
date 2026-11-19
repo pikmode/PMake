@@ -4,10 +4,10 @@ Critical regression-тесты для v1.3.0.
 
 Два data-destroying бага, найденных в реальной работе:
 
-1. `pmake clean` удалял source-файлы и CMake-инсталляцию.
+1. `pmake -t clean` удалял source-файлы и CMake-инсталляцию.
    CMake генерирует phony-edge ("missing input files is not an error"),
    где все входные файлы стоят в позиции OUTPUTS. Без пропуска phony
-   `pmake clean` удалял CMakeLists.txt, CMakeCache.txt и 200+ .cmake
+   `pmake -t clean` удалял CMakeLists.txt, CMakeCache.txt и 200+ .cmake
    модулей установки CMake.
 
 2. Windows drive letter `E$:` в ninja-парсере.
@@ -43,7 +43,7 @@ default out.o
         {"name": "build_first", "args": ["-f", "build.ninja"],
          "expect": {"exit": 0, "files": ["out.o"]}},
         {"name": "clean_keeps_sources",
-         "args": ["-f", "build.ninja", "clean"],
+         "args": ["-f", "build.ninja", "-t", "clean"],
          "expect": {
              "exit": 0,
              # source-файлы должны выжить после clean
@@ -51,7 +51,7 @@ default out.o
              # out.o удалён (это настоящий output cc-rule)
              "filesNot": ["out.o"],
          }},
-    ], description="CRITICAL: pmake clean не удаляет inputs из phony",
+    ], description="CRITICAL: -t clean не удаляет inputs из phony",
        timeout=60),
 
     # ============================================================

@@ -20,7 +20,7 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 - **Cross-platform.** Windows, Linux, macOS.
 - **No dependencies.** Single static binary. No Python, no Qt, no runtime.
 - **Scales to monorepos.** Thread pool + depfile prefetch + StringPool DepsLog — designed for 100K+ edges.
-- **Safe `clean`.** `pmake clean` never touches source files (`.cpp`, `.cmake`, `CMakeLists.txt`).
+- **Safe `clean`.** `pmake -t clean` never touches source files (`.cpp`, `.cmake`, `CMakeLists.txt`).
 
 ---
 
@@ -28,19 +28,18 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 
 ### Build from source
 
-**Recommended: CMake + Ninja.**
+**Recommended: CMake + Ninja** (CMake 3.25+ and a C++23 compiler).
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-# → build/pmake (Linux/macOS), build/PMake.exe (Windows)
+# → build/pmake (Linux/macOS), build/pmake.exe (Windows)
 ```
 
-**Or self-host with PMake** (requires a v1.2.0+ binary):
+To rebuild PMake with PMake, use the generated Ninja manifest:
 
 ```bash
-pmake -f build.pmake
-# → PMake.exe (Windows) / pmake (Linux/macOS)
+pmake -f build/build.ninja
 ```
 
 ### Hello world
@@ -104,7 +103,7 @@ Run:
 pmake           # build
 pmake -j 8      # parallel
 pmake -n        # dry-run
-pmake clean     # clean outputs
+pmake -t clean  # clean outputs
 ```
 
 ---
@@ -136,8 +135,9 @@ pmake -f build/build.ninja        # instead of: ninja -C build
   Windows drive letters (`E$:/path` — the CMake escaping)
 - Not yet: implicit outputs (`|` before `:`), `dyndep`
 
-**Note:** `compile_commands.json` for clangd/IDE is planned for v1.3.1.
-Until then, use Ninja for IDE tooling and PMake for builds.
+PMake does not currently export `compile_commands.json`. For CMake projects,
+generate it with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; use PMake to run the
+generated build graph.
 
 ---
 
@@ -166,13 +166,14 @@ Full syntax: [`docs/SYNTAX.md`](docs/SYNTAX.md).
 ## Command-line
 
 ```
-pmake [options] [command] [target]
+pmake [options] [targets...]
+pmake -t TOOL [target]
 
 Options:
   -V, --version           show version
   -f, --file <file>       build file (default: build.pmake, then build.ninja)
   -j, --jobs <N>          parallel jobs
-  --clean                 remove outputs
+  -t, --tools <tool>      run a tool (clean, targets, commands)
   --config <name>         build configuration (debug/release)
   --platform <name>       target platform
   -v, --verbose           verbose output (per-task description/command/workdir)
@@ -181,6 +182,9 @@ Options:
   --no-color              disable colors
   -h, --help              help
 ```
+
+Every positional argument is a target from the build manifest; multiple targets can be requested.
+Use `pmake <target>` for manifest targets and `pmake -t clean` for the utility.
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
@@ -192,18 +196,17 @@ Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 # Build (recommended)
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-# → build/pmake (Linux/macOS), build/PMake.exe (Windows)
+# → build/pmake (Linux/macOS), build/pmake.exe (Windows)
 
-# Run the test suite (Windows)
-cd tests-pmake-1.1/windows
-python run.py --pmake ../../build/PMake.exe
-
-# Run the test suite (Linux/macOS)
-cd tests-pmake-1.1/linux
+# Run the test suite
+cd tests-pmake/basic
+# Windows
+python run.py --pmake ../../build/pmake.exe
+# Linux/macOS
 python run.py --pmake ../../build/pmake
 ```
 
-Expected: **134 / 134 passed, 0 regressions**.
+The current suite contains **149 tests**. CI builds and tests on Windows and Linux.
 
 ---
 
@@ -221,16 +224,15 @@ Expected: **134 / 134 passed, 0 regressions**.
 
 ## Project status
 
-- **Version:** 1.3.0 "Performance & Scale"
-- **Tests:** 134 / 134 passing (Windows + MinGW; Linux/macOS in CI)
-- **Maturity:** stable; designed for 100K+ edges
-- **Roadmap:**
-  - **v1.3.1** — `compile_commands.json` exporter (clangd/VS Code/CLion),
-    `Cache::store` no-copy, abort-cleanup for partial `.obj`, data-race
-    fixes for ARM64
-  - **v1.4.0** — `add_repository(url)` (FetchContent-like), module namespaces
+- **Version:** 1.3.1
+- **Release prep:** 2026-11-19; tag and publication are pending.
+- **Validation:** 149 / 149 tests passing on Windows; CI also covers Linux.
+- **Scope:** stable build engine with documented Ninja compatibility limits.
+- **Next:** v1.4.0 planning — repository fetching, module namespaces, and a
+  `compile_commands.json` exporter.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for what's new in v1.3.0 and known issues.
+See [`CHANGELOG.md`](CHANGELOG.md) for the v1.3.1 changes and
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for planned work.
 
 ---
 

@@ -31,7 +31,7 @@ build.pmake / build.ninja
 
 | Path | Role |
 |---|---|
-| `src/main.cpp` | CLI parsing, orchestration, `clean` command |
+| `src/main.cpp` | CLI parsing, orchestration, utility tools |
 | `src/parser/parser_*` | PMake DSL parser (lexer → AST → eval → State) |
 | `src/parser/ninja-parser/*` | Ninja parser (direct to State, no AST) |
 | `src/core/state.*` | Project state: rules, builds, vars, functions |

@@ -6,6 +6,7 @@
 #include "util/string_utils.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <iostream>
 #include <print>
@@ -16,6 +17,33 @@
 #include <vector>
 
 namespace pmake::core {
+
+namespace {
+
+std::string getWorkingDirectory(const Build* build, const State* state) {
+    if (build && build->scope) {
+        auto wd = build->scope->get("workdir");
+        if (wd.has_value() && !wd->empty()) {
+            return std::filesystem::path(*wd).lexically_normal().string();
+        }
+    }
+    if (state) {
+        auto wd = state->getGlobal("workdir");
+        if (wd.has_value() && !wd->empty()) {
+            return std::filesystem::path(*wd).lexically_normal().string();
+        }
+    }
+    std::error_code ec;
+    return std::filesystem::current_path(ec).string();
+}
+
+void appendFingerprintField(std::string& fingerprint, std::string_view value) {
+    fingerprint += std::to_string(value.size());
+    fingerprint.push_back(':');
+    fingerprint.append(value);
+}
+
+} // namespace
 
 Node::Node(std::string_view name, const Build* build, const Rule* rule,
            const State* state, Graph* graph, bool dryRun)
@@ -62,11 +90,39 @@ std::int64_t Node::getFileMtime(std::string_view path) {
 std::string Node::computeCommandHash() const {
     if (!rule_ || !build_) return {};
     auto specialVars = getSpecialVars();
+
+    std::string rspFilePath;
+    std::string rspFileContent;
+    if (!rule_->rspfile.empty()) {
+        rspFilePath = state_
+            ? state_->expandVarsWithSpecial(rule_->rspfile, build_->scope.get(), specialVars)
+            : rule_->rspfile;
+        rspFileContent = state_
+            ? state_->expandVarsWithSpecial(rule_->rspfile_content, build_->scope.get(), specialVars)
+            : rule_->rspfile_content;
+        specialVars["rspfile"] = rspFilePath;
+    }
+
     std::string cmd = rule_->command;
     if (state_) {
         cmd = state_->expandVarsWithSpecial(cmd, build_->scope.get(), specialVars);
     }
-    return util::sha1_hex(cmd);
+
+    std::string depfile = rule_->depfile;
+    if (state_ && !depfile.empty()) {
+        depfile = state_->expandVarsWithSpecial(depfile, build_->scope.get(), specialVars);
+    }
+
+    std::string fingerprint;
+    appendFingerprintField(fingerprint, cmd);
+    appendFingerprintField(fingerprint, rspFilePath);
+    appendFingerprintField(fingerprint, rspFileContent);
+    appendFingerprintField(fingerprint, getWorkingDirectory(build_, state_));
+    appendFingerprintField(fingerprint, depfile);
+    appendFingerprintField(fingerprint, rule_->deps);
+    appendFingerprintField(fingerprint, rule_->generator ? "1" : "0");
+    appendFingerprintField(fingerprint, rule_->restat ? "1" : "0");
+    return util::sha1_hex(fingerprint);
 }
 
 bool Node::isDirty() {

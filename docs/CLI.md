@@ -1,18 +1,22 @@
 # CLI Reference
 
 ```
-pmake [options] [command] [target]
+pmake [options] [targets...]
+pmake -t TOOL [target]
 ```
 
-## Commands
+## Tools
 
-| Command | Action |
+| Tool | Action |
 |---|---|
-| `build [target]` | Build target (default if omitted) |
-| `clean` | Remove output files (NOT source files) |
+| `clean` | Remove build outputs without deleting protected source files |
+| `targets` | List declared build targets |
+| `commands [target]` | Print commands for all builds or a target and its dependencies |
+| `list` | List available tools |
 
-Unknown first positional argument is treated as **target**, not command —
-`pmake all` works like `pmake build all`.
+Every positional argument is a manifest target. Target names such as `build`,
+`clean`, and `help` are not reserved; for example, `pmake build clean` builds
+both `build` and `clean`. Built-in utilities are selected only with `-t`.
 
 ## Options
 
@@ -20,11 +24,11 @@ Unknown first positional argument is treated as **target**, not command —
 |---|---|
 | `-f FILE`, `--file FILE` | Build file. Default: `build.pmake`, then `build.ninja` |
 | `-j N`, `--jobs N` | Parallel jobs. Default: `nproc` |
+| `-t TOOL`, `--tools TOOL` | Run a utility tool |
 | `--config NAME` | Configuration (e.g. `debug`, `release`). Default: `release` |
 | `--platform NAME` | Target platform. Default: detected (`windows`/`linux`/`darwin`) |
-| `--clean` | Same as `clean` command |
 | `-n`, `--dry-run` | Show what would be done, don't execute |
-| `-v`, `--verbose` | Verbose output: command, workdir, `clean` details |
+| `-v`, `--verbose` | Verbose output: command, workdir, tool details |
 | `-q`, `--quiet` | Minimal output (errors only) |
 | `--no-color` | Disable ANSI colors (respects `NO_COLOR` env) |
 | `-V`, `--version` | Show version |
@@ -46,7 +50,7 @@ pmake
 
 # Build specific target
 pmake app
-pmake build app
+pmake clean help
 
 # Debug configuration
 pmake --config debug
@@ -63,8 +67,12 @@ pmake -n
 # Verify everything is up-to-date
 pmake -n && echo "up-to-date"
 
+# List targets and inspect the commands for a target
+pmake -t targets
+pmake -t commands app
+
 # Clean outputs (source files are safe)
-pmake clean
+pmake -t clean
 
 # Build CMake project with PMake
 pmake -f build/build.ninja -j 8

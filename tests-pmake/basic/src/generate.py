@@ -25,6 +25,7 @@ from .tests_rspfile import TESTS as T_RSPFILE
 from .tests_generator import TESTS as T_GEN
 from .tests_cmake import TESTS as T_CMAKE
 from .tests_misc import TESTS as T_MISC
+from .tests_regressions import TESTS as T_REGRESSIONS
 from .tests_hard import TESTS as T_HARD
 from .tests_platform import TESTS as T_PLATFORM
 from .tests_config import TESTS as T_CONFIG
@@ -38,7 +39,7 @@ ALL_TESTS = (
     T_BASIC + T_INCR + T_RESTAT + T_ORDER + T_PHONY + T_DEPFILE
     + T_HASH + T_INCLUDE + T_ERRORS + T_PARALLEL + T_PATHS
     + T_MODULES + T_BUILTINS + T_POOL + T_RSPFILE + T_GEN
-    + T_CMAKE + T_MISC + T_HARD + T_PLATFORM + T_CONFIG + T_V110
+    + T_CMAKE + T_MISC + T_REGRESSIONS + T_HARD + T_PLATFORM + T_CONFIG + T_V110
     + T_V111
     + T_STRESS       # NEW v1.3.0: 15 stress-тестов
     + T_CRITICAL     # NEW v1.3.0: 2 critical regression

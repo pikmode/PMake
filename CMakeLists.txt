@@ -1,7 +1,6 @@
 
-
 cmake_minimum_required(VERSION 3.25)
-project(pmake LANGUAGES CXX)
+project(pmake VERSION 1.3.1 LANGUAGES CXX)
 
 # ============================================================
 # C++23

@@ -1,5 +1,7 @@
 #include "core/cache.h"
 #include "deps/deps_log.h"
+#include "util/filesystem.h"
+#include "util/hash.h"
 #include "util/logging.h"
 
 #include <cstring>
@@ -11,7 +13,9 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -19,16 +23,12 @@ namespace pmake::core {
 
 namespace {
 constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
-// CHANGED: 8 → 9. DepsEntry.inputs (vector<string>) стал inputIds
-// (vector<uint32_t>) + StringPool. Формат кеша изменён.
-// Старые .pmake-кеши будут отвергнуты по version mismatch
-// (graceful: LOG_WARN + return false → пересборка).
-constexpr std::uint32_t kVersion = 9u;
+constexpr std::uint32_t kVersion = 10u;
 } // namespace
 
 Cache::Cache() = default;
 
-void Cache::store(const State& state, std::string_view /*mainFile*/,
+void Cache::store(const State& state, std::string_view mainFile,
                   std::string_view config, std::string_view platform) {
     data_.version = kVersion;
     data_.config = std::string(config);
@@ -43,6 +43,19 @@ void Cache::store(const State& state, std::string_view /*mainFile*/,
     data_.pools = state.pools();
     data_.defaultTargets = state.defaultTargets();
     data_.includedFilesList = state.includedFiles();
+    data_.manifestHashes.clear();
+    auto addManifestHash = [&](std::string_view path) {
+        std::string contents;
+        if (!util::readFile(path, contents)) {
+            LOG_WARN(std::format("cache: cannot read build manifest '{}' for fingerprinting",
+                                 path));
+            data_.manifestHashes[std::string(path)] = {};
+            return;
+        }
+        data_.manifestHashes[std::string(path)] = util::sha1_hex(contents);
+    };
+    if (!mainFile.empty()) addManifestHash(mainFile);
+    for (const auto& path : state.includedFiles()) addManifestHash(path);
 
     data_.buildLocalVars.clear();
     data_.buildLocalVars.reserve(state.builds().size());
@@ -52,6 +65,11 @@ void Cache::store(const State& state, std::string_view /*mainFile*/,
         data_.buildLocalVars.push_back(std::move(locals));
     }
 
+    data_.fileStates = state.fileStates();
+    data_.commandHashes = state.commandHashes();
+}
+
+void Cache::updateResults(const State& state) {
     data_.fileStates = state.fileStates();
     data_.commandHashes = state.commandHashes();
 }
@@ -75,10 +93,14 @@ bool Cache::save(std::string_view path) const {
 }
 
 bool Cache::load(std::string_view path) {
+    loaded_ = false;
     std::ifstream f(std::filesystem::path(std::string(path)), std::ios::binary);
-    if (!f) return false;
+    if (!f) {
+        deps::DepsLog::instance().clear();
+        return false;
+    }
     if (!read(f)) {
-        loaded_ = false;
+        deps::DepsLog::instance().clear();
         return false;
     }
     loaded_ = true;
@@ -137,6 +159,12 @@ bool Cache::write(std::ostream& out) const {
 
     write_strs(out, data_.defaultTargets);
     write_strs(out, data_.includedFilesList);
+
+    write_u32(out, static_cast<std::uint32_t>(data_.manifestHashes.size()));
+    for (const auto& [path, hash] : data_.manifestHashes) {
+        write_str(out, path);
+        write_str(out, hash);
+    }
 
     write_u32(out, static_cast<std::uint32_t>(data_.fileStates.size()));
     for (const auto& [path, fs] : data_.fileStates) {
@@ -254,6 +282,14 @@ bool Cache::read(std::istream& in) {
     if (!read_strs(in, data_.includedFilesList)) return false;
 
     if (!read_u32(in, count)) return false;
+    data_.manifestHashes.clear();
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::string path, hash;
+        if (!read_str(in, path) || !read_str(in, hash)) return false;
+        data_.manifestHashes[path] = std::move(hash);
+    }
+
+    if (!read_u32(in, count)) return false;
     data_.fileStates.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
         std::string path;
@@ -278,13 +314,10 @@ bool Cache::read(std::istream& in) {
         data_.commandHashes[output] = hash;
     }
 
-    // CHANGED (RAM fix): restore через DepsLog::restore() — интернирует
-    // строки через StringPool, сохраняет entry.mtime из файла (не
-    // перезаписывает statFileFast'ом, как record() сделал бы).
     std::uint32_t depsCount = 0;
     if (!read_u32(in, depsCount)) return false;
-    auto& depsLog = deps::DepsLog::instance();
-    depsLog.clear();
+    std::vector<std::tuple<std::string, std::vector<std::string>, std::int64_t>> depsEntries;
+    depsEntries.reserve(depsCount);
     for (std::uint32_t i = 0; i < depsCount; ++i) {
         std::string output;
         if (!read_str(in, output)) return false;
@@ -303,14 +336,36 @@ bool Cache::read(std::istream& in) {
         std::int64_t mtime = 0;
         if (!read_i64(in, mtime)) return false;
 
-        depsLog.restore(output, inputs, mtime);
+        depsEntries.emplace_back(std::move(output), std::move(inputs), mtime);
     }
 
-    return in.good();
+    if (!in.good()) return false;
+    auto& depsLog = deps::DepsLog::instance();
+    depsLog.clear();
+    for (const auto& [output, inputs, mtime] : depsEntries) {
+        depsLog.restore(output, inputs, mtime);
+    }
+    return true;
 }
 
-bool Cache::isValid(std::string_view /*mainFile*/) const {
-    return loaded_;
+bool Cache::isValid(std::string_view mainFile,
+                    const std::vector<std::string>& includedFiles) const {
+    if (!loaded_ || includedFiles != data_.includedFilesList) return false;
+
+    std::unordered_set<std::string> paths;
+    if (!mainFile.empty()) paths.emplace(mainFile);
+    paths.insert(includedFiles.begin(), includedFiles.end());
+    if (paths.size() != data_.manifestHashes.size()) return false;
+
+    for (const auto& path : paths) {
+        auto saved = data_.manifestHashes.find(path);
+        if (saved == data_.manifestHashes.end() || saved->second.empty()) return false;
+        std::string contents;
+        if (!util::readFile(path, contents) || util::sha1_hex(contents) != saved->second) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::unique_ptr<State> Cache::restore() const {

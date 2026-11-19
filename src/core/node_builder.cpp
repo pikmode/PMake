@@ -7,6 +7,7 @@
 #include "util/string_utils.h"
 
 #include <filesystem>
+#include <cstdio>
 #include <format>
 #include <iostream>
 #include <mutex>
@@ -123,17 +124,57 @@ int Node::build() {
             rule_->rspfile_content, build_->scope.get(), specialVars);
         if (!util::writeFile(rspFilePath, rspContent)) {
             std::println(std::cerr, "Failed to write response file: {}", rspFilePath);
+            std::error_code ec;
+            std::filesystem::remove(rspFilePath, ec);
+            if (ec) {
+                std::println(std::cerr, "Failed to remove response file '{}': {}",
+                             rspFilePath, ec.message());
+            }
             return 1;
         }
         specialVars["rspfile"] = rspFilePath;
         command = state_->expandVarsWithSpecial(rule_->command, build_->scope.get(), specialVars);
     }
+    auto removeResponseFile = [&] {
+        if (rspFilePath.empty()) return;
+        std::error_code ec;
+        std::filesystem::remove(rspFilePath, ec);
+        util::FileCache::instance().invalidate(rspFilePath);
+        if (ec) {
+            std::println(std::cerr, "Failed to remove response file '{}': {}",
+                         rspFilePath, ec.message());
+        }
+    };
+    auto cleanupFailedBuild = [&] {
+        for (const auto& out : build_->outputs) {
+            std::error_code ec;
+            std::filesystem::remove(out, ec);
+            util::FileCache::instance().invalidate(out);
+            if (ec) {
+                std::println(std::cerr, "Failed to remove partial output '{}': {}",
+                             out, ec.message());
+            }
+        }
+        removeResponseFile();
+        if (!rule_->depfile.empty()) {
+            std::string depfilePath = state_->expandVarsWithSpecial(
+                rule_->depfile, build_->scope.get(), specialVars);
+            std::error_code ec;
+            std::filesystem::remove(depfilePath, ec);
+            util::FileCache::instance().invalidate(depfilePath);
+            if (ec) {
+                std::println(std::cerr, "Failed to remove depfile '{}': {}",
+                             depfilePath, ec.message());
+            }
+        }
+    };
 
     auto beforeMtimes = getOutputMtimesBefore();
 
     auto args = split_command(command);
     if (args.empty()) {
         std::println(std::cerr, "Failed to split command for '{}'", name_);
+        removeResponseFile();
         return 1;
     }
     std::string program = args.front();
@@ -147,6 +188,17 @@ int Node::build() {
     cmd.captureOutput = true;
 
     executor::Result res = executor::Runner::runSync(cmd);
+    if (rule_->isNinjaTool()) {
+        if (!res.stdoutOutput.empty()) {
+            std::print(stdout, "{}", res.stdoutOutput);
+            std::fflush(stdout);
+        }
+        if (res.exitCode == 0 && !res.stderrOutput.empty()) {
+            std::print(stderr, "{}", res.stderrOutput);
+            std::fflush(stderr);
+        }
+    }
+
     if (res.exitCode != 0) {
         // CHANGED: печатаем только raw stderr дочернего процесса — без
         // "Build failed for 'X'". Форматирование [ERROR] делает ConsoleUI
@@ -159,18 +211,19 @@ int Node::build() {
             }
             if (!err.empty()) std::println(std::cerr, "{}", err);
         }
-        return res.exitCode;
+        cleanupFailedBuild();
+        return res.exitCode == 2 ? 1 : res.exitCode;
     }
 
-    if (!rspFilePath.empty() && util::fileExists(rspFilePath)) {
-        std::error_code ec;
-        std::filesystem::remove(rspFilePath, ec);
-    }
+    removeResponseFile();
 
-    for (const auto& out : build_->outputs) {
-        if (!util::fileExists(out)) {
-            std::println(std::cerr, "Output file not created: {}", out);
-            return 1;
+    if (!rule_->isNinjaTool()) {
+        for (const auto& out : build_->outputs) {
+            if (!util::fileExists(out)) {
+                std::println(std::cerr, "Output file not created: {}", out);
+                cleanupFailedBuild();
+                return 1;
+            }
         }
     }
 
@@ -179,7 +232,9 @@ int Node::build() {
     if (state_) {
         const std::string hash = computeCommandHash();
         if (!hash.empty()) {
-            state_->setCommandHash(name_, hash);
+            for (const auto& out : build_->outputs) {
+                state_->setCommandHash(out, hash);
+            }
         }
     }
 

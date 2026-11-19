@@ -54,7 +54,11 @@ pmake
   all `.d` files.
 - **Manifest regen**: both auto-regenerate on `CMakeLists.txt` change.
   PMake also restarts itself after regen (like ninja).
-- **`clean`**: PMake's `clean` doesn't run `ninja -t clean`. It removes
+- **`-t clean`**: PMake's clean tool doesn't run `ninja -t clean`. It removes
   outputs from the parsed state — same result, but skips rspfiles that
   were deleted by the build itself.
-- **`compile_commands.json`**: not yet. Planned for v1.3.1.
+- CMake's `clean` and `help` targets invoke Ninja's `CLEAN` / `HELP` rules.
+  PMake runs these command-only rules without requiring a file named after
+  the target and forwards their output.
+- **`compile_commands.json`**: PMake does not export it yet. CMake can generate
+  it separately with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.

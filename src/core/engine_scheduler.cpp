@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <format>
-#include <functional>
 #include <iostream>
 #include <mutex>
 #include <print>
@@ -84,24 +83,27 @@ void Engine::buildPlan(const std::vector<Node*>& dirtyNodesIn) {
         std::unordered_set<SchedTask*> taskDeps;
         auto scan = [&](Node* node) {
             std::unordered_set<Node*> visiting;
-            std::function<void(Node*)> visit = [&](Node* dep) {
-                if (!dep) return;
+            std::vector<Node*> stack;
+            auto pushDependencies = [&](Node* current) {
+                for (Node* dep : current->dependencies()) stack.push_back(dep);
+                for (Node* dep : current->implicitDeps()) stack.push_back(dep);
+                for (Node* dep : current->orderOnlyDeps()) stack.push_back(dep);
+            };
+            pushDependencies(node);
+            while (!stack.empty()) {
+                Node* dep = stack.back();
+                stack.pop_back();
+                if (!dep) continue;
                 auto tit = nodeToTask_.find(dep);
                 if (tit != nodeToTask_.end()) {
                     SchedTask* dt = tit->second;
                     if (dt && dt != t) taskDeps.insert(dt);
-                    return;
+                    continue;
                 }
-                if (dep->isPhony() && !visiting.contains(dep)) {
-                    visiting.insert(dep);
-                    for (Node* d : dep->dependencies())   visit(d);
-                    for (Node* d : dep->implicitDeps())   visit(d);
-                    for (Node* d : dep->orderOnlyDeps())  visit(d);
+                if (dep->isPhony() && visiting.insert(dep).second) {
+                    pushDependencies(dep);
                 }
-            };
-            for (Node* d : node->dependencies())   visit(d);
-            for (Node* d : node->implicitDeps())   visit(d);
-            for (Node* d : node->orderOnlyDeps())  visit(d);
+            }
         };
         for (Node* n : t->nodes) scan(n);
         t->pendingDeps = static_cast<int>(taskDeps.size());
@@ -246,6 +248,7 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
         bool ok = (exitCode == 0 || exitCode == 2);
         success = ok;
         wasReal = t->isReal;
+        if (wasReal && exitCode != 2) restatNoop_ = false;
 
         if (!ok) {
             t->state = TaskState::Failed;

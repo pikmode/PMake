@@ -2,6 +2,34 @@
 from ._common import test
 
 TESTS = [
+    test("ninja_clean_and_help_targets", {
+        "print_args.py": "import sys\nprint(' '.join(sys.argv[1:]))\n",
+        "build.ninja": '''rule CLEAN
+  command = @PYTHON@ print_args.py clean tool ran
+  description = Cleaning all built files...
+
+rule HELP
+  command = @PYTHON@ print_args.py help tool ran
+  description = All primary targets available:
+
+rule NORMAL
+  command = @PYTHON@ print_args.py normal rule ran
+
+build clean: CLEAN
+build help: HELP
+build normal: NORMAL
+''',
+    }, runs=[
+        {"name": "clean_target", "args": ["-f", "build.ninja", "clean"],
+         "expect": {"exit": 0, "stdoutHas": ["Cleaning all built files...", "clean tool ran"],
+                    "filesNot": ["clean"]}},
+        {"name": "help_target", "args": ["-f", "build.ninja", "help"],
+         "expect": {"exit": 0, "stdoutHas": ["All primary targets available:", "help tool ran"],
+                    "filesNot": ["help"]}},
+        {"name": "normal_rule_requires_output", "args": ["-f", "build.ninja", "normal"],
+         "expect": {"exit": 1, "stderrHas": ["Output file not created: normal"]}},
+    ], description="Ninja CLEAN and HELP targets run successfully without output files"),
+
     test("real_cmake_full_pattern", {
         "build.pmake": '''pmake_required_version = 1.0
 python = "@PYTHON@"
