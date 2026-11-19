@@ -15,9 +15,13 @@ rule link {
     description = "linking ${out}"
 }
 
-sources = glob("*.cpp", "src")
-objects = replace_suffix(sources, ".o")
+build "main.o" : cc "src/main.cpp"
 
-build ${objects} : cc ${sources}
-build "app" : link ${objects}
-alias all : "app"
+if os == "windows" {
+    app = "app.exe"
+} else {
+    app = "app"
+}
+
+build "${app}" : link "main.o"
+alias all : "${app}"

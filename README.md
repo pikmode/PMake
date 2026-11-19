@@ -15,7 +15,8 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
 - **Fast.** Rebuild speed on par with Ninja; minimal startup overhead.
 - **Expressive DSL.** `if` / `foreach` / `function` / `include` — without an external generator.
 - **Smart configurations.** Native `--config debug/release` and `--platform` support with automatic cache invalidation.
-- **Ninja-compatible.** Parses `.ninja` files directly (drop-in for CMake/Meson output).
+- **Ninja manifest support.** Reads compatible `build.ninja` files directly;
+  see the compatibility guide for supported features and limitations.
 - **Incremental by default.** Binary cache, depfile, restat, generator.
 - **Cross-platform.** Windows, Linux, macOS.
 - **Simple deployment.** A single executable; the release build is statically
@@ -112,10 +113,7 @@ rule link {
     description = "linking ${out}"
 }
 
-sources = glob("*.cpp", "src")
-objects = replace_suffix(sources, ".o")
-
-build ${objects} : cc ${sources}
+build "main.o" : cc "src/main.cpp"
 
 if os == "windows" {
     app = "app.exe"
@@ -123,7 +121,7 @@ if os == "windows" {
     app = "app"
 }
 
-build "${app}" : link ${objects}
+build "${app}" : link "main.o"
 alias all : "${app}"
 ```
 
@@ -161,10 +159,11 @@ cd build
 pmake                              # instead of: ninja
 ```
 
-- Supported: `rule`, `build`, `pool`, `subninja`, `default`, `depfile`,
-  `deps=gcc`, `rspfile`, `restat`, `generator`, `pool=console`,
-  Windows drive letters (`E$:/path` — the CMake escaping)
-- Not yet: implicit outputs (`|` before `:`), `dyndep`
+- Supported: `rule`, `build`, `default`, `subninja`, `depfile`, `deps=gcc`,
+  `rspfile`, `restat`, `generator`, `pool=console`, and Windows drive letters.
+- Limitations include implicit outputs, `dyndep`, custom named pools, and
+  MSVC dependency scanning. PMake also launches commands directly, without an
+  implicit shell.
 
 PMake does not currently export `compile_commands.json`. For CMake projects,
 generate it with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; use PMake to run the
@@ -187,7 +186,7 @@ generated build graph.
 | Alias               | `alias all : "app"` |
 | Include             | `include "rules.pmake"` |
 | If                  | `if os == "windows" { ... }` |
-| Foreach             | `foreach f in ${sources} { ... }` |
+| Foreach             | `foreach f in ["a.cpp", "b.cpp"] { ... }` |
 | Function            | `function add_flag(x) { flags += x }` |
 
 Full syntax: [`docs/SYNTAX.md`](docs/SYNTAX.md).

@@ -198,14 +198,19 @@ CMake-generated Ninja-файла запускайте PMake из build-дире�
     flags += "-Wall"
     // flags теперь содержит "-O2 -Wall"
 
-Поддерживаются строки, числа, логические значения и списки:
+Поддерживаются строки, числа, логические значения и списковые выражения:
 
     count = 4
     enabled = true
-    sources = ["main.cpp", "util.cpp"]
 
-Списки можно обрабатывать циклом и передавать встроенным функциям.
-В списках между элементами ставятся запятые.
+Список можно передать циклу напрямую:
+
+    foreach source in ["main.cpp", "util.cpp"] {
+        build "build/${source}.o" : compile "${source}"
+    }
+
+Элементы списка разделяются запятыми. Сохранение списка в переменную пока не
+поддерживается: такое присваивание даёт пустое значение.
 
 Строки заключаются в двойные кавычки. Поддерживаются escape-последовательности
 `\"`, `\\`, `\n` и `\r`. Неизвестные сочетания с обратной косой чертой
@@ -413,9 +418,9 @@ response-файл и depfile, чтобы частичный артефакт н�
 
 Цикл foreach перебирает список:
 
-    sources = ["main.cpp", "util.cpp"]
-    foreach source in ${sources} {
-        build "build/${basename(source)}.o" : compile "${source}"
+    foreach source in ["src/main.cpp", "src/util.cpp"] {
+        object = replace(source, ".cpp", ".o")
+        build "${object}" : compile "${source}"
     }
 
 `break` завершает текущий цикл, `continue` переходит к следующей итерации.
@@ -530,18 +535,17 @@ PMake может читать CMake-generated `build.ninja` напрямую:
     cd build
     pmake
 
-Также можно перейти в каталог build и запустить PMake без -f, если там есть
-build.ninja:
-
-    cd build
-    pmake
-
 Реализованы основные конструкции Ninja, используемые CMake: rule, build,
-default, pool, include/subninja, depfile, deps=gcc, rspfile, restat, generator,
-неявные и order-only входы, Windows drive letters. Известные ограничения:
+default, include/subninja, depfile с deps=gcc, rspfile, restat, generator,
+неявные и order-only входы, phony и pool=console (последовательное выполнение;
+консольный ввод/вывод Ninja не воспроизводится).
+Известные ограничения:
 
-  - Не поддерживаются implicit outputs (секция `|` перед `:`).
-  - Не поддерживается dyndep, в частности сценарии C++20 modules.
+  - Implicit outputs (секция `|` перед `:`) игнорируются; граф может оказаться неполным.
+  - Не поддерживается dyndep (например, динамические зависимости C++20 modules).
+  - Если в `default` перечислено несколько целей, по умолчанию выбирается только первая.
+  - Пользовательские named pools и `deps=msvc` не поддерживаются.
+  - Как и в PMake DSL, команды запускаются напрямую, без shell по умолчанию.
   - Для полного списка сверяйтесь с docs/NINJA_COMPAT.md.
 
 Кэш PMake отдельный от `.ninja_deps` и `.ninja_log`. `compile_commands.json`

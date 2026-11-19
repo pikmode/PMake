@@ -1,9 +1,17 @@
 pmake_required_version = 1.0
 
-rule echo {
-    command     = "echo ${msg} > ${out}"
-    description = "echo ${out}"
+cxx = "g++"
+
+if os == "windows" {
+    app = "hello.exe"
+} else {
+    app = "hello"
 }
 
-build "hello.txt" : echo { msg = "Hello, PMake!" }
-alias all : "hello.txt"
+rule compile_and_link {
+    command     = "${cxx} -std=c++20 ${in} -o ${out}"
+    description = "building ${out}"
+}
+
+build "${app}" : compile_and_link "main.cpp"
+alias all : "${app}"

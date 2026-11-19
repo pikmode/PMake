@@ -6,12 +6,14 @@
 foo    = "bar"          // string
 count  = 42             // number
 flag   = true           // bool
-list   = [1, 2, 3]      // list
 foo    += " baz"        // append (space-separated)
 ```
 
-Interpolation: `${foo}` inside string literals. `$foo` also works for
-simple identifiers (alnum + `_`).
+List literals can be used directly in expressions such as `foreach`. Assigning
+a list value to a variable is not currently supported; such an assignment
+evaluates to an empty value.
+Interpolation: `${foo}` inside string literals. `$foo` also works for simple
+identifiers (alnum + `_`).
 
 ## Rules
 
@@ -37,7 +39,7 @@ rule cc {
 | `deps` | `"gcc"` for depfile parsing |
 | `restat` | Skip downstream rebuild if output mtime unchanged |
 | `generator` | Auto-regen on start (like CMake's RERUN) |
-| `pool` | `"console"` for serialized, or custom pool name |
+| `pool` | `"console"` to serialize tasks; custom named pools are not supported in PMake DSL |
 | `rspfile` | Response file path (written before command) |
 | `rspfile_content` | Content of response file |
 
@@ -85,8 +87,8 @@ if config == "debug" {
     flags = "-O2"
 }
 
-foreach src in ${sources} {
-    build "obj/${basename(src)}.o" : cc ${src}
+foreach src in ["src/a.cpp", "src/b.cpp"] {
+    build "obj/${src}.o" : cc "${src}"
 }
 
 while i < 10 {
