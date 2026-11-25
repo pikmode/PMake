@@ -1,23 +1,35 @@
 import json
 import sys
+from pathlib import Path
 
 try:
     # Явно указываем кодировку UTF-8, чтобы Windows не ругался на русские буквы
-    with open("results/report.json", encoding="utf-8") as f:
+    project_root = Path(__file__).resolve().parents[1]
+    report_path = project_root / "tests-pmake" / "basic" / "results" / "report.json"
+    with report_path.open(encoding="utf-8") as f:
         r = json.load(f)
 except FileNotFoundError:
     print("ERROR: report.json not found. Tests likely failed to run.")
     sys.exit(1)
-except Exception as e:
+except (OSError, json.JSONDecodeError) as e:
     print(f"ERROR reading report.json: {e}")
     sys.exit(1)
 
-print(f"PASS: {r['passed']}/{r['total']}")
-print(f"REGRESSIONS: {r['regressions']}")
-print(f"KNOWN BUGS: {r['known_bugs']}")
+try:
+    passed = int(r["passed"])
+    total = int(r["total"])
+    regressions = int(r["regressions"])
+    known_bugs = int(r["known_bugs"])
+except (KeyError, TypeError, ValueError) as e:
+    print(f"ERROR: invalid report format: {e}")
+    sys.exit(1)
 
-if r['regressions'] > 0:
-    print("FAILED: Regressions found.")
+print(f"PASS: {passed}/{total}")
+print(f"REGRESSIONS: {regressions}")
+print(f"KNOWN BUGS: {known_bugs}")
+
+if passed != total or regressions > 0 or known_bugs > 0:
+    print("FAILED: Test failures found.")
     sys.exit(1)
 
 print("SUCCESS: All tests passed.")

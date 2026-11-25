@@ -9,7 +9,7 @@ pmake -t TOOL [target]
 
 | Tool | Action |
 |---|---|
-| `clean` | Remove build outputs without deleting protected source files |
+| `clean [target]` | Remove build outputs, optionally only the selected target's outputs |
 | `targets` | List declared build targets |
 | `commands [target]` | Print commands for all builds or a target and its dependencies |
 | `list` | List available tools |

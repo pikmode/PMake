@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <optional>
 #include <vector>
 
 namespace pmake::deps {
@@ -14,6 +15,8 @@ namespace pmake::deps {
 class DepParser {
 public:
     static std::vector<std::string> parse(std::string_view depfile_path);
+    static std::optional<std::vector<std::string>> parseChecked(
+        std::string_view depfile_path);
 };
 
 } // namespace pmake::deps

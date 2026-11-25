@@ -142,7 +142,7 @@ def _stress_many_headers(n_hdrs=100):
         "build.pmake": '''pmake_required_version = 1.3
 python = "@PYTHON@"
 rule cc {
-    command = "${python} touch.py ${out}"
+    command = "${python} compile_with_deps.py ${out}"
     depfile = "${out}.d"
     deps = "gcc"
 }
@@ -151,9 +151,58 @@ alias all : "test.o"
 ''',
         "src.c": "int x;\n",
         "test.o.d": depfile_content,
+        "compile_with_deps.py": '''import pathlib
+import sys
+
+out = pathlib.Path(sys.argv[1])
+out.touch()
+headers = sorted(pathlib.Path("include").glob("*.h"))
+dependencies = " ".join(path.as_posix() for path in headers)
+pathlib.Path(str(out) + ".d").write_text(
+    f"{out}: src.c {dependencies}\\n", encoding="utf-8"
+)
+''',
     }
     for h in hdrs:
         files[h] = "// header\n"
+    return files
+
+
+def _stress_msvc_dependencies(n=64):
+    lines = [
+        'pmake_required_version = 1.3',
+        'python = "@PYTHON@"',
+        'rule cc {',
+        '    command = "${python} fake_msvc.py ${in} ${out}"',
+        '    deps = "msvc"',
+        '}',
+    ]
+    files = {
+        "build.pmake": "",
+        "include/shared header.h": "// shared header\n",
+        "unrelated.h": "// unrelated\n",
+        "fake_msvc.py": '''import pathlib
+import sys
+
+source, output = map(pathlib.Path, sys.argv[1:3])
+index = source.stem.split("_")[-1]
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(index, encoding="utf-8")
+print("Note: including file: include/shared header.h")
+print(f"Note: including file: include/per file/hdr_{index}.h")
+''',
+    }
+    outputs = []
+    for i in range(n):
+        source = f"src/unit_{i:03d}.c"
+        output = f"obj/unit_{i:03d}.obj"
+        header = f"include/per file/hdr_{i:03d}.h"
+        lines.append(f'build "{output}" : cc "{source}"')
+        files[source] = f"// unit {i}\n"
+        files[header] = f"// header {i}\n"
+        outputs.append(f'"{output}"')
+    lines.append("alias all : " + ", ".join(outputs))
+    files["build.pmake"] = "\n".join(lines)
     return files
 
 
@@ -247,6 +296,7 @@ def _stress_mixed(n_chain=15, n_fanout=30):
 
 _stress_dep_files      = _stress_depfile(200)
 _stress_headers_files  = _stress_many_headers(100)
+_stress_msvc_files     = _stress_msvc_dependencies(64)
 
 
 TESTS = [
@@ -336,6 +386,30 @@ TESTS = [
          "expect": {"exit": 0, "taskCount": 1}},
     ], description="depfile с 100 headers: noop=0, touch 1 hdr → 1 rebuild",
        timeout=60),
+
+    # 9a. MSVC dynamic dependencies under parallel load.
+    test("stress_msvc_dependencies_64", _stress_msvc_files, runs=[
+        {"name": "parallel_first_build",
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 64}},
+        {"name": "cached_graph_is_noop",
+         "before": [{"sleep": 0.4}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 0}},
+        {"name": "shared_header_invalidates_every_object",
+         "before": [{"sleep": 0.3}, {"touch": ["include/shared header.h"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 64}},
+        {"name": "single_header_invalidates_one_object",
+         "before": [{"sleep": 0.3}, {"touch": ["include/per file/hdr_037.h"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 1}},
+        {"name": "untracked_header_does_not_invalidate",
+         "before": [{"sleep": 0.3}, {"touch": ["unrelated.h"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 0}},
+    ], description="64 parallel MSVC-style dep scans preserve shared and per-output edges",
+       timeout=120),
 
     # 10. Multi-output 50
     test("stress_multi_output_50", _stress_multi_output(50), runs=[

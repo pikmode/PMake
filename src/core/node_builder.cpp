@@ -6,6 +6,7 @@
 #include "util/filesystem.h"
 #include "util/string_utils.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <cstdio>
 #include <format>
@@ -22,6 +23,23 @@
 namespace pmake::core {
 
 namespace {
+
+std::mutex commandOutputMutex;
+
+void writeCommandOutput(executor::OutputStream stream, std::string_view text) {
+    if (text.empty()) return;
+    FILE* destination = stream == executor::OutputStream::Stdout ? stdout : stderr;
+    std::fwrite(text.data(), 1, text.size(), destination);
+    std::fflush(destination);
+}
+
+void forwardCommandOutput(const executor::Result& result) {
+    if (result.stdoutOutput.empty() && result.stderrOutput.empty()) return;
+
+    std::lock_guard<std::mutex> lock(commandOutputMutex);
+    writeCommandOutput(executor::OutputStream::Stdout, result.stdoutOutput);
+    writeCommandOutput(executor::OutputStream::Stderr, result.stderrOutput);
+}
 
 std::string getWorkingDirectory(const Build* build, const State* state) {
     if (build && build->scope) {
@@ -45,6 +63,55 @@ bool depsListsEqual(const std::vector<std::string>& a, const std::vector<std::st
     std::unordered_set<std::string> sa(a.begin(), a.end());
     std::unordered_set<std::string> sb(b.begin(), b.end());
     return sa == sb;
+}
+
+std::string_view msvcIncludePath(std::string_view line) {
+    constexpr std::string_view englishPrefix = "Note: including file:";
+    constexpr std::string_view russianPrefix = "Примечание: включение файла:";
+    std::size_t first = 0;
+    while (first < line.size() && (line[first] == ' ' || line[first] == '\t' ||
+                                   line[first] == '\r')) {
+        ++first;
+    }
+
+    std::string_view trimmed = line.substr(first);
+    std::size_t prefixLength = 0;
+    if (trimmed.starts_with(englishPrefix)) {
+        prefixLength = englishPrefix.size();
+    } else if (trimmed.starts_with(russianPrefix)) {
+        prefixLength = russianPrefix.size();
+    }
+    if (prefixLength == 0) return {};
+
+    std::string_view path = trimmed.substr(prefixLength);
+    while (!path.empty() && (path.front() == ' ' || path.front() == '\t')) {
+        path.remove_prefix(1);
+    }
+    while (!path.empty() && (path.back() == ' ' || path.back() == '\r' ||
+                              path.back() == '\n')) {
+        path.remove_suffix(1);
+    }
+    return path;
+}
+
+void extractMsvcIncludes(std::string& output, std::vector<std::string>& includes) {
+    std::string filtered;
+    std::size_t start = 0;
+    while (start < output.size()) {
+        const std::size_t end = output.find('\n', start);
+        const std::size_t lineEnd = end == std::string::npos ? output.size() : end;
+        std::string_view line(output.data() + start, lineEnd - start);
+        std::string_view path = msvcIncludePath(line);
+        if (!path.empty()) {
+            includes.emplace_back(path);
+        } else {
+            filtered.append(line);
+            if (end != std::string::npos) filtered.push_back('\n');
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    output = std::move(filtered);
 }
 
 // Разбивает строку команды на tokens с учётом кавычек (одинарных и двойных).
@@ -128,7 +195,7 @@ int Node::build() {
             std::filesystem::remove(rspFilePath, ec);
             if (ec) {
                 std::println(std::cerr, "Failed to remove response file '{}': {}",
-                             rspFilePath, ec.message());
+                             rspFilePath, util::systemErrorMessage(ec));
             }
             return 1;
         }
@@ -142,9 +209,14 @@ int Node::build() {
         util::FileCache::instance().invalidate(rspFilePath);
         if (ec) {
             std::println(std::cerr, "Failed to remove response file '{}': {}",
-                         rspFilePath, ec.message());
+                         rspFilePath, util::systemErrorMessage(ec));
         }
     };
+    std::string depfilePath;
+    if (rule_->hasDepfile()) {
+        depfilePath = state_->expandVarsWithSpecial(
+            rule_->depfile, build_->scope.get(), specialVars);
+    }
     auto cleanupFailedBuild = [&] {
         for (const auto& out : build_->outputs) {
             std::error_code ec;
@@ -152,65 +224,111 @@ int Node::build() {
             util::FileCache::instance().invalidate(out);
             if (ec) {
                 std::println(std::cerr, "Failed to remove partial output '{}': {}",
-                             out, ec.message());
+                             out, util::systemErrorMessage(ec));
             }
         }
         removeResponseFile();
-        if (!rule_->depfile.empty()) {
-            std::string depfilePath = state_->expandVarsWithSpecial(
-                rule_->depfile, build_->scope.get(), specialVars);
+        if (rule_->hasDepfile()) {
             std::error_code ec;
             std::filesystem::remove(depfilePath, ec);
             util::FileCache::instance().invalidate(depfilePath);
             if (ec) {
                 std::println(std::cerr, "Failed to remove depfile '{}': {}",
-                             depfilePath, ec.message());
+                             depfilePath, util::systemErrorMessage(ec));
             }
         }
     };
 
+    if (rule_->hasDepfile()) {
+        std::error_code ec;
+        std::filesystem::remove(depfilePath, ec);
+        util::FileCache::instance().invalidate(depfilePath);
+        if (ec) {
+            std::println(std::cerr, "Failed to remove stale depfile '{}': {}",
+                         depfilePath, util::systemErrorMessage(ec));
+            removeResponseFile();
+            return 1;
+        }
+    }
+
     auto beforeMtimes = getOutputMtimesBefore();
 
-    auto args = split_command(command);
-    if (args.empty()) {
-        std::println(std::cerr, "Failed to split command for '{}'", name_);
-        removeResponseFile();
-        return 1;
-    }
-    std::string program = args.front();
-    args.erase(args.begin());
     std::string workDir = getWorkingDirectory(build_, state_);
 
     executor::Command cmd;
-    cmd.program = std::move(program);
-    cmd.arguments = std::move(args);
     cmd.workingDirectory = std::move(workDir);
     cmd.captureOutput = true;
+    cmd.runInShell = rule_->runInShell;
+    const bool usesMsvcDeps = rule_->deps == "msvc";
+    std::string pendingStdout;
+    std::string pendingStderr;
+    bool outputWasStreamed = false;
+    cmd.onOutput = [&](executor::OutputStream stream, std::string_view text) {
+        std::lock_guard<std::mutex> lock(commandOutputMutex);
+        outputWasStreamed = true;
+        if (!usesMsvcDeps) {
+            writeCommandOutput(stream, text);
+            return;
+        }
+
+        std::string& pending = stream == executor::OutputStream::Stdout
+            ? pendingStdout : pendingStderr;
+        pending.append(text);
+        std::size_t start = 0;
+        while (true) {
+            const std::size_t end = pending.find('\n', start);
+            if (end == std::string::npos) break;
+            const std::string_view line(pending.data() + start, end - start);
+            if (msvcIncludePath(line).empty()) {
+                writeCommandOutput(stream,
+                    std::string_view(pending.data() + start, end - start + 1));
+            }
+            start = end + 1;
+        }
+        if (start != 0) pending.erase(0, start);
+    };
+    if (cmd.runInShell) {
+        cmd.shellCommand = std::move(command);
+    } else {
+        auto args = split_command(command);
+        if (args.empty()) {
+            std::println(std::cerr, "Failed to split command for '{}'", name_);
+            removeResponseFile();
+            return 1;
+        }
+        cmd.program = std::move(args.front());
+        args.erase(args.begin());
+        cmd.arguments = std::move(args);
+    }
 
     executor::Result res = executor::Runner::runSync(cmd);
-    if (rule_->isNinjaTool()) {
-        if (!res.stdoutOutput.empty()) {
-            std::print(stdout, "{}", res.stdoutOutput);
-            std::fflush(stdout);
+    {
+        std::lock_guard<std::mutex> lock(commandOutputMutex);
+        if (usesMsvcDeps) {
+            if (!pendingStdout.empty() &&
+                msvcIncludePath(pendingStdout).empty()) {
+                writeCommandOutput(executor::OutputStream::Stdout, pendingStdout);
+            }
+            if (!pendingStderr.empty() &&
+                msvcIncludePath(pendingStderr).empty()) {
+                writeCommandOutput(executor::OutputStream::Stderr, pendingStderr);
+            }
+            pendingStdout.clear();
+            pendingStderr.clear();
         }
-        if (res.exitCode == 0 && !res.stderrOutput.empty()) {
-            std::print(stderr, "{}", res.stderrOutput);
-            std::fflush(stderr);
-        }
+    }
+    if (!outputWasStreamed) forwardCommandOutput(res);
+
+    std::vector<std::string> msvcIncludes;
+    if (usesMsvcDeps) {
+        extractMsvcIncludes(res.stdoutOutput, msvcIncludes);
+        extractMsvcIncludes(res.stderrOutput, msvcIncludes);
+        std::sort(msvcIncludes.begin(), msvcIncludes.end());
+        msvcIncludes.erase(std::unique(msvcIncludes.begin(), msvcIncludes.end()),
+                           msvcIncludes.end());
     }
 
     if (res.exitCode != 0) {
-        // CHANGED: печатаем только raw stderr дочернего процесса — без
-        // "Build failed for 'X'". Форматирование [ERROR] делает ConsoleUI
-        // через onTaskFinished, чтобы не было трёх копий сообщения.
-        if (!res.stderrOutput.empty()) {
-            std::string err = res.stderrOutput;
-            // Обрезаем trailing newlines — println добавит свой.
-            while (!err.empty() && (err.back() == '\n' || err.back() == '\r')) {
-                err.pop_back();
-            }
-            if (!err.empty()) std::println(std::cerr, "{}", err);
-        }
         cleanupFailedBuild();
         return res.exitCode == 2 ? 1 : res.exitCode;
     }
@@ -227,6 +345,32 @@ int Node::build() {
         }
     }
 
+    if (rule_->hasDepfile()) {
+        auto inputs = deps::DepParser::parseChecked(depfilePath);
+        if (!inputs) {
+            std::println(std::cerr,
+                         "Declared depfile '{}' was not generated or is invalid",
+                         depfilePath);
+            cleanupFailedBuild();
+            return 1;
+        }
+        for (const auto& out : build_->outputs) {
+            auto existing = deps::DepsLog::instance().inputsFor(out);
+            if (!depsListsEqual(existing, *inputs) ||
+                !deps::DepsLog::instance().inputIdsFor(out)) {
+                deps::DepsLog::instance().record(out, *inputs);
+            }
+        }
+    } else if (usesMsvcDeps) {
+        for (const auto& out : build_->outputs) {
+            auto existing = deps::DepsLog::instance().inputsFor(out);
+            if (!depsListsEqual(existing, msvcIncludes) ||
+                !deps::DepsLog::instance().inputIdsFor(out)) {
+                deps::DepsLog::instance().record(out, msvcIncludes);
+            }
+        }
+    }
+
     refreshOutputMtime();
 
     if (state_) {
@@ -238,25 +382,10 @@ int Node::build() {
         }
     }
 
-    guard.success = true;
-
     bool outputChanged = hasOutputChanged(beforeMtimes);
+    guard.success = true;
     if (rule_->restat && !outputChanged) {
         return 2;
-    }
-
-    if (rule_ && !rule_->depfile.empty()) {
-        std::string depfilePath = rule_->depfile;
-        depfilePath = state_->expandVarsWithSpecial(depfilePath, build_->scope.get(), specialVars);
-        auto inputs = deps::DepParser::parse(depfilePath);
-        if (!inputs.empty()) {
-            for (const auto& out : build_->outputs) {
-                auto existing = deps::DepsLog::instance().inputsFor(out);
-                if (!depsListsEqual(existing, inputs)) {
-                    deps::DepsLog::instance().record(out, inputs);
-                }
-            }
-        }
     }
 
     return 0;

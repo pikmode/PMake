@@ -10,6 +10,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -91,6 +92,72 @@ def run_pmake(exe, args, cwd, timeout, kill_after_ms=None):
                 "elapsed": time.time() - t0, "timedOut": False}
 
 
+def run_pmake_streaming(exe, args, cwd, timeout, streaming):
+    t0 = time.time()
+    popen_kwargs = {}
+    if platform.system() == "Windows":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    p = subprocess.Popen(
+        [str(exe)] + list(args), cwd=str(cwd),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+        **popen_kwargs
+    )
+    stdout_chunks, stderr_chunks = [], []
+    markers = {"stdout": streaming["stdoutMarker"].encode("utf-8")}
+    if "stderrMarker" in streaming:
+        markers["stderr"] = streaming["stderrMarker"].encode("utf-8")
+    marker_seen = threading.Event()
+    markers_found = set()
+    markers_lock = threading.Lock()
+
+    def collect(stream, pipe, chunks):
+        observed = bytearray()
+        marker = markers.get(stream)
+        while True:
+            data = pipe.read(4096)
+            if not data:
+                break
+            chunks.append(data)
+            if marker:
+                observed.extend(data)
+                if marker in observed:
+                    with markers_lock:
+                        markers_found.add(stream)
+                        if len(markers_found) == len(markers):
+                            marker_seen.set()
+        pipe.close()
+
+    stdout_thread = threading.Thread(
+        target=collect, args=("stdout", p.stdout, stdout_chunks))
+    stderr_thread = threading.Thread(
+        target=collect, args=("stderr", p.stderr, stderr_chunks))
+    stdout_thread.start()
+    stderr_thread.start()
+
+    marker_seen.wait(min(timeout, 4))
+    streamed_before_exit = marker_seen.is_set() and p.poll() is None
+    release_file = cwd / streaming["releaseFile"]
+    release_file.parent.mkdir(parents=True, exist_ok=True)
+    release_file.touch()
+    timed_out = False
+    try:
+        p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        p.kill()
+        p.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    return {
+        "exit": p.returncode,
+        "stdout": b"".join(stdout_chunks).decode("utf-8", "replace"),
+        "stderr": b"".join(stderr_chunks).decode("utf-8", "replace"),
+        "elapsed": time.time() - t0,
+        "timedOut": timed_out,
+        "streamedBeforeExit": streamed_before_exit,
+    }
+
+
 def apply_actions(actions, cwd):
     for a in actions:
         if "sleep" in a: time.sleep(a["sleep"])
@@ -131,6 +198,8 @@ def check_expect(expect, result, cwd):
         fails.append(f"exit={result['exit']}, expected {expect['exit']}")
     if result.get("timedOut"):
         fails.append("TIMEOUT"); return fails
+    if expect.get("outputBeforeExit") and not result.get("streamedBeforeExit"):
+        fails.append("expected command output to arrive before pmake exited")
     tc = parse_task_count(result["stdout"])
     if "taskCount" in expect and tc != expect["taskCount"]:
         fails.append(f"taskCount={tc}, expected {expect['taskCount']}")
@@ -148,6 +217,8 @@ def check_expect(expect, result, cwd):
         if s in result["stdout"]: fails.append(f"stdout unexpectedly contains: {s!r}")
     for s in expect.get("stderrHas", []):
         if s not in result["stderr"]: fails.append(f"stderr missing: {s!r}")
+    for s in expect.get("stderrNot", []):
+        if s in result["stderr"]: fails.append(f"stderr unexpectedly contains: {s!r}")
 
     # NEW: проверка "ровно один раз" — ловит дублирующиеся сообщения
     # (например, когда lexer/parser печатают одну и ту же ошибку трижды).
@@ -208,7 +279,11 @@ def run_test(pmake, test_dir, helpers_dir, results_dir, keep_temp):
             break
         args = run.get("args", default_args)
         kill_after_ms = run.get("kill_after_ms")
-        result = run_pmake(pmake, args, work, timeout, kill_after_ms=kill_after_ms)
+        if "streaming" in run:
+            result = run_pmake_streaming(
+                pmake, args, work, timeout, run["streaming"])
+        else:
+            result = run_pmake(pmake, args, work, timeout, kill_after_ms=kill_after_ms)
         total_elapsed += result["elapsed"]
         logs.append(f"=== {run_name} ===\nargs: {args}\nexit: {result['exit']}\n"
                     f"killed: {result.get('killed', False)}\n"

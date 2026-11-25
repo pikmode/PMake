@@ -197,8 +197,9 @@ build "nonempty" : gen
         {"name": "clean_nonempty_directory",
          "args": ["-f", "build.pmake", "-t", "clean"],
          "expect": {"exit": 1, "files": ["nonempty/keep.txt"],
-                    "stderrHas": ["nonempty"]}},
-    ], description="clean must report failed output removal"),
+                    "stderrHas": ["clean: failed to remove 'nonempty'"],
+                    "stderrNot": ["�"]}},
+    ], description="clean reports a readable system error without encoding replacement characters"),
 ]
 
 
@@ -218,6 +219,31 @@ alias all : "out.txt"
              "before": [{"sleep": 0.3}],
              "expect": {"exit": 0, "taskCount": 0}},
         ], description="Windows file lookup must not treat path casing as identity"),
+
+        test("regression_windows_cmd_python_c_semicolon_redirect", {
+            "build.ninja": '''rule make_def
+  command = @PYTHON@ -c "import sys;print(''.join(['EXPORTS\\n']+sys.stdin.readlines(),))" < $in > $out
+build LTO.def: make_def lto.exports
+build Remarks.def: make_def Remarks.exports
+build CASPluginTest.def: make_def CASPluginTest.exports
+build libclang.def: make_def libclang.exports
+default LTO.def Remarks.def CASPluginTest.def libclang.def
+''',
+            "lto.exports": "LTO_SYMBOL\n",
+            "Remarks.exports": "REMARKS_SYMBOL\n",
+            "CASPluginTest.exports": "CAS_SYMBOL\n",
+            "libclang.exports": "LIBCLANG_SYMBOL\n",
+        }, runs=[
+            {"name": "python_c_semicolon_and_input_output_redirects",
+             "args": ["-f", "build.ninja"],
+             "expect": {"exit": 0, "taskCount": 4,
+                        "filesWith": {
+                            "LTO.def": "EXPORTS\nLTO_SYMBOL",
+                            "Remarks.def": "EXPORTS\nREMARKS_SYMBOL",
+                            "CASPluginTest.def": "EXPORTS\nCAS_SYMBOL",
+                            "libclang.def": "EXPORTS\nLIBCLANG_SYMBOL",
+                        }}},
+        ], description="Windows cmd.exe must preserve Python -c code containing semicolons and stdin/stdout redirection"),
 
         test("regression_windows_restart_quotes_manifest_path", {
             "space build.ninja": '''rule regen

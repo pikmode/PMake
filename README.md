@@ -23,7 +23,9 @@ Write a single `build.pmake` — no code generation, no second tool in the chain
   linked by default when supported by the toolchain. No Python or Qt runtime
   is required.
 - **Scales to monorepos.** Thread pool + depfile prefetch + StringPool DepsLog — designed for 100K+ edges.
-- **Safe `clean`.** `pmake -t clean` never touches source files (`.cpp`, `.cmake`, `CMakeLists.txt`).
+- **Safe `clean`.** `pmake -t clean [target]` removes all outputs or only the
+  selected target's outputs, while protecting source files (`.cpp`, `.cmake`,
+  `CMakeLists.txt`, ...).
 
 ---
 
@@ -132,6 +134,7 @@ pmake           # build
 pmake -j 8      # parallel
 pmake -n        # dry-run
 pmake -t clean  # clean outputs
+pmake -t clean app  # clean only app's outputs
 ```
 
 ---
@@ -160,10 +163,16 @@ pmake                              # instead of: ninja
 ```
 
 - Supported: `rule`, `build`, `default`, `subninja`, `depfile`, `deps=gcc`,
+  `deps=msvc` (the command must use `/showIncludes`),
   `rspfile`, `restat`, `generator`, `pool=console`, and Windows drive letters.
-- Limitations include implicit outputs, `dyndep`, custom named pools, and
-  MSVC dependency scanning. PMake also launches commands directly, without an
-  implicit shell.
+- Limitations include implicit outputs, `dyndep`, and custom named pools.
+  PMake also launches commands directly, without an implicit shell.
+
+For `deps=gcc`, PMake requires a fresh depfile after each successful command;
+missing or malformed depfiles fail the build instead of silently reusing stale
+dependencies. Compiler warnings and other output written to `stderr` remain
+visible on successful builds. On Windows, PMake enables UTF-8 console output
+and formats system error messages as UTF-8 so Cyrillic text displays correctly.
 
 PMake does not currently export `compile_commands.json`. For CMake projects,
 generate it with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; use PMake to run the
@@ -214,7 +223,9 @@ Options:
 ```
 
 Every positional argument is a target from the build manifest; multiple targets can be requested.
-Use `pmake <target>` for manifest targets and `pmake -t clean` for the utility.
+Use `pmake <target>` for manifest targets and `pmake -t clean [target]` for
+global or target-scoped cleanup. Target-scoped cleanup leaves the target's
+inputs intact.
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
@@ -236,7 +247,7 @@ python run.py --pmake ../../build/pmake.exe
 python run.py --pmake ../../build/pmake
 ```
 
-The current suite contains **149 tests**. CI builds and tests on Windows and Linux.
+The current suite contains **161 tests**. CI builds and tests on Windows and Linux.
 
 ---
 
@@ -254,14 +265,14 @@ The current suite contains **149 tests**. CI builds and tests on Windows and Lin
 
 ## Project status
 
-- **Version:** 1.3.1
-- **Release prep:** 2026-11-19; tag and publication are pending.
-- **Validation:** 149 / 149 tests passing on Windows; CI also covers Linux.
+- **Version:** 1.3.2
+- **Release prep:** 2026-11-24; tag and publication are pending.
+- **Validation:** 161 / 161 tests passing on Windows; CI also covers Linux.
 - **Scope:** stable build engine with documented Ninja compatibility limits.
 - **Next:** v1.4.0 planning — repository fetching, module namespaces, and a
   `compile_commands.json` exporter.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v1.3.1 changes and
+See [`CHANGELOG.md`](CHANGELOG.md) for the v1.3.2 changes and
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned work.
 
 ---

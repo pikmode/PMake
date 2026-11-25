@@ -8,6 +8,7 @@
 #include <format>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <print>
 #include <string>
 #include <string_view>
@@ -32,6 +33,7 @@
 #include "util/logging.h"
 #include "util/filesystem.h"
 #include "ui/console_ui.h"
+#include "ui/Logo.h"
 #include "core/cache.h"
 #include "deps/deps_log.h"
 #include "deps/dep_parser.h"
@@ -55,6 +57,25 @@ void on_signal(int sig) {
 void print_version() {
     std::fprintf(stdout, "%s %s\n", PMAKE_NAME, PMAKE_VERSION);
     std::fflush(stdout);
+}
+
+void print_startup_logo() {
+    std::string_view version = PMAKE_VERSION;
+    constexpr std::string_view prefix = "version ";
+    if (version.starts_with(prefix)) version.remove_prefix(prefix.size());
+
+    const auto releaseUrl = std::format(
+        "https://github.com/pikmode/PMake/releases/tag/v{}", version);
+    std::println("{}", std::string(84, '/'));
+    for (std::size_t i = 0; i < Logo::PIKMODE.size(); ++i) {
+        std::print("{:<30}  ", Logo::PIKMODE[i]);
+        if (i == 2) std::print("{} {}", PMAKE_NAME, PMAKE_VERSION);
+        if (i == 3) std::print("{}", releaseUrl);
+        if (i == 4) std::print("Developer: PikMode");
+        std::println("");
+    }
+    std::println("{}", std::string(84, '\\'));
+    std::println("");
 }
 
 // NEW: Перезапуск самого себя для подхвата обновленного манифеста
@@ -117,19 +138,6 @@ void print_version() {
 #endif
 }
 
-// ============================================================
-// CRITICAL (clean fix): защита от удаления source-файлов и
-// build-манифестов.
-//
-// CMake генерирует phony-edge ("missing input files is not an error"
-// trick), где ВСЕ входные файлы стоят в позиции OUTPUTS:
-//
-//   build CMakeCache.txt CMakeFiles/... E:/proj/CMakeLists.txt \
-//         E:/pikmode/tools/CMake/share/cmake-3.30/Modules/*.cmake : phony
-//
-// Без пропуска phony pmake clean удаляет CMakeLists.txt, CMakeCache.txt,
-// и всю установку CMake (~200 .cmake модулей).
-// ============================================================
 static bool is_protected_source(std::string_view path) {
     if (path.ends_with("CMakeLists.txt") ||
         path.ends_with("Makefile")     ||
@@ -154,12 +162,30 @@ static bool is_protected_source(std::string_view path) {
     return false;
 }
 
-int clean_outputs(const State& state) {
+int clean_outputs(const State& state, std::string_view target = {}) {
+    std::unordered_set<const Build*> selectedBuilds;
+    if (!target.empty()) {
+        Graph graph(state, true);
+        if (!graph.build()) return 1;
+        Node* targetNode = graph.node(target);
+        if (!targetNode) {
+            LOG_ERROR(std::format("clean: target '{}' not found", target));
+            return 1;
+        }
+        if (!targetNode->getBuild()) {
+            LOG_ERROR(std::format("clean: target '{}' has no build outputs", target));
+            return 1;
+        }
+        selectedBuilds.insert(targetNode->getBuild());
+    }
+
     int removed = 0;
     int skipped = 0;
     int failures = 0;
 
     for (const auto& build : state.builds()) {
+        if (!target.empty() && !selectedBuilds.contains(&build)) continue;
+
         const Rule* rule = state.getRule(build.rule_name);
         if (rule && (rule->generator || rule->name == "phony" || rule->command.empty())) {
             continue;
@@ -174,7 +200,8 @@ int clean_outputs(const State& state) {
             std::error_code ec;
             if (std::filesystem::remove(std::filesystem::path(out), ec)) ++removed;
             else if (ec) {
-                LOG_ERROR(std::format("clean: failed to remove '{}': {}", out, ec.message()));
+                LOG_ERROR(std::format("clean: failed to remove '{}': {}",
+                                      out, pmake::util::systemErrorMessage(ec)));
                 ++failures;
             }
         }
@@ -194,7 +221,7 @@ void print_tools_help() {
         "Usage: {} -t TOOL [target]\n"
         "\n"
         "Tools:\n"
-        "  clean             Remove build outputs\n"
+        "  clean [target]    Remove build outputs, optionally for a target\n"
         "  targets           List build targets\n"
         "  commands [target] Print commands for a target and its dependencies\n"
         "  help, list        Show available tools",
@@ -359,7 +386,7 @@ int parse_args(int argc, char** argv, Options& opt) {
         } else if (arg == "--no-color") {
             opt.noColor = true;
         } else if (arg == "--license") {
-            std::fprintf(stdout, "%s %s — see LICENSE file\n", PMAKE_NAME, PMAKE_VERSION);
+            std::fprintf(stdout, "%s %s — see LICENSE file\n",             PMAKE_NAME, PMAKE_VERSION);
             std::fflush(stdout);
             return -1;
         } else if (!arg.empty() && arg[0] != '-') {
@@ -401,6 +428,19 @@ int parse_args(int argc, char** argv, Options& opt) {
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    DWORD consoleMode = 0;
+    HANDLE consoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (consoleOutput != INVALID_HANDLE_VALUE &&
+        GetConsoleMode(consoleOutput, &consoleMode) &&
+        !SetConsoleOutputCP(CP_UTF8)) {
+        std::fprintf(stderr,
+                     "pmake: warning: could not enable UTF-8 console output "
+                     "(Windows error %lu)\n",
+                     static_cast<unsigned long>(GetLastError()));
+    }
+#endif
+
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-V") == 0 || std::strcmp(argv[i], "--version") == 0) {
             print_version();
@@ -431,7 +471,8 @@ int main(int argc, char** argv) {
                      opt.tool.c_str(), PMAKE_NAME);
         return 1;
     }
-    if (!opt.tool.empty() && opt.tool != "commands" && !opt.toolTarget.empty()) {
+    if (!opt.tool.empty() && opt.tool != "commands" && opt.tool != "clean" &&
+        !opt.toolTarget.empty()) {
         std::fprintf(stderr, "tool '%s' does not accept a target\n", opt.tool.c_str());
         return 1;
     }
@@ -502,16 +543,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (opt.tool == "clean") return clean_outputs(*state);
+    if (opt.tool == "clean") return clean_outputs(*state, opt.toolTarget);
     if (opt.tool == "targets") {
         print_targets(*state);
         return 0;
     }
     if (opt.tool == "commands") return print_commands(*state, opt.toolTarget);
 
-    // ============================================================
+
     // Generator logic (Manifest Regeneration)
-    // ============================================================
+
     std::vector<std::string> manifestTargets;
     for (const auto& b : state->builds()) {
         const Rule* r = state->getRule(b.rule_name);
@@ -537,13 +578,6 @@ int main(int argc, char** argv) {
         }
         Engine genEngine(*state, 1, opt.dryRun);
 
-        // CHANGED: НЕ подключаем onBuildFinished и onTaskFinished.
-        //
-        // Иначе regen-noop печатает "All targets up to date" ПЕРЕД основным
-        // build'ом — пользователь видит это и думает, что ничего не собралось.
-        //
-        // onTaskStarted достаточно: если regen реально работает — увидим
-        // "[1/1] Re-running CMake...". Если noop — ничего не печатаем.
         genEngine.onTaskStarted([verbose = opt.verbose](
                 const std::string& name, int total,
                 const std::string& cmd, const std::string& wd) {
@@ -580,7 +614,7 @@ int main(int argc, char** argv) {
             if (!b.outputs.empty() && b.outputs[0] == "all") { hasAll = true; break; }
         }
         if (hasAll) opt.targets.emplace_back("all");
-        else if (!state->defaultTargets().empty()) opt.targets.push_back(state->defaultTargets().front());
+        else if (!state->defaultTargets().empty()) opt.targets = state->defaultTargets();
     }
 
     bool useCache = true;
@@ -618,7 +652,7 @@ int main(int argc, char** argv) {
         LOG_VERBOSE("re-scanning depfiles");
         for (const auto& build : state->builds()) {
             const Rule* rule = state->getRule(build.rule_name);
-            if (!rule || rule->name == "phony" || rule->generator || rule->depfile.empty()) continue;
+            if (!rule || rule->name == "phony" || rule->generator || !rule->hasDepfile()) continue;
 
             for (const auto& out : build.outputs) {
                 std::unordered_map<std::string, std::string> specialVars;
@@ -650,9 +684,17 @@ int main(int argc, char** argv) {
     pmake::ui::ConsoleUI ui(opt.quiet, logCfg.color_output, opt.verbose,
                             opt.dryRun);
 
-    engine.onTaskStarted([&ui, verbose = opt.verbose](
+    std::once_flag startupBanner;
+    engine.onTaskStarted([&ui, &startupBanner, quiet = opt.quiet,
+                          verbose = opt.verbose](
             const std::string& name, int total,
             const std::string& cmd, const std::string& wd) {
+        if (!quiet) {
+            std::call_once(startupBanner, [] {
+                print_startup_logo();
+                std::fflush(stdout);
+            });
+        }
         ui.onTaskStarted(name, total);
         if (verbose) ui.onTaskVerbose(cmd, wd);
     });

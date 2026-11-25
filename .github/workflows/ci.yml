@@ -82,10 +82,12 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            ./build-ci/pmake.exe -V
+            version="$(./build-ci/pmake.exe -V)"
           else
-            ./build-ci/pmake -V
+            version="$(./build-ci/pmake -V)"
           fi
+          echo "$version"
+          test "$version" = "PMake version 1.3.2"
 
       # ============ TESTS (single folder) ============
       # CHANGED: tests-pmake-1.1/windows и /linux → одна папка tests-pmake/basic.

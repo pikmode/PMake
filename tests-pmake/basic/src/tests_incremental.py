@@ -1,6 +1,80 @@
 # -*- coding: utf-8 -*-
 from ._common import test, pp
 
+
+def _complex_incremental_graph(n=12):
+    sources = [f"src/unit_{i:02d}.c" for i in range(n)]
+    objects = [f"obj/unit_{i:02d}.o" for i in range(n)]
+    object_args = " ".join(f'"{path}"' for path in objects)
+    lines = [
+        "pmake_required_version = 1.0",
+        'python = "@PYTHON@"',
+        "rule compile {",
+        '    command = "${python} tracked_compile.py ${in} ${out}"',
+        '    depfile = "${out}.d"',
+        '    deps = "gcc"',
+        "    restat = true",
+        "}",
+        "rule link {",
+        '    command = "${python} tracked_link.py ${out} ${in}"',
+        "    restat = true",
+        "}",
+    ]
+    for source, output in zip(sources, objects):
+        lines.append(f'build "{output}" : compile "{source}"')
+    lines.extend([
+        f'build "app" : link {object_args}',
+        'alias all : "app"',
+    ])
+    files = {
+        "build.pmake": "\n".join(lines) + "\n",
+        "include/shared.h": "shared-v1\n",
+        "unrelated.h": "untracked\n",
+        "tracked_compile.py": '''import pathlib
+import sys
+
+source, output = map(pathlib.Path, sys.argv[1:3])
+header = pathlib.Path("include") / f"{source.stem}.h"
+shared = pathlib.Path("include/shared.h")
+output.parent.mkdir(parents=True, exist_ok=True)
+content = (
+    source.read_text(encoding="utf-8")
+    + header.read_text(encoding="utf-8")
+    + shared.read_text(encoding="utf-8")
+)
+if not output.exists() or output.read_text(encoding="utf-8") != content:
+    output.write_text(content, encoding="utf-8")
+counter = pathlib.Path(str(output) + ".runs")
+count = int(counter.read_text(encoding="utf-8")) if counter.exists() else 0
+counter.write_text(str(count + 1), encoding="utf-8")
+pathlib.Path(str(output) + ".d").write_text(
+    f"{output}: {source} {header} {shared}\\n", encoding="utf-8"
+)
+''',
+        "tracked_link.py": '''import pathlib
+import sys
+
+output = pathlib.Path(sys.argv[1])
+inputs = [pathlib.Path(path) for path in sys.argv[2:]]
+output.write_text(
+    "".join(path.read_text(encoding="utf-8") for path in inputs),
+    encoding="utf-8",
+)
+counter = pathlib.Path(str(output) + ".runs")
+count = int(counter.read_text(encoding="utf-8")) if counter.exists() else 0
+counter.write_text(str(count + 1), encoding="utf-8")
+''',
+    }
+    files.update({path: f"source-{i:02d}\n" for i, path in enumerate(sources)})
+    files.update({
+        f"include/unit_{i:02d}.h": f"header-{i:02d}\n"
+        for i in range(n)
+    })
+    return files, objects
+
+
+_complex_graph_files, _complex_graph_objects = _complex_incremental_graph()
+
 TESTS = [
     test("incr_source", {
         "build.pmake": '''pmake_required_version = 1.0
@@ -158,4 +232,99 @@ rule copy { command = "${python} copy.py ${in} ${out}" }
         {"name": "touch_src", "before": [{"sleep": 0.3}, {"touch": ["src.in"]}],
          "expect": {"exit": 0, "taskCount": 10}},
     ], description="10-уровневая цепочка"),
+
+    test("real_noop_and_incremental_under_fanout",
+         _complex_graph_files, runs=[
+        {"name": "initial_parallel_build",
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 13,
+                    "files": _complex_graph_objects + ["app"],
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "1",
+                        "app.runs": "1",
+                    }}},
+        {"name": "repeated_full_build_is_a_true_noop",
+         "before": [{"sleep": 0.3}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 0,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "1",
+                        "app.runs": "1",
+                    }}},
+        {"name": "already_built_leaf_target_is_a_noop",
+         "before": [{"sleep": 0.3}],
+         "args": ["-f", "build.pmake", "obj/unit_05.o"],
+         "expect": {"exit": 0, "taskCount": 0,
+                    "filesWith": {"obj/unit_05.o.runs": "1"}}},
+        {"name": "touch_one_source_rebuilds_only_that_compile",
+         "before": [{"sleep": 0.3}, {"touch": ["src/unit_05.c"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 1,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "2",
+                        "app.runs": "1",
+                    }}},
+        {"name": "touch_one_depfile_header_rebuilds_only_its_compile",
+         "before": [{"sleep": 0.3}, {"touch": ["include/unit_05.h"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 1,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "3",
+                        "app.runs": "1",
+                    }}},
+        {"name": "changed_private_header_relinks",
+         "before": [{"sleep": 0.3}, {"modify": {
+             "include/unit_05.h": "header-05-v2\n"}}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 2,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "4",
+                        "app.runs": "2",
+                    }}},
+        {"name": "touch_shared_header_rebuilds_all_compiles_but_not_link",
+         "before": [{"sleep": 0.3}, {"touch": ["include/shared.h"]}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 12,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "5",
+                        "app.runs": "2",
+                    }}},
+        {"name": "changed_shared_header_rebuilds_graph",
+         "before": [{"sleep": 0.3}, {"modify": {
+             "include/shared.h": "shared-v2\n"}}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 13,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "6",
+                        "app.runs": "3",
+                    }}},
+        {"name": "no_op_survives_cache_removal_and_untracked_changes",
+         "before": [{"sleep": 0.3}, {"delete": ["Project-cache.pmake"]},
+                    {"modify": {"unrelated.h": "changed but unused\n"}}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 0,
+                    "filesWith": {
+                        "obj/unit_05.o.runs": "6",
+                        "app.runs": "3",
+                    }}},
+        {"name": "one_changed_source_rebuilds_only_its_path_to_app",
+         "before": [{"sleep": 0.3}, {"modify": {
+             "src/unit_02.c": "source-02-v2\n"}}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 2,
+                    "filesWith": {
+                        "obj/unit_02.o.runs": "4",
+                        "app.runs": "4",
+                    }}},
+        {"name": "final_noop_keeps_invocation_counters_stable",
+         "before": [{"sleep": 0.3}],
+         "args": ["-f", "build.pmake", "-j", "8"],
+         "expect": {"exit": 0, "taskCount": 0,
+                    "filesWith": {
+                        "obj/unit_02.o.runs": "4",
+                        "obj/unit_05.o.runs": "6",
+                        "app.runs": "4",
+                    }}},
+    ], description="12-way depfile fanout: exact no-op counters, restat, cache loss, and minimal rebuilds",
+       timeout=120),
 ]

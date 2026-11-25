@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +30,7 @@ bool statFileFast(std::string_view path, std::int64_t& mtime, std::int64_t& size
 bool readFile(std::string_view path, std::string& out);
 bool writeFile(std::string_view path, std::string_view data);
 bool ensureDirectory(std::string_view path);
+std::string systemErrorMessage(const std::error_code& error);
 
 // ============================================================
 // BATCH STAT — P1 оптимизация.

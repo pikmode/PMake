@@ -167,6 +167,43 @@ bool ensureDirectory(std::string_view path) {
     return !ec;
 }
 
+std::string systemErrorMessage(const std::error_code& error) {
+#ifdef _WIN32
+    if (error.category() == std::system_category()) {
+        wchar_t* message = nullptr;
+        const DWORD length = FormatMessageW(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+                FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr, static_cast<DWORD>(error.value()), 0,
+            reinterpret_cast<wchar_t*>(&message), 0, nullptr);
+        if (length != 0 && message) {
+            std::wstring_view text(message, length);
+            while (!text.empty() &&
+                   (text.back() == L'\r' || text.back() == L'\n' ||
+                    text.back() == L' ' || text.back() == L'.')) {
+                text.remove_suffix(1);
+            }
+
+            const int utf8Length = WideCharToMultiByte(
+                CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                nullptr, 0, nullptr, nullptr);
+            std::string utf8;
+            if (utf8Length > 0) {
+                utf8.resize(static_cast<std::size_t>(utf8Length));
+                WideCharToMultiByte(
+                    CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                    utf8.data(), utf8Length, nullptr, nullptr);
+            }
+            LocalFree(message);
+            if (!utf8.empty()) return utf8;
+        } else if (message) {
+            LocalFree(message);
+        }
+    }
+#endif
+    return error.message();
+}
+
 // ============================================================
 // statBatch — P1.
 // ============================================================

@@ -23,7 +23,7 @@ namespace pmake::core {
 
 namespace {
 constexpr std::uint32_t kMagic   = 0x504D4B45u;  // "PMKE" LE
-constexpr std::uint32_t kVersion = 10u;
+constexpr std::uint32_t kVersion = 11u;
 } // namespace
 
 Cache::Cache() = default;
@@ -132,6 +132,7 @@ bool Cache::write(std::ostream& out) const {
         write_u8(out, r.generator ? 1 : 0);
         write_u8(out, r.restat ? 1 : 0);
         write_u8(out, r.pool ? 1 : 0);
+        write_u8(out, r.runInShell ? 1 : 0);
     }
 
     write_u32(out, static_cast<std::uint32_t>(data_.builds.size()));
@@ -228,7 +229,7 @@ bool Cache::read(std::istream& in) {
     data_.rules.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {
         Rule r;
-        std::uint8_t gen = 0, restat = 0, pool = 0;
+        std::uint8_t gen = 0, restat = 0, pool = 0, runInShell = 0;
         if (!read_str(in, r.name)) return false;
         if (!read_str(in, r.command)) return false;
         if (!read_str(in, r.description)) return false;
@@ -236,10 +237,12 @@ bool Cache::read(std::istream& in) {
         if (!read_str(in, r.deps)) return false;
         if (!read_str(in, r.rspfile)) return false;
         if (!read_str(in, r.rspfile_content)) return false;
-        if (!read_u8(in, gen) || !read_u8(in, restat) || !read_u8(in, pool)) return false;
+        if (!read_u8(in, gen) || !read_u8(in, restat) || !read_u8(in, pool) ||
+            !read_u8(in, runInShell)) return false;
         r.generator = (gen != 0);
         r.restat    = (restat != 0);
         r.pool      = (pool != 0);
+        r.runInShell = (runInShell != 0);
         data_.rules.push_back(std::move(r));
     }
 

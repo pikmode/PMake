@@ -45,6 +45,23 @@ so the next run cannot mistake a partial artifact for a valid one.
 If PMake is force-terminated by the operating system, cleanup cannot be
 guaranteed; run `pmake -t clean` before rebuilding.
 
+## `Declared depfile '…' was not generated or is invalid`
+
+The rule declares a GCC-style `depfile`, but the successful command did not
+write a valid Makefile-format dependency rule to that path. PMake removes any
+old depfile before invoking the command, so it cannot silently use stale
+dependencies. Check the compiler's depfile flags and output path; for GCC or
+Clang, this commonly means `-MMD -MF ${out}.d`.
+
+If you use MSVC instead, use `deps = "msvc"` and add `/showIncludes` to the
+compiler command rather than declaring a GCC-style depfile.
+
+## MSVC headers are not triggering rebuilds
+
+Set `deps = "msvc"` on the rule and include `/showIncludes` in its command.
+PMake recognizes the English and Russian MSVC include prefixes; it does not
+automatically add the compiler option.
+
 ## `Cache version mismatch`
 
 Expected after upgrading to a release with a newer cache format. PMake

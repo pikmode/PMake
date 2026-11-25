@@ -1,0 +1,218 @@
+[
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\ui\\console_ui.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\ui\\console_ui.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\ui\\console_ui.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\ui\\console_ui.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\util\\filesystem.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\filesystem.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\filesystem.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\util\\filesystem.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\util\\hash.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\hash.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\hash.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\util\\hash.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\util\\logging.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\logging.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\logging.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\util\\logging.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\util\\string_utils.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\string_utils.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\util\\string_utils.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\util\\string_utils.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\deps\\deps_log.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\deps\\deps_log.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\deps\\deps_log.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\deps\\deps_log.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\deps\\dep_parser.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\deps\\dep_parser.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\deps\\dep_parser.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\deps\\dep_parser.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\executor\\runner.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\executor\\runner.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\executor\\runner.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\executor\\runner.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\state.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\state.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\state.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\state.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\expand_vars.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\expand_vars.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\expand_vars.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\expand_vars.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\ast_interpreter.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\ast_interpreter.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\ast_interpreter.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\ast_interpreter.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\builtins.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\builtins.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\builtins.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\builtins.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\expression.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\expression.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\expression.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\expression.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\functions.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\functions.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\functions.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\functions.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\graph.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\graph.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\graph.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\graph.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\node.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\node.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\node.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\node.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\node_builder.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\node_builder.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\node_builder.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\node_builder.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\cache.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\cache.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\cache.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\cache.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\engine.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\engine.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\engine_scheduler.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine_scheduler.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine_scheduler.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\engine_scheduler.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\core\\engine_utils.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine_utils.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\core\\engine_utils.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\core\\engine_utils.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\lexer.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\lexer.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\lexer.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\lexer.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_parse.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_parse.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_parse.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_parse.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_helpers.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_helpers.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_helpers.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_helpers.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_blocks.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_blocks.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_blocks.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_blocks.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_control.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_control.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_control.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_control.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_dispatch.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_dispatch.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_dispatch.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_dispatch.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_eval.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_eval.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_eval.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_eval.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_expr.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_expr.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_expr.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_expr.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_functions.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_functions.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_functions.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_functions.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_rules.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_rules.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_rules.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_rules.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\parser_utils.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_utils.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\parser_utils.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\parser_utils.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\ninja-parser\\lexer.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\ninja-parser\\lexer.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\ninja-parser\\lexer.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\ninja-parser\\lexer.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake_core.dir\\src\\parser\\ninja-parser\\parser.cpp.obj /FdCMakeFiles\\pmake_core.dir\\pmake_core.pdb /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\ninja-parser\\parser.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\parser\\ninja-parser\\parser.cpp",
+  "output": "CMakeFiles\\pmake_core.dir\\src\\parser\\ninja-parser\\parser.cpp.obj"
+},
+{
+  "directory": "E:/pikmode/PikMode_Dev_Programs/PMake/out/build/x64-Debug",
+  "command": "\"G:\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe\"  /nologo /TP -IE:\\pikmode\\PikMode_Dev_Programs\\PMake\\src /DWIN32 /D_WINDOWS /EHsc /Ob0 /Od /RTC1 -std:c++latest -MDd -Zi -Wall -Wextra -Wpedantic /FoCMakeFiles\\pmake.dir\\src\\main.cpp.obj /FdCMakeFiles\\pmake.dir\\ /FS -c E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\main.cpp",
+  "file": "E:\\pikmode\\PikMode_Dev_Programs\\PMake\\src\\main.cpp",
+  "output": "CMakeFiles\\pmake.dir\\src\\main.cpp.obj"
+}
+]

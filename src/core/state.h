@@ -27,6 +27,15 @@ struct Rule {
     std::string rspfile;
     std::string rspfile_content;
     bool pool = false;
+    bool runInShell = false;
+
+    bool hasDepfile() const {
+        return !depfile.empty() && deps != "msvc";
+    }
+
+    bool tracksDependencies() const {
+        return deps == "msvc" || !depfile.empty();
+    }
 
     bool isNinjaTool() const {
         return name == "CLEAN" || name == "HELP";

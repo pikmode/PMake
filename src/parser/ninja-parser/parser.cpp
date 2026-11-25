@@ -251,6 +251,7 @@ void ParserImpl::parseRule() {
 
     core::Rule rule;
     rule.name = std::string(str(ruleNameId));
+    rule.runInShell = true;
 
     if (cur_.type != TOK_NEWLINE) error("expected newline after rule name");
     advance();
@@ -566,6 +567,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
             core::Rule phonyRule;
             phonyRule.name = "phony";
             phonyRule.command = "";
+            phonyRule.runInShell = true;
             state_.addRule(std::move(phonyRule));
         }
     }
@@ -575,6 +577,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         rccRule.name = "rcc";
         rccRule.command = "rcc $in -o $out";
         rccRule.generator = true;
+        rccRule.runInShell = true;
         state_.addRule(std::move(rccRule));
     }
     if (!state_.getRule("moc")) {
@@ -582,6 +585,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         mocRule.name = "moc";
         mocRule.command = "moc $in -o $out";
         mocRule.generator = true;
+        mocRule.runInShell = true;
         state_.addRule(std::move(mocRule));
     }
     if (!state_.getRule("uic")) {
@@ -589,6 +593,7 @@ std::unique_ptr<core::State> ParserImpl::parse() {
         uicRule.name = "uic";
         uicRule.command = "uic $in -o $out";
         uicRule.generator = true;
+        uicRule.runInShell = true;
         state_.addRule(std::move(uicRule));
     }
 

@@ -288,13 +288,13 @@ void Engine::handleNodeDone(Node* node, int exitCode, double duration) {
         // +7.5 сек в cold dry-run (7970 → 4050 ms после частичного фикса;
         // + дедуп paths_to_stat вернёт noop к ~100 ms).
         //
-        // TODO (v1.3.1): для real build добавить Node::depsChanged() flag,
+        // TODO (v1.3.2): для real build добавить Node::depsChanged() flag,
         // чтобы пропускать addDepsForOutput для 99% задач, где depfile
         // семантически не изменился (список headers тот же).
         if (!dryRun_) {
             for (Node* n : affectedNodes) {
                 const Rule* r = n->rule();
-                if (!r || r->depfile.empty()) continue;
+                if (!r || !r->tracksDependencies()) continue;
                 auto inputs = deps::DepsLog::instance().inputsFor(n->name());
                 if (!inputs.empty()) graph_.addDepsForOutput(n->name(), inputs);
             }

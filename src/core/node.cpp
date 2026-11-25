@@ -205,16 +205,17 @@ bool Node::isDirty() {
     // CHANGED (RAM fix): depfile check через inputIdsFor + lookup.
     // Без копии vector<string> из 500 элементов (было 16 KB alloc
     // на каждый isDirty).
-    if (rule_ && !rule_->depfile.empty()) {
+    if (rule_ && rule_->tracksDependencies()) {
         const auto* idlist = deps::DepsLog::instance().inputIdsFor(name_);
-        if (!idlist || idlist->empty()) {
-            std::println(std::cerr, "Depfile lost for '{}' -> force rebuild", name_);
+        if (!idlist) {
+            std::println(std::cerr, "Dependencies missing for '{}' -> force rebuild", name_);
             return true;
         }
         std::int64_t maxDepMtime = -1;
         for (std::uint32_t id : *idlist) {
             std::string_view path = deps::DepsLog::instance().lookup(id);
             std::int64_t m = util::getFileMtime(path);
+            if (m == -1) return true;
             if (m > maxDepMtime) maxDepMtime = m;
         }
         if (maxDepMtime > maxOut) return true;

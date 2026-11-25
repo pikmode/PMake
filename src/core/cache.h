@@ -38,7 +38,7 @@ public:
 
 private:
     struct Data {
-        std::uint32_t version = 10;
+        std::uint32_t version = 11;
         std::string config;
         std::string platform;
         std::unordered_map<std::string, std::string> globalVars;

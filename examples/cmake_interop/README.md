@@ -34,7 +34,8 @@ ninja
   separately with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
 - Implicit outputs (`|` before `:`) are ignored; manifests that rely on them
   may produce an incomplete graph.
-- `dyndep`, custom named pools, and MSVC dependency scanning are not supported.
+- `dyndep` and custom named pools are not supported. MSVC dependency scanning
+  is supported when the compile command enables `/showIncludes`.
 - PMake runs commands directly, without an implicit shell. Commands that rely
   on shell operators or expansion may need an explicit shell invocation.
 

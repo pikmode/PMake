@@ -199,7 +199,12 @@ std::string Lexer::readValue(bool /*allowContinuation*/) {
             if (c == '#' || c == '\n' || c == '\r') break;
         }
 
-        if (c == '"') { inQuotes = !inQuotes; pos_++; continue; }
+        if (c == '"') {
+            inQuotes = !inQuotes;
+            result.push_back(c);
+            pos_++;
+            continue;
+        }
 
         if (c == '$' && pos_ + 1 < end_) {
             char n = *(pos_ + 1);

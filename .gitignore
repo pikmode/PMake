@@ -55,13 +55,13 @@ Thumbs.db
 desktop.ini
 
 # ============================================
-# Tests-pmake-1.0 — генерируемое
-# (НЕ игнорируем src/ и сам tests-pmake-1.0/)
+# Generated test output
+# Keep tests-pmake source files visible to Git.
 # ============================================
-/tests-pmake-1.0/tests/
-/tests-pmake-1.0/results/
-/tests-pmake-1.0/helpers/
-/tests-pmake-1.0/.generated
+/tests-pmake/basic/tests/
+/tests-pmake/basic/results/
+/tests-pmake/basic/helpers/
+/tests-pmake/basic/.generated
 __pycache__/
 *.pyc
 *.pyo

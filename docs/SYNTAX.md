@@ -22,7 +22,7 @@ rule cc {
     command     = "${CXX} ${FLAGS} -c ${in} -o ${out}"
     description = "compiling ${in}"
     depfile     = "${out}.d"
-    deps        = "gcc"
+    deps        = "gcc"      // or "msvc" with /showIncludes in command
     restat      = true
     generator   = false
     pool        = "console"
@@ -35,8 +35,8 @@ rule cc {
 |---|---|
 | `command` | Program and arguments to run. Shell syntax is not interpreted. |
 | `description` | Human-readable line (default: output path) |
-| `depfile` | Path to Makefile-format `.d` file |
-| `deps` | `"gcc"` for depfile parsing |
+| `depfile` | Path to a freshly generated Makefile-format `.d` file |
+| `deps` | `"gcc"` parses the declared depfile; `"msvc"` collects `Note: including file:` output from a command using `/showIncludes` |
 | `restat` | Skip downstream rebuild if output mtime unchanged |
 | `generator` | Auto-regen on start (like CMake's RERUN) |
 | `pool` | `"console"` to serialize tasks; custom named pools are not supported in PMake DSL |
@@ -45,6 +45,18 @@ rule cc {
 
 `${in}`, `${out}`, `${in_newline}`, and `${rspfile}` are available in
 `command`, `description`, and `rspfile_content`.
+
+When `deps = "msvc"`, PMake filters MSVC include-trace lines from displayed
+output and stores those paths for incremental rebuilds. The `/showIncludes`
+option must be included in the compiler command; PMake does not add it. English
+and Russian MSVC include prefixes are recognized.
+
+For GCC-style depfiles, PMake removes an old `.d` before running the command so
+a stale file cannot be mistaken for fresh output. If the command succeeds
+without producing a valid depfile, the build fails and its partial outputs are
+removed. An empty dependency list is valid if the file contains a target rule,
+for example `out.o:`. Standard error from successful commands is forwarded, so
+compiler warnings remain visible.
 
 Shell operators such as `>`, `|`, and `&&` are not interpreted by PMake. To use
 shell features, explicitly invoke a shell (for example, `cmd /c` on Windows or

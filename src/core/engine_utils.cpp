@@ -46,7 +46,7 @@ std::vector<Node*> Engine::collectDirtyNodes(const std::vector<Node*>& order) {
             }
         }
         const Rule* r = node->rule();
-        if (r && !r->depfile.empty()) {
+        if (r && r->tracksDependencies()) {
             const auto* idlist = depsLog.inputIdsFor(node->name());
             if (idlist) {
                 for (std::uint32_t id : *idlist) {

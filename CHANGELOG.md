@@ -3,6 +3,33 @@
 All notable changes to PMake are documented here. This changelog follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.2] — 2026-11-24
+
+### Added
+
+- MSVC header dependency tracking with `deps = "msvc"` when compile commands
+  enable `/showIncludes`, including English and Russian include-trace prefixes.
+
+### Changed
+
+- Stream stdout and stderr from every build command as it runs, including
+  failed commands; print the startup logo only when at least one task runs.
+- Allow `pmake -t clean <target>` to remove only that target's build outputs,
+  leaving its inputs and dependency outputs intact.
+- Show compiler warnings and other `stderr` output even when build commands
+  succeed.
+- Require a fresh, valid GCC-style depfile after a successful command; stale
+  depfiles are removed before execution, and valid empty depfiles are accepted.
+- Document MSVC dependency tracking, depfile validation, and no-op build behavior.
+
+### Tests
+
+- All **161 tests passed**, including live command-output, rigorous depfile,
+  MSVC, warning-output,
+  no-op, restat, and stress regressions. The fanout regression verifies stable
+  no-op invocation counts and exact incremental rebuilds across 12 compile
+  outputs and their shared link target.
+
 ## [1.3.1] — 2026-11-19
 
 ### Added

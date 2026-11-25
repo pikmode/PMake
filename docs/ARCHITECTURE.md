@@ -39,8 +39,8 @@ build.pmake / build.ninja
 | `src/core/node.*` | One graph node, `isDirty()`, `build()` |
 | `src/core/engine*` | Scheduler + thread pool + executor coordination |
 | `src/core/cache.*` | Binary cache (`Project-cache.pmake`) |
-| `src/deps/*` | `.d` file parser, `DepsLog` (header tracking) |
-| `src/executor/runner.*` | Process spawn (POSIX fork/exec, Win CreateProcessW) |
+| `src/deps/*` | `.d` parser, MSVC `/showIncludes` tracking, `DepsLog` |
+| `src/executor/runner.*` | Process spawn; Ninja commands run through the platform shell |
 | `src/util/*` | Filesystem, string utils, hashing, logging |
 
 ## Thread pool
@@ -89,7 +89,7 @@ not a 32-byte string. On Chromium scale this is ~8× less RAM.
 
 ## Cache format
 
-Binary, version-tagged. Current version: **9**.
+Binary, version-tagged. Current version: **11**.
 
 Layout: magic → version → globals → rules → builds → pools → targets →
 file states → command hashes → DepsLog entries.

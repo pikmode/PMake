@@ -1,9 +1,11 @@
 pmake_required_version = 1.0
 
 if os == "windows" {
-    python = "E:/python/python.exe"
+    python = "python.exe"
+    pmake-executable = "pmake.exe"
 } else {
     python = "python3"
+    pmake-executable = "pmake"
 }
 
 test_src = "src/__init__.py"
@@ -27,6 +29,7 @@ test_src += "src/tests_rspfile.py"
 test_src += "src/tests_generator.py"
 test_src += "src/tests_cmake.py"
 test_src += "src/tests_misc.py"
+test_src += "src/tests_live_output.py"
 test_src += "src/tests_regressions.py"
 test_src += "src/tests_hard.py"
 test_src += "src/generate.py"
@@ -36,11 +39,11 @@ test_src += "src/tests_v111.py"
 test_src += "src/tests_critical.py"
 test_src += "src/tests_stress.py"
 
-rule gen_tests {
-    command     = "${python} run.py --generate-only"
-    description = "generating test project"
-}
+rule gen_tests { command = "${python} run.py --generate-only" description = "Generating Test Project" }
+
+rule run_test {command = "${python} run.py --pmake ${pmake-executable}" description = "Running Test PMake"}
 
 build ".generated" : gen_tests "run.py" ${test_src}
+build "results/report.json" : run_test ".generated"
 
 alias all : ".generated"

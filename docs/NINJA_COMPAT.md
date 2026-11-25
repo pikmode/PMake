@@ -19,6 +19,7 @@ generators work when they use features in the supported subset below.
 | `\|\|` (order-only) | ✅ |
 | `depfile` | ✅ |
 | `deps = gcc` | ✅ |
+| `deps = msvc` | ✅ Parses `Note: including file:` output (command must use `/showIncludes`) |
 | `rspfile` / `rspfile_content` | ✅ |
 | `restat` | ✅ |
 | `generator` | ✅ |
@@ -33,7 +34,6 @@ generators work when they use features in the supported subset below.
 | Implicit outputs (`\|` before `:`) | Ignored; graphs that rely on them may be incomplete |
 | `dyndep` | Dynamic dependency updates are unsupported (for example, C++20 modules) |
 | Custom named pools | Rule-level assignments to named pools are not supported; affected tasks may use the default pool |
-| `deps = msvc` | MSVC include-dependency scanning is not implemented |
 
 ## How to use
 
@@ -52,7 +52,13 @@ the build directory keeps paths in the generated Ninja file consistent.
 
 - **Cache**: PMake has its own binary cache (`Project-cache.pmake`),
   not `.ninja_deps` / `.ninja_log`. When its cache is missing or invalid,
-  PMake re-scans available depfiles.
+  PMake re-scans available GCC depfiles. MSVC `/showIncludes` dependencies
+  have no depfile to re-scan, so affected commands run again.
+- **No-op builds**: when outputs and recorded dependencies are current, PMake
+  skips the commands and reports `All targets up to date`.
+- **Compiler output**: standard error is forwarded even when a command
+  succeeds (so warnings are visible). MSVC include-trace lines are filtered
+  when `deps = msvc` is enabled.
 - **Manifest regeneration**: CMake-generated manifests can contain an edge
   that reruns CMake when its inputs change. PMake runs that edge and restarts
   after the manifest is regenerated.

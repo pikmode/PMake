@@ -2,6 +2,7 @@
 #include "util/filesystem.h"
 
 #include <cctype>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,10 +16,11 @@ namespace {
 //
 // NEW: не режет `:` внутри Windows-путей вида "C:\..." или "C:/...".
 //      Drive letter детектируется как "одна alpha-буква перед `:` + `\`/`/` после".
-std::vector<std::string> split_tokens(std::string_view content) {
+std::optional<std::vector<std::string>> split_tokens(std::string_view content) {
     std::vector<std::string> tokens;
     std::string cur;
     bool have_target = false;
+    bool valid_target = false;
 
     std::size_t i = 0;
     while (i < content.size()) {
@@ -53,7 +55,11 @@ std::vector<std::string> split_tokens(std::string_view content) {
                 continue;
             }
             // Разделитель target:inputs
-            if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
+            if (!cur.empty()) {
+                tokens.push_back(cur);
+                cur.clear();
+                valid_target = true;
+            }
             have_target = true;
             ++i;
             while (i < content.size() && (content[i] == ' ' || content[i] == '\t')) ++i;
@@ -72,15 +78,22 @@ std::vector<std::string> split_tokens(std::string_view content) {
     if (!cur.empty()) tokens.push_back(cur);
 
     // Первый токен до ':' — target. Убираем его.
-    if (have_target && !tokens.empty()) tokens.erase(tokens.begin());
+    if (!have_target || !valid_target || tokens.empty()) return std::nullopt;
+    tokens.erase(tokens.begin());
     return tokens;
 }
 
 } // namespace
 
 std::vector<std::string> DepParser::parse(std::string_view depfile_path) {
+    auto parsed = parseChecked(depfile_path);
+    return parsed.value_or(std::vector<std::string>{});
+}
+
+std::optional<std::vector<std::string>> DepParser::parseChecked(
+    std::string_view depfile_path) {
     std::string data;
-    if (!util::readFile(depfile_path, data)) return {};
+    if (!util::readFile(depfile_path, data)) return std::nullopt;
     return split_tokens(data);
 }
 

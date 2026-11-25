@@ -50,6 +50,89 @@ alias all : "out.txt"
          "expect": {"exit": 0, "filesNot": ["out.txt"]}},
     ], description="utility clean removes outputs"),
 
+    test("command_output_noop_and_target_clean", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+rule emit {
+    command = "${python} emit_output.py ${out} ${in}"
+}
+build "dep.txt" : emit "src.txt"
+build "app.txt" : emit "dep.txt"
+build "extra.txt" : emit "src.txt"
+alias all : "app.txt", "extra.txt"
+''',
+        "src.txt": "source\n",
+        "emit_output.py": '''import pathlib
+import sys
+
+output = pathlib.Path(sys.argv[1])
+inputs = [pathlib.Path(name) for name in sys.argv[2:]]
+output.write_text(
+    "".join(path.read_text(encoding="utf-8") for path in inputs),
+    encoding="utf-8",
+)
+print(f"command stdout: {output}")
+print(f"command stderr: {output}", file=sys.stderr)
+''',
+    }, runs=[
+        {"name": "build_forwards_command_output",
+         "expect": {"exit": 0, "taskCount": 3,
+                    "stdoutHas": ["PMake version 1.3.2"],
+                    "stdoutHasExactlyOnce": [
+                        "command stdout: dep.txt",
+                        "command stdout: app.txt",
+                        "command stdout: extra.txt",
+                    ],
+                    "stderrHasExactlyOnce": [
+                        "command stderr: dep.txt",
+                        "command stderr: app.txt",
+                        "command stderr: extra.txt",
+                    ]}},
+        {"name": "noop_has_no_logo_or_child_output",
+         "before": [{"sleep": 0.3}],
+         "expect": {"exit": 0, "taskCount": 0,
+                    "stdoutHas": ["All targets up to date"],
+                    "stdoutNot": ["PMake version", "command stdout:"],
+                    "stderrNot": ["command stderr:"]}},
+        {"name": "clean_target_does_not_remove_its_inputs",
+         "args": ["-f", "build.pmake", "-t", "clean", "app.txt"],
+         "expect": {"exit": 0, "filesNot": ["app.txt"],
+                    "files": ["dep.txt", "extra.txt", "src.txt"],
+                    "stderrHas": ["Cleaned 1 files"]}},
+        {"name": "commands_target_lists_only_its_dependency_chain",
+         "args": ["-f", "build.pmake", "-t", "commands", "app.txt"],
+         "expect": {"exit": 0,
+                    "stdoutHas": ["emit_output.py dep.txt src.txt",
+                                  "emit_output.py app.txt dep.txt"],
+                    "stdoutNot": ["emit_output.py extra.txt"]}},
+        {"name": "clean_unknown_target_fails_explicitly",
+         "args": ["-f", "build.pmake", "-t", "clean", "missing.txt"],
+         "expect": {"exit": 1, "stderrHas": ["clean: target 'missing.txt' not found"]}},
+    ], description="commands always show child output; noop suppresses banner; targeted clean preserves inputs"),
+
+    test("failed_command_forwards_both_output_streams", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+rule fail { command = "${python} fail_with_output.py ${out}" }
+build "out.txt" : fail
+alias all : "out.txt"
+''',
+        "fail_with_output.py": '''import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text("partial", encoding="utf-8")
+print("child stdout before failure")
+print("child stderr before failure", file=sys.stderr)
+sys.exit(7)
+''',
+    }, runs=[
+        {"name": "failed_command_still_displays_its_output",
+         "expect": {"exit": 1, "taskCount": 1,
+                    "stdoutHasExactlyOnce": ["child stdout before failure"],
+                    "stderrHasExactlyOnce": ["child stderr before failure"],
+                    "filesNot": ["out.txt"]}},
+    ], description="stdout and stderr from a failed build command are both forwarded before cleanup"),
+
     test("multiple_positional_targets", {
         "build.pmake": '''pmake_required_version = 1.0
 python = "@PYTHON@"
@@ -246,7 +329,7 @@ alias all : "out.txt"
         "build.pmake": "pmake_required_version = 1.0\nalias all :\n",
     }, runs=[
         {"name": "version", "args": ["-V"],
-         "expect": {"exit": 0, "stdoutMatches": [r"\d+\.\d+"]}},
+         "expect": {"exit": 0, "stdoutMatches": [r"PMake version 1\.3\.2"]}},
     ], description="pmake -V"),
 
     test("real_help", {

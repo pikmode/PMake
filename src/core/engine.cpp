@@ -135,7 +135,7 @@ void Engine::runInternal(const std::vector<std::string>& targets) {
             }
         }
         if (hasAll) targetNames.emplace_back("all");
-        else if (!state_.defaultTargets().empty()) targetNames.push_back(state_.defaultTargets().front());
+        else if (!state_.defaultTargets().empty()) targetNames = state_.defaultTargets();
         else {
             std::vector<std::string> candidates;
             for (const auto& build : state_.builds())

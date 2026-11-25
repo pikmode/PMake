@@ -1,8 +1,8 @@
 # Roadmap
 
-## v1.3.1 (release candidate)
+## v1.3.2 (release candidate)
 
-Prepared 2026-11-19. See [`CHANGELOG.md`](../CHANGELOG.md) for fixes and
+Prepared 2026-11-24. See [`CHANGELOG.md`](../CHANGELOG.md) for fixes and
 validation details. Tagging and publication are not part of this preparation.
 
 ## v1.4.0 (planned)

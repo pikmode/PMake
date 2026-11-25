@@ -1,5 +1,6 @@
 #include "executor/runner.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cerrno>
 #include <cstring>
@@ -26,6 +27,20 @@
 namespace pmake::executor {
 
 namespace {
+
+std::mutex outputCallbackMutex;
+
+void reportOutput(const Command& cmd, OutputStream stream, std::string_view text) {
+    if (!cmd.onOutput || text.empty()) return;
+    std::lock_guard<std::mutex> lock(outputCallbackMutex);
+    cmd.onOutput(stream, text);
+}
+
+void saveOutput(const Command& cmd, OutputStream stream,
+                std::string_view text, std::string& buffer) {
+    if (cmd.captureOutput) buffer.append(text);
+    reportOutput(cmd, stream, text);
+}
 
 #ifndef _WIN32
 std::mutex processSpawnMutex;
@@ -66,6 +81,84 @@ std::string utf16_to_utf8(const std::wstring& w) {
                         s.data(), len, nullptr, nullptr);
     return s;
 }
+
+std::string windows_output_to_utf8(std::string_view bytes) {
+    if (bytes.empty()) return {};
+
+    const int utf8Length = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(),
+        static_cast<int>(bytes.size()), nullptr, 0);
+    if (utf8Length > 0) return std::string(bytes);
+
+    const UINT codePage = GetACP();
+    const int wideLength = MultiByteToWideChar(
+        codePage, 0, bytes.data(), static_cast<int>(bytes.size()),
+        nullptr, 0);
+    if (wideLength <= 0) return std::string(bytes);
+
+    std::wstring wide(static_cast<std::size_t>(wideLength), L'\0');
+    MultiByteToWideChar(codePage, 0, bytes.data(),
+                        static_cast<int>(bytes.size()), wide.data(), wideLength);
+    return utf16_to_utf8(wide);
+}
+
+std::size_t incompleteOutputTail(std::string_view bytes, bool final) {
+    if (final || bytes.empty()) return bytes.size();
+
+    std::size_t tailStart = bytes.size();
+    const bool validUtf8 = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(),
+        static_cast<int>(bytes.size()), nullptr, 0) > 0;
+    if (validUtf8) return tailStart;
+
+    const auto isContinuation = [](unsigned char ch) {
+        return (ch & 0xC0) == 0x80;
+    };
+
+    std::size_t lead = bytes.size() - 1;
+    std::size_t continuationCount = 0;
+    while (lead > 0 && isContinuation(static_cast<unsigned char>(bytes[lead])) &&
+           continuationCount < 3) {
+        --lead;
+        ++continuationCount;
+    }
+
+    const auto first = static_cast<unsigned char>(bytes[lead]);
+    std::size_t sequenceLength = first >= 0xC2 && first <= 0xDF ? 2
+        : first >= 0xE0 && first <= 0xEF ? 3
+        : first >= 0xF0 && first <= 0xF4 ? 4
+        : 1;
+    if (sequenceLength > continuationCount + 1 &&
+        sequenceLength > 1 && lead + sequenceLength > bytes.size()) {
+        tailStart = lead;
+    }
+
+    const UINT codePage = GetACP();
+    const auto last = static_cast<unsigned char>(bytes.back());
+    if (IsDBCSLeadByteEx(codePage, last)) {
+        tailStart = std::min(tailStart, bytes.size() - 1);
+    }
+    return tailStart;
+}
+
+class WindowsOutputDecoder {
+public:
+    std::string convert(std::string_view bytes, bool final = false) {
+        pending_.append(bytes);
+        const std::size_t processLength = incompleteOutputTail(pending_, final);
+        std::string converted = windows_output_to_utf8(
+            std::string_view(pending_).substr(0, processLength));
+        pending_.erase(0, processLength);
+        if (final && !pending_.empty()) {
+            converted += windows_output_to_utf8(pending_);
+            pending_.clear();
+        }
+        return converted;
+    }
+
+private:
+    std::string pending_;
+};
 
 std::wstring quote_arg(const std::wstring& arg) {
     if (arg.empty()) return L"\"\"";
@@ -146,7 +239,28 @@ Result Runner::runSync(const Command& cmd) {
 
 #ifdef _WIN32
     // ---- Windows: CreateProcessW + pipes ----
-    std::wstring cmdline = build_cmdline(cmd.program, cmd.arguments);
+    std::wstring application;
+    std::wstring cmdline;
+    if (cmd.runInShell) {
+        wchar_t systemDir[MAX_PATH + 1]{};
+        UINT systemDirLength = GetSystemDirectoryW(systemDir, MAX_PATH);
+        if (systemDirLength == 0 || systemDirLength >= MAX_PATH) {
+            DWORD error = systemDirLength == 0
+                ? GetLastError()
+                : ERROR_INSUFFICIENT_BUFFER;
+            res.exitCode = -1;
+            res.stderrOutput = "Failed to locate cmd.exe (Windows error " +
+                               std::to_string(error) + ")";
+            return res;
+        }
+        application.assign(systemDir, systemDirLength);
+        application += L"\\cmd.exe";
+        cmdline = quote_arg(application) + L" /D /S /C \"";
+        cmdline += utf8_to_utf16(cmd.shellCommand);
+        cmdline.push_back(L'"');
+    } else {
+        cmdline = build_cmdline(cmd.program, cmd.arguments);
+    }
     std::wstring cwd = utf8_to_utf16(cmd.workingDirectory);
     std::wstring envblock = build_env_block(cmd.env);
 
@@ -192,7 +306,8 @@ Result Runner::runSync(const Command& cmd) {
 
     PROCESS_INFORMATION pi{};
     BOOL ok = CreateProcessW(
-        nullptr, cmdline.data(), nullptr, nullptr, TRUE,
+        application.empty() ? nullptr : application.c_str(),
+        cmdline.data(), nullptr, nullptr, TRUE,
         CREATE_UNICODE_ENVIRONMENT,
         envblock.data(), cwd.empty() ? nullptr : cwd.c_str(),
         &si, &pi);
@@ -211,21 +326,29 @@ Result Runner::runSync(const Command& cmd) {
         return res;
     }
 
-    // Читаем параллельно оба потока, чтобы не было дедлока на 64KB буфере.
+    // Read both streams concurrently to avoid blocking on a full pipe buffer.
     std::string outBuf, errBuf;
     std::thread tOut([&]() {
+        WindowsOutputDecoder decoder;
         char buf[4096];
         DWORD read = 0;
         while (ReadFile(stdoutR, buf, sizeof(buf), &read, nullptr) && read > 0) {
-            outBuf.append(buf, read);
+            std::string converted = decoder.convert(std::string_view(buf, read));
+            saveOutput(cmd, OutputStream::Stdout, converted, outBuf);
         }
+        std::string converted = decoder.convert({}, true);
+        saveOutput(cmd, OutputStream::Stdout, converted, outBuf);
     });
     std::thread tErr([&]() {
+        WindowsOutputDecoder decoder;
         char buf[4096];
         DWORD read = 0;
         while (ReadFile(stderrR, buf, sizeof(buf), &read, nullptr) && read > 0) {
-            errBuf.append(buf, read);
+            std::string converted = decoder.convert(std::string_view(buf, read));
+            saveOutput(cmd, OutputStream::Stderr, converted, errBuf);
         }
+        std::string converted = decoder.convert({}, true);
+        saveOutput(cmd, OutputStream::Stderr, converted, errBuf);
     });
 
     DWORD waitResult = WaitForSingleObject(pi.hProcess, INFINITE);
@@ -243,8 +366,9 @@ Result Runner::runSync(const Command& cmd) {
     } else {
         res.exitCode = -1;
         DWORD error = waitResult == WAIT_OBJECT_0 ? GetLastError() : waitError;
-        errBuf += "Failed to wait for process (Windows error " +
-                  std::to_string(error) + ")";
+        const std::string message = "Failed to wait for process (Windows error " +
+                                    std::to_string(error) + ")";
+        saveOutput(cmd, OutputStream::Stderr, message, errBuf);
     }
 
     CloseHandle(pi.hProcess);
@@ -252,10 +376,8 @@ Result Runner::runSync(const Command& cmd) {
     CloseHandle(stdoutR);
     CloseHandle(stderrR);
 
-    if (cmd.captureOutput) {
-        res.stdoutOutput = std::move(outBuf);
-        res.stderrOutput = std::move(errBuf);
-    }
+    res.stdoutOutput = std::move(outBuf);
+    res.stderrOutput = std::move(errBuf);
 #else
     // ---- POSIX: pipe + fork + exec ----
     std::unordered_map<std::string, std::string> mergedEnv;
@@ -278,15 +400,25 @@ Result Runner::runSync(const Command& cmd) {
     for (auto& entry : envStrings) envp.push_back(entry.data());
     envp.push_back(nullptr);
 
+    const std::string_view program = cmd.runInShell
+        ? std::string_view("/bin/sh")
+        : std::string_view(cmd.program);
     std::vector<char*> argv;
-    argv.reserve(cmd.arguments.size() + 2);
-    argv.push_back(const_cast<char*>(cmd.program.c_str()));
-    for (const auto& arg : cmd.arguments) argv.push_back(const_cast<char*>(arg.c_str()));
+    argv.reserve((cmd.runInShell ? 2 : cmd.arguments.size()) + 2);
+    argv.push_back(const_cast<char*>(program.data()));
+    if (cmd.runInShell) {
+        argv.push_back(const_cast<char*>("-c"));
+        argv.push_back(const_cast<char*>(cmd.shellCommand.c_str()));
+    } else {
+        for (const auto& arg : cmd.arguments) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+    }
     argv.push_back(nullptr);
 
     std::vector<std::string> execPaths;
-    if (cmd.program.find('/') != std::string::npos) {
-        execPaths.push_back(cmd.program);
+    if (program.find('/') != std::string::npos) {
+        execPaths.push_back(program);
     } else {
         auto pathIt = mergedEnv.find("PATH");
         std::string searchPath = pathIt == mergedEnv.end() ? "/bin:/usr/bin" : pathIt->second;
@@ -296,8 +428,8 @@ Result Runner::runSync(const Command& cmd) {
             if (end == std::string::npos) end = searchPath.size();
             std::string directory = searchPath.substr(start, end - start);
             execPaths.push_back(directory.empty()
-                ? cmd.program
-                : directory + "/" + cmd.program);
+                ? std::string(program)
+                : directory + "/" + std::string(program));
             if (end == searchPath.size()) break;
             start = end + 1;
         }
@@ -369,7 +501,10 @@ Result Runner::runSync(const Command& cmd) {
         char buf[4096];
         while (true) {
             ssize_t n = read(outPipe[0], buf, sizeof(buf));
-            if (n > 0) outBuf.append(buf, static_cast<std::size_t>(n));
+            if (n > 0) {
+                saveOutput(cmd, OutputStream::Stdout,
+                           std::string_view(buf, static_cast<std::size_t>(n)), outBuf);
+            }
             else if (n < 0 && errno == EINTR) continue;
             else break;
         }
@@ -378,7 +513,10 @@ Result Runner::runSync(const Command& cmd) {
         char buf[4096];
         while (true) {
             ssize_t n = read(errPipe[0], buf, sizeof(buf));
-            if (n > 0) errBuf.append(buf, static_cast<std::size_t>(n));
+            if (n > 0) {
+                saveOutput(cmd, OutputStream::Stderr,
+                           std::string_view(buf, static_cast<std::size_t>(n)), errBuf);
+            }
             else if (n < 0 && errno == EINTR) continue;
             else break;
         }
@@ -398,14 +536,14 @@ Result Runner::runSync(const Command& cmd) {
 
     if (waited == -1) {
         res.exitCode = -1;
-        errBuf += std::string("waitpid() failed: ") + std::strerror(waitErrno);
+        const std::string message = std::string("waitpid() failed: ") +
+                                    std::strerror(waitErrno);
+        saveOutput(cmd, OutputStream::Stderr, message, errBuf);
     } else if (WIFEXITED(status)) res.exitCode = WEXITSTATUS(status);
     else res.exitCode = -1;
 
-    if (cmd.captureOutput) {
-        res.stdoutOutput = std::move(outBuf);
-        res.stderrOutput = std::move(errBuf);
-    }
+    res.stdoutOutput = std::move(outBuf);
+    res.stderrOutput = std::move(errBuf);
 #endif
 
     auto t1 = std::chrono::steady_clock::now();
