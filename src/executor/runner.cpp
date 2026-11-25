@@ -418,7 +418,7 @@ Result Runner::runSync(const Command& cmd) {
 
     std::vector<std::string> execPaths;
     if (program.find('/') != std::string::npos) {
-        execPaths.push_back(program);
+        execPaths.emplace_back(program);
     } else {
         auto pathIt = mergedEnv.find("PATH");
         std::string searchPath = pathIt == mergedEnv.end() ? "/bin:/usr/bin" : pathIt->second;

@@ -85,4 +85,69 @@ default out.o
          }},
     ], description="CRITICAL: E$: escape в ninja inputs (Windows drive letter)",
        timeout=60),
+
+    test("successful_command_shows_compiler_warnings", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+rule cc { command = "${python} warning_build.py ${out}" }
+build "out.o" : cc "in.c"
+alias all : "out.o"
+''',
+        "in.c": "source\n",
+        "warning_build.py": '''import pathlib
+import sys
+
+# FIX: stderr по умолчанию использует ACP системы (GetACP()).
+# На русской Windows ACP=1251 — кириллица кодируется в cp1251,
+# и pmake (windows_output_to_utf8) корректно её декодирует обратно.
+# На English Windows (GitHub Actions) ACP=1252 — кириллицы в cp1252 нет,
+# Python по PEP 528 применяет errors='backslashreplace' и превращает
+# каждый символ в escape "\\uXXXX", чистый ASCII — pmake пропускает
+# как валидный UTF-8, и кириллица до runner.py не доходит.
+# Явно переключаем stderr на UTF-8, чтобы результат не зависел от локали.
+sys.stderr.reconfigure(encoding="utf-8")
+
+pathlib.Path(sys.argv[1]).touch()
+print("warning: visible compiler warning", file=sys.stderr)
+print("Предупреждение: кириллица отображается", file=sys.stderr)
+''',
+    }, runs=[
+        {"name": "warning_is_forwarded_on_success",
+         "expect": {"exit": 0, "taskCount": 1,
+                    "stderrHasExactlyOnce": ["warning: visible compiler warning",
+                                             "Предупреждение: кириллица отображается"]}},
+    ], description="successful commands forward compiler warnings and UTF-8 Cyrillic output"),
+
+    # NEW: bug #3 — `:` в Windows drive-letter путях не должен ломать парсер.
+    # Старый парсер на "C:\build\main.o: main.c C:\src\hdr.h" выдавал:
+    #   "\build\main.o main.c C \src\hdr.h"
+    # Новый — "main.c C:\src\hdr.h". Проверяем через builtin dep_inputs().
+    test("real_dep_parser_drive_letter", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+inputs = dep_inputs("test.d")
+rule write { command = "${python} write_all.py ${out} ${inputs}" }
+build "out.txt" : write
+alias all : "out.txt"
+''',
+        "test.d": "C:\\build\\main.o: main.c C:\\src\\hdr.h\n",
+    }, runs=[
+        {"name": "first", "expect": {"exit": 0, "taskCount": 1,
+                                     "filesWith": {"out.txt": "main.c C:\\src\\hdr.h"}}},
+    ], description="dep_parser: drive-letter пути в target и inputs"),
+
+    # NEW: дополнительно — drive letter в target, обычные inputs.
+    test("real_dep_parser_drive_letter_target", {
+        "build.pmake": '''pmake_required_version = 1.0
+python = "@PYTHON@"
+inputs = dep_inputs("test.d")
+rule write { command = "${python} write_all.py ${out} ${inputs}" }
+build "out.txt" : write
+alias all : "out.txt"
+''',
+        "test.d": "C:\\out\\main.o: a.h b.h\n",
+    }, runs=[
+        {"name": "first", "expect": {"exit": 0, "taskCount": 1,
+                                     "filesWith": {"out.txt": "a.h b.h"}}},
+    ], description="dep_parser: drive-letter в target, обычные inputs"),
 ]
